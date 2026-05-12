@@ -1,0 +1,6 @@
+{
+  "name": "AquaControl Pro",
+  "description": "Sistema de gestión inteligente para distribución de agua purificada, incluyendo dashboard operativo, control de envases y automatización de pedidos vía WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
