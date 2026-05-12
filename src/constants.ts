@@ -3,51 +3,79 @@ import { Order, CustomerBalance } from './types';
 export const MOCK_ORDERS: Order[] = [
   {
     id: '1',
-    client: 'María García',
-    address: 'Av. Paseo de la Reforma 222, Juárez',
-    quantity: 3,
-    status: 'en_camino',
-    time: '10:30 AM'
+    client: 'Abarrotes Doña Mari',
+    neighborhood: 'Polanco',
+    address: 'Av. Horacio 450',
+    items: [
+      { name: 'Garrafón 20L (Llenado)', quantity: 5 },
+      { name: 'Sello de Garantía', quantity: 5 }
+    ],
+    jugsDelivered: 5,
+    jugsReceived: 3,
+    status: 'en_ruta',
+    time: '09:00 AM'
   },
   {
     id: '2',
-    client: 'Restaurante El Cardenal',
-    address: 'Calle de la Palma 23, Centro Histórico',
-    quantity: 10,
+    client: 'Residencial Latitud',
+    neighborhood: 'Santa Fe',
+    address: 'Carr. México-Toluca 5420',
+    items: [
+      { name: 'Garrafón 20L (Llenado)', quantity: 12 },
+      { name: 'Envase Nuevo', quantity: 2 }
+    ],
+    jugsDelivered: 12,
+    jugsReceived: 10,
     status: 'pendiente',
-    time: '11:15 AM'
+    time: '10:15 AM'
   },
   {
     id: '3',
-    client: 'Jorge Alberto',
-    address: 'Aristóteles 123, Polanco',
-    quantity: 2,
+    client: 'Gimnasio Sport City',
+    neighborhood: 'Roma Norte',
+    address: 'Calle Colima 124',
+    items: [
+      { name: 'Garrafón 20L (Llenado)', quantity: 8 }
+    ],
+    jugsDelivered: 8,
+    jugsReceived: 8,
     status: 'entregado',
-    time: '09:45 AM'
+    time: '08:30 AM'
   },
   {
     id: '4',
-    client: 'Gimnasio Smart Fit',
-    address: 'Insurgentes Sur 456, Roma Norte',
-    quantity: 5,
-    status: 'en_camino',
+    client: 'Cafetería El Jarocho',
+    neighborhood: 'Coyoacán',
+    address: 'Calle Cuauhtémoc 134',
+    items: [
+      { name: 'Garrafón 20L (Llenado)', quantity: 4 },
+      { name: 'Sello de Garantía', quantity: 4 }
+    ],
+    jugsDelivered: 4,
+    jugsReceived: 4,
+    status: 'en_ruta',
     time: '11:00 AM'
   },
   {
     id: '5',
-    client: 'Ana Sofía Villeda',
-    address: 'Ámsterdam 89, Condesa',
-    quantity: 1,
+    client: 'Oficinas BBVA',
+    neighborhood: 'Juarez',
+    address: 'Paseo de la Reforma 506',
+    items: [
+      { name: 'Garrafón 20L (Llenado)', quantity: 20 },
+      { name: 'Envase Nuevo', quantity: 5 }
+    ],
+    jugsDelivered: 20,
+    jugsReceived: 15,
     status: 'pendiente',
     time: '11:45 AM'
   }
 ];
 
 export const MOCK_CUSTOMER_BALANCES: CustomerBalance[] = [
-  { id: 'c1', name: 'Héctor Jiménez', neighborhood: 'Coyoacán', jugBalance: 4 },
-  { id: 'c2', name: 'Laura Estévez', neighborhood: 'Santa Fe', jugBalance: 2 },
-  { id: 'c3', name: 'Oficinas WeWork', neighborhood: 'Nápoles', jugBalance: 12 },
-  { id: 'c4', name: 'Consultorio Dental Drs.', neighborhood: 'Del Valle', jugBalance: 3 },
-  { id: 'c5', name: 'Ricardo Medina', neighborhood: 'Narvarte', jugBalance: 5 },
-  { id: 'c6', name: 'Carmen Rojas', neighborhood: 'Tlalpan', jugBalance: 2 },
+  { id: 'c1', name: 'Abarrotes Doña Mari', neighborhood: 'Polanco', jugBalance: 2 },
+  { id: 'c2', name: 'Residencial Latitud', neighborhood: 'Santa Fe', jugBalance: 5 },
+  { id: 'c3', name: 'Gimnasio Sport City', neighborhood: 'Roma Norte', jugBalance: 0 },
+  { id: 'c4', name: 'Cafetería El Jarocho', neighborhood: 'Coyoacán', jugBalance: 0 },
+  { id: 'c5', name: 'Oficinas BBVA', neighborhood: 'Juarez', jugBalance: 5 },
 ];

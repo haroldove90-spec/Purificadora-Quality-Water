@@ -1,9 +1,17 @@
+export interface Product {
+  name: 'Garrafón 20L (Llenado)' | 'Envase Nuevo' | 'Sello de Garantía';
+  quantity: number;
+}
+
 export interface Order {
   id: string;
   client: string;
+  neighborhood: string;
   address: string;
-  quantity: number;
-  status: 'pendiente' | 'en_camino' | 'entregado';
+  items: Product[];
+  jugsDelivered: number;
+  jugsReceived: number;
+  status: 'pendiente' | 'en_ruta' | 'entregado';
   time: string;
 }
 
