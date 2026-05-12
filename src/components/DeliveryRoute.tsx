@@ -15,25 +15,64 @@ import {
 } from 'lucide-react';
 
 export default function DeliveryRoute() {
+  const [selectedDelivery, setSelectedDelivery] = useState<number | null>(null);
   const [jugsReceived, setJugsReceived] = useState(0);
-  const [step, setStep] = useState(1); // 1: Route Overview, 2: Delivery Detail
+  const [step, setStep] = useState(1); // 1: Route List, 2: Delivery Detail
 
-  const nextDelivery = {
-    client: 'Residencial Latitud',
-    neighborhood: 'Santa Fe',
-    address: 'Carr. México-Toluca 5420, Santa Fe, CDMX',
-    items: [
-      { name: 'Garrafón 20L (Llenado)', quantity: 12 },
-      { name: 'Envase Nuevo', quantity: 2 }
-    ],
-    time: '10:15 AM',
-    distance: '15 min',
-    phone: '55-1234-5678'
-  };
+  const deliveries = [
+    {
+      id: 1,
+      client: 'Residencial Latitud',
+      neighborhood: 'Santa Fe',
+      address: 'Carr. México-Toluca 5420, Santa Fe, CDMX',
+      items: [
+        { name: 'Garrafón 20L (Llenado)', quantity: 12 },
+        { name: 'Envase Nuevo', quantity: 2 }
+      ],
+      time: '10:15 AM',
+      distance: '15 min',
+      phone: '55-1234-5678',
+      status: 'pending'
+    },
+    {
+      id: 2,
+      client: 'Corporativo Arcos',
+      neighborhood: 'Bosques de las Lomas',
+      address: 'Paseo de los Tamarindos 400, Bosques, CDMX',
+      items: [
+        { name: 'Garrafón 20L (Llenado)', quantity: 45 }
+      ],
+      time: '11:00 AM',
+      distance: '25 min',
+      phone: '55-9876-5432',
+      status: 'pending'
+    },
+    {
+      id: 3,
+      client: 'Torre Virreyes',
+      neighborhood: 'Lomas de Chapultepec',
+      address: 'Pedregal 24, Lomas de Chapultepec, CDMX',
+      items: [
+        { name: 'Garrafón 20L (Llenado)', quantity: 8 },
+        { name: 'Agua 5L (Caja)', quantity: 4 }
+      ],
+      time: '12:30 PM',
+      distance: '40 min',
+      phone: '55-5555-5555',
+      status: 'pending'
+    }
+  ];
+
+  const currentDelivery = selectedDelivery !== null ? deliveries.find(d => d.id === selectedDelivery) : deliveries[0];
 
   const handleOpenMaps = () => {
-    // Simulating opening Google Maps
-    window.location.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(nextDelivery.address)}`;
+    if (!currentDelivery) return;
+    window.location.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(currentDelivery.address)}`;
+  };
+
+  const handleSelectDelivery = (id: number) => {
+    setSelectedDelivery(id);
+    setStep(2);
   };
 
   return (
@@ -63,33 +102,87 @@ export default function DeliveryRoute() {
 
       {step === 1 ? (
         <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-4"
+        >
+          <div className="flex items-center justify-between px-2">
+            <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">Próximas Paradas</h2>
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-sky-100 text-sky-700 px-2 py-1 rounded-lg">
+              {deliveries.length} PENDIENTES
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {deliveries.map((delivery) => (
+              <div 
+                key={delivery.id}
+                onClick={() => handleSelectDelivery(delivery.id)}
+                className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm hover:border-sky-500 transition-all cursor-pointer group"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800 leading-none">{delivery.client}</h3>
+                    <p className="text-slate-400 font-bold mt-2 flex items-center gap-1 text-xs italic">
+                      <MapPin size={12} className="text-rose-500" /> {delivery.neighborhood}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-black text-sky-600 uppercase">{delivery.time}</p>
+                    <p className="text-[10px] text-slate-400 font-bold">{delivery.distance}</p>
+                  </div>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                  <div className="flex gap-2">
+                    {delivery.items.slice(0, 1).map((item, i) => (
+                      <span key={i} className="text-[10px] bg-slate-50 text-slate-500 px-2 py-1 rounded-lg font-bold">
+                        {item.quantity}x {item.name.split(' ')[0]}...
+                      </span>
+                    ))}
+                    {delivery.items.length > 1 && (
+                      <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-1 rounded-lg font-bold">
+                        +{delivery.items.length - 1} más
+                      </span>
+                    )}
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-sky-500 group-hover:text-white transition-colors">
+                    <ArrowLeft size={16} className="rotate-180" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      ) : step === 2 ? (
+        <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className="space-y-4"
         >
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">Siguiente Parada</h2>
-            <span className="flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-lg">
-              <Clock size={12} /> EN TIEMPO
-            </span>
-          </div>
+          <button 
+            onClick={() => setStep(1)}
+            className="flex items-center gap-2 text-slate-400 font-bold text-sm min-h-[44px]"
+          >
+            <ArrowLeft size={16} /> Ver Toda la Ruta
+          </button>
 
           <div className="bg-white p-6 rounded-3xl border-2 border-sky-100 shadow-xl shadow-sky-900/5">
             <div className="flex justify-between items-start mb-6">
               <div>
-                <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{nextDelivery.client}</h3>
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{currentDelivery?.client}</h3>
                 <p className="text-slate-400 font-bold mt-2 flex items-center gap-1 italic">
-                  <MapPin size={14} className="text-rose-500" /> {nextDelivery.neighborhood}
+                  <MapPin size={14} className="text-rose-500" /> {currentDelivery?.neighborhood}
                 </p>
               </div>
               <div className="bg-sky-50 text-sky-600 px-3 py-1 rounded-xl text-xs font-black uppercase">
-                {nextDelivery.distance}
+                {currentDelivery?.distance}
               </div>
             </div>
 
             <div className="space-y-3 mb-8">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-2">Artículos a Entregar</p>
-              {nextDelivery.items.map((item, i) => (
+              {currentDelivery?.items.map((item, i) => (
                 <div key={i} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
                   <span className="text-sm font-bold text-slate-700">{item.name}</span>
                   <span className="text-lg font-black text-sky-600">x{item.quantity}</span>
@@ -112,7 +205,7 @@ export default function DeliveryRoute() {
             </div>
 
             <button 
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               className="w-full bg-sky-500 text-white mt-6 py-5 rounded-2xl font-black text-lg shadow-xl shadow-sky-500/30 active:scale-95 transition-all min-h-[44px]"
             >
               Llegué al Domicilio
@@ -126,7 +219,7 @@ export default function DeliveryRoute() {
           className="bg-white p-6 rounded-3xl border-2 border-emerald-100 shadow-xl shadow-emerald-900/5 mb-6"
         >
           <button 
-            onClick={() => setStep(1)}
+            onClick={() => setStep(2)}
             className="mb-6 flex items-center gap-2 text-slate-400 font-bold text-sm min-h-[44px]"
           >
             <ArrowLeft size={16} /> Volver
@@ -159,13 +252,18 @@ export default function DeliveryRoute() {
             <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
               <div className="flex justify-between items-center">
                 <span className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Total a Cobrar</span>
-                <span className="text-3xl font-black text-emerald-700">$540.00</span>
+                <span className="text-3xl font-black text-emerald-700">
+                  ${currentDelivery?.items.reduce((acc, item) => acc + (item.quantity * 45), 0)}.00
+                </span>
               </div>
               <p className="text-[10px] text-emerald-600 font-bold mt-1 uppercase text-right">Efectivo o Transferencia</p>
             </div>
 
             <button 
-              onClick={() => setStep(1)}
+              onClick={() => {
+                setStep(1);
+                setSelectedDelivery(null);
+              }}
               className="w-full bg-emerald-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-3 min-h-[44px]"
             >
               <CheckCircle2 size={24} /> Confirmar Pago y Entrega

@@ -8,6 +8,7 @@ import {
   Search,
   Menu,
   X,
+  LogOut,
   Droplets,
   DollarSign,
   Moon,
@@ -22,6 +23,7 @@ import Inventory from './components/Inventory';
 import WhatsAppChat from './components/WhatsAppChat';
 import Finances from './components/Finances';
 import DeliveryRoute from './components/DeliveryRoute';
+import Profile from './components/Profile';
 
 import Lobby from './components/Lobby';
 
@@ -69,9 +71,9 @@ export default function App() {
   const navItems = [
     { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
     { id: 'route', label: 'Ruta', icon: Truck },
-    { id: 'finances', label: 'Cobrar', icon: DollarSign },
+    { id: 'finances', label: 'Finanzas', icon: DollarSign },
     { id: 'inventory', label: 'Envases', icon: Package },
-    { id: 'profile', label: 'Perfil', icon: User },
+    { id: 'profile', label: 'Ajustes', icon: User },
   ];
 
   if (activeView === 'lobby') {
@@ -124,7 +126,7 @@ export default function App() {
         </div>
 
         <nav className="flex-1 px-4 mt-4 space-y-2">
-          {navItems.filter(i => i.id !== 'profile').map((item) => (
+          {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveView(item.id as View)}
@@ -138,6 +140,14 @@ export default function App() {
               {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">{item.label}</span>}
             </button>
           ))}
+          
+          <button
+            onClick={() => setActiveView('lobby')}
+            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-rose-500/10 hover:text-rose-500 mt-8"
+          >
+            <LogOut size={22} />
+            {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">Cerrar Sesión</span>}
+          </button>
         </nav>
 
         <div className="p-6">
@@ -189,7 +199,7 @@ export default function App() {
                  activeView === 'inventory' ? <Inventory /> :
                  activeView === 'finances' ? <Finances /> :
                  activeView === 'route' ? <DeliveryRoute /> :
-                 <div className="p-8 text-center text-slate-400 italic">Módulo de perfil en desarrollo...</div>}
+                 <Profile />}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -202,21 +212,28 @@ export default function App() {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 h-20 border-t flex items-center justify-around px-2 z-[60] pb-safe transition-colors shadow-[0_-5px_15px_rgba(0,0,0,0.05)] ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+      <nav className={`md:hidden fixed bottom-1 left-4 right-4 h-20 border-t flex items-center justify-around px-2 z-[60] pb-safe transition-colors shadow-2xl rounded-3xl ${darkMode ? 'bg-slate-900/90 backdrop-blur-xl border-slate-800' : 'bg-white/90 backdrop-blur-xl border-slate-200'}`}>
         {navItems.map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveView(item.id as View)}
-            className={`flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl transition-all ${
+            className={`flex flex-col items-center justify-center gap-1 min-w-[56px] min-h-[44px] rounded-xl transition-all ${
               activeView === item.id 
                 ? 'text-sky-500 font-bold' 
                 : 'text-slate-400'
             }`}
           >
-            <item.icon size={activeView === item.id ? 24 : 20} strokeWidth={activeView === item.id ? 2.5 : 2} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">{item.label}</span>
+            <item.icon size={activeView === item.id ? 22 : 20} strokeWidth={activeView === item.id ? 2.5 : 2} />
+            <span className="text-[9px] font-bold uppercase tracking-widest">{item.label}</span>
           </button>
         ))}
+        <button
+          onClick={() => setActiveView('lobby')}
+          className="flex flex-col items-center justify-center gap-1 min-w-[56px] min-h-[44px] rounded-xl text-rose-500"
+        >
+          <LogOut size={20} strokeWidth={2.5} />
+          <span className="text-[9px] font-bold uppercase tracking-widest">Salir</span>
+        </button>
       </nav>
 
       {/* Mobile Dark Mode Toggle Overlay */}
