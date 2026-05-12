@@ -23,13 +23,29 @@ import WhatsAppChat from './components/WhatsAppChat';
 import Finances from './components/Finances';
 import DeliveryRoute from './components/DeliveryRoute';
 
-type View = 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile';
+import Lobby from './components/Lobby';
+
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<View>('dashboard');
+  const [activeView, setActiveView] = useState<View>('lobby');
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [notification, setNotification] = useState<string | null>(null);
+
+  const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
+    if (role === 'client') {
+      const msg = 'Hola Quality Water, quiero solicitar un servicio de llenado.';
+      window.open(`https://wa.me/525500000000?text=${encodeURIComponent(msg)}`, '_blank');
+      return;
+    }
+    
+    switch(role) {
+      case 'admin': setActiveView('finances'); break;
+      case 'operator': setActiveView('dashboard'); break;
+      case 'driver': setActiveView('route'); break;
+    }
+  };
 
   // Simulated Notifications
   useEffect(() => {
@@ -58,6 +74,10 @@ export default function App() {
     { id: 'profile', label: 'Perfil', icon: User },
   ];
 
+  if (activeView === 'lobby') {
+    return <Lobby onSelectRole={handleRoleSelection} />;
+  }
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'text-slate-800 bg-[#f1f5f9]'}`}>
       
@@ -83,53 +103,78 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Header */}
-      <header className={`h-16 hidden md:flex border-b items-center justify-between px-6 shrink-0 sticky top-0 z-50 transition-colors ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-[#0ea5e9] rounded-lg flex items-center justify-center text-white">
-            <Droplets size={20} strokeWidth={2.5} />
-          </div>
-          <span className={`text-xl font-bold tracking-tight ${darkMode ? 'text-sky-400' : 'text-[#0284c7]'}`}>AquaControl Pro</span>
+      {/* Sidebar - Desktop Only */}
+      <motion.aside
+        initial={false}
+        animate={{ width: isSidebarOpen ? 280 : 80 }}
+        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-50 border-r transition-colors ${darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-900 text-white border-slate-800'}`}
+      >
+        <div 
+          className="p-6 flex items-center gap-3 cursor-pointer group"
+          onClick={() => setActiveView('lobby')}
+        >
+          <img 
+            src="https://cossma.com.mx/purificadora.jpg" 
+            alt="Logo" 
+            className="w-10 h-10 object-contain rounded-lg group-hover:scale-110 transition-transform"
+          />
+          {isSidebarOpen && (
+            <span className="font-display font-bold text-lg tracking-tight whitespace-nowrap">Quality<span className="text-sky-400">Water</span></span>
+          )}
         </div>
-        <div className="flex items-center gap-6">
-          <button 
-            onClick={() => setDarkMode(!darkMode)}
-            className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-500'}`}
-          >
-            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
-          
-          <div className="flex items-center gap-4">
-            <span className="text-[13px] text-slate-500 font-medium tracking-wide">CDMX - Planta Iztapalapa</span>
-            <div className="bg-[#ecfdf5] text-[#059669] px-3 py-1 rounded-full text-xs font-bold ring-1 ring-emerald-100 dark:bg-emerald-950 dark:text-emerald-400 dark:ring-emerald-900">
-              Sistema Online
-            </div>
-          </div>
-        </div>
-      </header>
 
-      {/* Main Body */}
-      <main className="flex flex-1 md:h-[calc(100vh-64px)] overflow-hidden flex-col md:flex-row">
-        {/* Navigation Sidebar (Vertical Bar) - DESKTOP */}
-        <div className={`hidden md:flex w-16 border-r flex-col items-center py-6 gap-6 shrink-0 transition-colors ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+        <nav className="flex-1 px-4 mt-4 space-y-2">
           {navItems.filter(i => i.id !== 'profile').map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveView(item.id as View)}
-              className={`p-3 rounded-xl transition-all ${
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
                 activeView === item.id 
-                  ? 'bg-[#0ea5e9] text-white shadow-md shadow-sky-500/20' 
-                  : `text-slate-400 hover:bg-slate-100 ${darkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`
+                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20 font-bold' 
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`}
-              title={item.label}
             >
               <item.icon size={22} />
+              {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">{item.label}</span>}
             </button>
           ))}
+        </nav>
+
+        <div className="p-6">
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="w-full flex items-center justify-center p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition-colors"
+          >
+            {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
+      </motion.aside>
+
+      <main className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'md:ml-[280px]' : 'md:ml-[80px]'}`}>
+        {/* Header - Desktop */}
+        <header className={`h-16 hidden md:flex border-b items-center justify-between px-6 shrink-0 sticky top-0 z-50 transition-colors ${darkMode ? 'bg-slate-900/80 backdrop-blur-md border-slate-800' : 'bg-white/80 backdrop-blur-md border-slate-200'}`}>
+          <div className="flex items-center gap-4">
+            <h2 className="text-sm font-black uppercase tracking-widest text-slate-400">
+              {navItems.find(i => i.id === activeView)?.label || 'Panel'}
+            </h2>
+          </div>
+          
+          <div className="flex items-center gap-6">
+            <button 
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-500'}`}
+            >
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+            <div className="flex items-center gap-4">
+              <span className="text-[11px] text-slate-500 font-black uppercase tracking-wider">Planta Iztapalapa</span>
+              <div className="bg-emerald-500 w-2 h-2 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" title="Sistema Online" />
+            </div>
+          </div>
+        </header>
 
         {/* Content Area */}
-        <div className="flex-1 p-4 md:p-6 flex flex-col md:flex-row gap-6 overflow-hidden min-w-0">
+        <div className="flex-1 p-4 md:p-8 flex flex-col lg:flex-row gap-6 overflow-hidden min-w-0 md:h-[calc(100vh-64px)]">
           <div className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar md:pr-2">
             <AnimatePresence mode="wait">
               <motion.div

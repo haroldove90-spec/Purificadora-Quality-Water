@@ -1,6 +1,6 @@
 {
-  "name": "AquaControl Pro",
-  "description": "Sistema de gestión inteligente para distribución de agua purificada, incluyendo dashboard operativo, control de envases y automatización de pedidos vía WhatsApp.",
+  "name": "Purificadora Quality Water",
+  "description": "Sistema integral de gestión para la purificadora Quality Water, facilitando la operación, finanzas, reparto y pedidos automatizados.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

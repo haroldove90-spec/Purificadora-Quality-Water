@@ -1,0 +1,107 @@
+import React from 'react';
+import { motion } from 'motion/react';
+import { 
+  ShieldCheck, 
+  Waves, 
+  Truck, 
+  MessageCircle, 
+  ArrowRight,
+  Droplets
+} from 'lucide-react';
+
+interface LobbyProps {
+  onSelectRole: (role: 'admin' | 'operator' | 'driver' | 'client') => void;
+}
+
+export default function Lobby({ onSelectRole }: LobbyProps) {
+  const roles = [
+    {
+      id: 'admin',
+      title: 'Administrador',
+      desc: 'Gestión de finanzas, cierre de caja y métricas de desempeño.',
+      icon: ShieldCheck,
+      color: 'bg-indigo-500',
+      shadow: 'shadow-indigo-500/20'
+    },
+    {
+      id: 'operator',
+      title: 'Operador de Planta',
+      desc: 'Control de llenado, stock de insumos y mantenimiento técnico.',
+      icon: Waves,
+      color: 'bg-sky-500',
+      shadow: 'shadow-sky-500/20'
+    },
+    {
+      id: 'driver',
+      title: 'Repartidor',
+      desc: 'Gestión de ruta, entregas a domicilio y cobro en campo.',
+      icon: Truck,
+      color: 'bg-emerald-500',
+      shadow: 'shadow-emerald-500/20'
+    },
+    {
+      id: 'client',
+      title: 'Cliente (WhatsApp)',
+      desc: 'Realiza pedidos rápidos y consulta tu estatus vía chat.',
+      icon: MessageCircle,
+      color: 'bg-emerald-600',
+      shadow: 'shadow-emerald-600/20'
+    }
+  ];
+
+  return (
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 bg-gradient-to-br from-white via-sky-50 to-white">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center mb-12"
+      >
+        <div className="flex justify-center mb-6">
+          <img 
+            src="https://cossma.com.mx/purificadora.jpg" 
+            alt="Quality Water Logo" 
+            className="h-32 w-32 object-contain rounded-2xl shadow-xl ring-4 ring-white"
+          />
+        </div>
+        <h1 className="text-4xl font-black text-slate-800 tracking-tight leading-none mb-4">
+          Purificadora <span className="text-sky-500">Quality Water</span>
+        </h1>
+        <p className="text-slate-500 font-bold italic">Selecciona tu perfil de acceso para continuar</p>
+      </motion.div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl">
+        {roles.map((role, idx) => (
+          <motion.div
+            key={role.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.1 }}
+            onClick={() => onSelectRole(role.id as any)}
+            className="group cursor-pointer"
+          >
+            <div className="h-full bg-white border border-slate-100 p-8 rounded-[40px] shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 relative overflow-hidden">
+              <div className={`w-16 h-16 ${role.color} rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg ${role.shadow} group-hover:scale-110 transition-transform`}>
+                <role.icon size={32} />
+              </div>
+              
+              <h3 className="text-xl font-black text-slate-800 mb-3">{role.title}</h3>
+              <p className="text-sm text-slate-400 font-medium leading-relaxed mb-8">{role.desc}</p>
+              
+              <div className="flex items-center gap-2 text-sky-500 font-black text-xs uppercase tracking-widest group-hover:gap-4 transition-all">
+                {role.id === 'client' ? 'Hacer pedido por WhatsApp' : 'Ingresar al sistema'} 
+                <ArrowRight size={16} />
+              </div>
+
+              {/* Decorative background shape */}
+              <div className={`absolute -bottom-8 -right-8 w-24 h-24 ${role.color} opacity-[0.03] rounded-full group-hover:scale-[3] transition-transform duration-700`} />
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      <footer className="mt-16 text-slate-300 text-[10px] font-black uppercase tracking-[0.2em]">
+        &copy; 2026 Quality Water System &bull; Mission Control Center
+      </footer>
+    </div>
+  );
+}
