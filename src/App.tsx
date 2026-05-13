@@ -11,12 +11,16 @@ import {
   LogOut,
   Droplets,
   DollarSign,
+  TrendingUp,
   Moon,
   Sun,
   Truck,
   User,
   CreditCard,
-  MapPin
+  Users,
+  ShoppingBag,
+  History,
+  Store,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
@@ -27,10 +31,11 @@ import Profile from './components/Profile';
 
 import Lobby from './components/Lobby';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<View>('lobby');
+  const [activeView, setActiveView] = useState<View>('metrics');
+  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | null>('admin');
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [notification, setNotification] = useState<string | null>(null);
@@ -42,8 +47,9 @@ export default function App() {
       return;
     }
     
+    setUserRole(role);
     switch(role) {
-      case 'admin': setActiveView('finances'); break;
+      case 'admin': setActiveView('metrics'); break;
       case 'operator': setActiveView('dashboard'); break;
       case 'driver': setActiveView('route'); break;
     }
@@ -51,30 +57,29 @@ export default function App() {
 
   // Simulated Notifications
   useEffect(() => {
-    const notifications = [
-      'Nuevo pedido vía WhatsApp: 2 Garrafones en Polanco',
-      'Ruta 1 reporta retraso en tráfico (Av. Reforma)',
-      'Nuevo pedido vía WhatsApp: 5 Garrafones en Santa Fe',
-      'Mantenimiento: Filtro de carbón al 15%',
-      'Nuevo pedido vía WhatsApp: 1 Garrafón en Condesa'
-    ];
-
-    const interval = setInterval(() => {
-      const msg = notifications[Math.floor(Math.random() * notifications.length)];
-      setNotification(msg);
-      setTimeout(() => setNotification(null), 4000);
-    }, 10000);
-
-    return () => clearInterval(interval);
+    // Notifications disabled per user request
   }, []);
 
-  const navItems = [
-    { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
-    { id: 'route', label: 'Ruta', icon: Truck },
-    { id: 'finances', label: 'Finanzas', icon: DollarSign },
-    { id: 'inventory', label: 'Envases', icon: Package },
-    { id: 'profile', label: 'Ajustes', icon: User },
-  ];
+  const getNavItems = () => {
+    if (userRole === 'admin') {
+      return [
+        { id: 'metrics', label: 'Métricas', icon: TrendingUp },
+        { id: 'sales', label: 'Ventas Globales', icon: History },
+        { id: 'customers', label: 'Clientes', icon: Users },
+        { id: 'driver_sales', label: 'Choferes', icon: Truck },
+        { id: 'plant_cut', label: 'Caja Planta', icon: Store },
+      ];
+    }
+
+    return [
+      { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
+      { id: 'route', label: 'Ruta', icon: Truck },
+      { id: 'inventory', label: 'Envases', icon: Package },
+      { id: 'profile', label: 'Ajustes', icon: User },
+    ];
+  };
+
+  const navItems = getNavItems();
 
   if (activeView === 'lobby') {
     return <Lobby onSelectRole={handleRoleSelection} />;
@@ -83,27 +88,7 @@ export default function App() {
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'text-slate-800 bg-[#f1f5f9]'}`}>
       
-      {/* Toast Notification */}
-      <AnimatePresence>
-        {notification && (
-          <motion.div
-            initial={{ y: -100, opacity: 0 }}
-            animate={{ y: 20, opacity: 1 }}
-            exit={{ y: -100, opacity: 0 }}
-            className="fixed top-0 left-0 right-0 z-[100] flex justify-center px-4 pointer-events-none"
-          >
-            <div className="bg-sky-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 max-w-md pointer-events-auto border-2 border-sky-400">
-              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
-                <MessageSquare size={20} />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Nuevo Mensaje</p>
-                <p className="text-sm font-bold">{notification}</p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Toast Notification Container Removed */}
 
       {/* Sidebar - Desktop Only */}
       <motion.aside
@@ -112,8 +97,7 @@ export default function App() {
         className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-50 border-r transition-colors ${darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-900 text-white border-slate-800'}`}
       >
         <div 
-          className="p-6 flex items-center gap-3 cursor-pointer group"
-          onClick={() => setActiveView('lobby')}
+          className="p-6 flex items-center gap-3 group"
         >
           <img 
             src="https://cossma.com.mx/purificadora.jpg" 
@@ -142,11 +126,11 @@ export default function App() {
           ))}
           
           <button
-            onClick={() => setActiveView('lobby')}
-            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-rose-500/10 hover:text-rose-500 mt-8"
+            onClick={() => {}}
+            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-600 cursor-not-allowed mt-8"
           >
             <LogOut size={22} />
-            {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">Cerrar Sesión</span>}
+            {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">Sesión Admin</span>}
           </button>
         </nav>
 
@@ -198,41 +182,41 @@ export default function App() {
                 {activeView === 'dashboard' ? <Dashboard /> : 
                  activeView === 'inventory' ? <Inventory /> :
                  activeView === 'finances' ? <Finances /> :
+                 activeView === 'metrics' ? <Finances initialTab="metrics" /> :
+                 activeView === 'sales' ? <Finances initialTab="sales" /> :
+                 activeView === 'customers' ? <Finances initialTab="customers" /> :
+                 activeView === 'driver_sales' ? <Finances initialTab="driver_sales" /> :
+                 activeView === 'plant_cut' ? <Finances initialTab="plant_cut" /> :
                  activeView === 'route' ? <DeliveryRoute /> :
                  <Profile />}
               </motion.div>
             </AnimatePresence>
           </div>
-
-          {/* Desktop WhatsApp Simulator Panel */}
-          <div className={`hidden lg:flex w-[320px] flex-shrink-0 flex-col h-full border rounded-xl overflow-hidden shadow-sm transition-colors ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            <WhatsAppChat />
-          </div>
         </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className={`md:hidden fixed bottom-1 left-4 right-4 h-20 border-t flex items-center justify-around px-2 z-[60] pb-safe transition-colors shadow-2xl rounded-3xl ${darkMode ? 'bg-slate-900/90 backdrop-blur-xl border-slate-800' : 'bg-white/90 backdrop-blur-xl border-slate-200'}`}>
+      <nav className={`md:hidden fixed bottom-1 left-4 right-4 h-20 border-t flex items-center justify-start gap-2 px-4 z-[60] pb-safe transition-colors shadow-2xl rounded-3xl overflow-x-auto no-scrollbar ${darkMode ? 'bg-slate-900/90 backdrop-blur-xl border-slate-800' : 'bg-white/90 backdrop-blur-xl border-slate-200'}`}>
         {navItems.map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveView(item.id as View)}
-            className={`flex flex-col items-center justify-center gap-1 min-w-[56px] min-h-[44px] rounded-xl transition-all ${
+            className={`flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl transition-all shrink-0 ${
               activeView === item.id 
                 ? 'text-sky-500 font-bold' 
                 : 'text-slate-400'
             }`}
           >
             <item.icon size={activeView === item.id ? 22 : 20} strokeWidth={activeView === item.id ? 2.5 : 2} />
-            <span className="text-[9px] font-bold uppercase tracking-widest">{item.label}</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest leading-none text-center h-4 flex items-center">{item.label}</span>
           </button>
         ))}
         <button
-          onClick={() => setActiveView('lobby')}
-          className="flex flex-col items-center justify-center gap-1 min-w-[56px] min-h-[44px] rounded-xl text-rose-500"
+          onClick={() => {}}
+          className="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl text-slate-400 shrink-0"
         >
           <LogOut size={20} strokeWidth={2.5} />
-          <span className="text-[9px] font-bold uppercase tracking-widest">Salir</span>
+          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Admin</span>
         </button>
       </nav>
 

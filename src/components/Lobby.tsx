@@ -18,34 +18,38 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
     {
       id: 'admin',
       title: 'Administrador',
-      desc: 'Gestión de finanzas, cierre de caja y métricas de desempeño.',
+      desc: 'Gestión de finanzas, registro de ventas y métricas globales.',
       icon: ShieldCheck,
       color: 'bg-indigo-500',
-      shadow: 'shadow-indigo-500/20'
+      shadow: 'shadow-indigo-500/20',
+      disabled: false
     },
     {
       id: 'operator',
       title: 'Operador de Planta',
-      desc: 'Control de llenado, stock de insumos y mantenimiento técnico.',
+      desc: 'Módulo temporalmente desactivado.',
       icon: Waves,
-      color: 'bg-sky-500',
-      shadow: 'shadow-sky-500/20'
+      color: 'bg-slate-300',
+      shadow: 'shadow-slate-300/20',
+      disabled: true
     },
     {
       id: 'driver',
       title: 'Repartidor',
-      desc: 'Gestión de ruta, entregas a domicilio y cobro en campo.',
+      desc: 'Módulo temporalmente desactivado.',
       icon: Truck,
-      color: 'bg-emerald-500',
-      shadow: 'shadow-emerald-500/20'
+      color: 'bg-slate-300',
+      shadow: 'shadow-slate-300/20',
+      disabled: true
     },
     {
       id: 'client',
-      title: 'Cliente (WhatsApp)',
-      desc: 'Realiza pedidos rápidos y consulta tu estatus vía chat.',
+      title: 'Cliente',
+      desc: 'Módulo temporalmente desactivado.',
       icon: MessageCircle,
-      color: 'bg-emerald-600',
-      shadow: 'shadow-emerald-600/20'
+      color: 'bg-slate-300',
+      shadow: 'shadow-slate-300/20',
+      disabled: true
     }
   ];
 
@@ -76,24 +80,24 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
-            onClick={() => onSelectRole(role.id as any)}
-            className="group cursor-pointer"
+            onClick={() => !role.disabled && onSelectRole(role.id as any)}
+            className={`group ${role.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           >
-            <div className="h-full bg-white border border-slate-100 p-8 rounded-[40px] shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 relative overflow-hidden">
-              <div className={`w-16 h-16 ${role.color} rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg ${role.shadow} group-hover:scale-110 transition-transform`}>
+            <div className={`h-full bg-white border border-slate-100 p-8 rounded-[40px] shadow-sm transition-all duration-300 relative overflow-hidden ${!role.disabled ? 'hover:shadow-2xl hover:-translate-y-2' : ''}`}>
+              <div className={`w-16 h-16 ${role.color} rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg ${role.shadow} ${!role.disabled ? 'group-hover:scale-110' : ''} transition-transform`}>
                 <role.icon size={32} />
               </div>
               
               <h3 className="text-xl font-black text-slate-800 mb-3">{role.title}</h3>
               <p className="text-sm text-slate-400 font-medium leading-relaxed mb-8">{role.desc}</p>
               
-              <div className="flex items-center gap-2 text-sky-500 font-black text-xs uppercase tracking-widest group-hover:gap-4 transition-all">
-                {role.id === 'client' ? 'Hacer pedido por WhatsApp' : 'Ingresar al sistema'} 
-                <ArrowRight size={16} />
+              <div className={`flex items-center gap-2 font-black text-xs uppercase tracking-widest transition-all ${role.disabled ? 'text-slate-300' : 'text-sky-500 group-hover:gap-4'}`}>
+                {role.disabled ? 'Módulo Desactivado' : (role.id === 'client' ? 'Hacer pedido' : 'Ingresar al sistema')} 
+                {!role.disabled && <ArrowRight size={16} />}
               </div>
 
               {/* Decorative background shape */}
-              <div className={`absolute -bottom-8 -right-8 w-24 h-24 ${role.color} opacity-[0.03] rounded-full group-hover:scale-[3] transition-transform duration-700`} />
+              <div className={`absolute -bottom-8 -right-8 w-24 h-24 ${role.color} opacity-[0.03] rounded-full ${!role.disabled ? 'group-hover:scale-[3]' : ''} transition-transform duration-700`} />
             </div>
           </motion.div>
         ))}
