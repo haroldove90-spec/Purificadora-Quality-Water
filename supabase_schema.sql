@@ -45,6 +45,7 @@ CREATE TABLE public.orders (
   items TEXT NOT NULL,
   total_price DECIMAL(10, 2) DEFAULT 0,
   status TEXT DEFAULT 'pending', -- 'pending', 'assigned', 'delivered', 'cancelled'
+  source TEXT DEFAULT 'whatsapp', -- 'local', 'phone', 'whatsapp'
   assigned_to UUID, -- ID del repartidor
   assigned_to_name TEXT, -- Nombre del repartidor
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()

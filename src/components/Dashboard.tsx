@@ -16,7 +16,12 @@ import {
   Loader2,
   UserPlus,
   Send,
-  X
+  X,
+  Plus,
+  Phone,
+  Store,
+  Save,
+  MessageSquare
 } from 'lucide-react';
 import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
@@ -42,11 +47,22 @@ interface Order {
 export default function Dashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [drivers, setDrivers] = useState<Employee[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+
+  const [newOrder, setNewOrder] = useState({
+    customer_name: '',
+    address: '',
+    items: '',
+    total_price: '',
+    source: 'local' as 'local' | 'phone' | 'whatsapp'
+  });
 
   const fetchOrders = async () => {
     const { data } = await supabase
@@ -65,9 +81,18 @@ export default function Dashboard() {
     if (data) setDrivers(data);
   };
 
+  const fetchProducts = async () => {
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .order('name');
+    if (data) setProducts(data);
+  };
+
   useEffect(() => {
     fetchOrders();
     fetchDrivers();
+    fetchProducts();
     setLoading(false);
 
     const channel = supabase
@@ -126,22 +151,41 @@ export default function Dashboard() {
     order.address.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const simulateWhatsAppOrder = async () => {
-    const { error } = await supabase.from('orders').insert([{
-      customer_name: 'Simulado WA',
-      address: 'Calle Falsa 123, Iztapalapa',
-      items: '2x Garrafón 20L',
-      total_price: 110.00,
-      status: 'pending'
-    }]);
+  const handleRegisterOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingOrder(true);
+    
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .insert([{
+          customer_name: newOrder.customer_name,
+          address: newOrder.source === 'local' ? 'Venta en Planta' : newOrder.address,
+          items: newOrder.items,
+          total_price: parseFloat(newOrder.total_price) || 0,
+          source: newOrder.source,
+          status: newOrder.source === 'local' ? 'delivered' : 'pending'
+        }]);
 
-    if (!error) {
-       await supabase.from('notifications_log').insert([{
-        title: 'Nuevo Pedido WhatsApp',
-        message: 'Has recibido un nuevo pedido desde WhatsApp (+52 ...)',
-        type: 'whatsapp_order',
-        user_role: 'operator'
-      }]);
+      if (error) throw error;
+
+      // Notificación si es WhatsApp o Teléfono
+      if (newOrder.source !== 'local') {
+        await supabase.from('notifications_log').insert([{
+          title: `Nuevo Pedido ${newOrder.source === 'whatsapp' ? 'WA' : 'Tel'}`,
+          message: `Nuevo pedido de ${newOrder.customer_name} por ${newOrder.source}`,
+          type: 'new_order',
+          user_role: 'operator'
+        }]);
+      }
+
+      setShowRegisterModal(false);
+      setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local' });
+      fetchOrders();
+    } catch (e: any) {
+      alert('Error: ' + e.message);
+    } finally {
+      setIsSavingOrder(false);
     }
   };
 
@@ -156,10 +200,10 @@ export default function Dashboard() {
         
         <div className="flex items-center gap-3">
           <button 
-            onClick={simulateWhatsAppOrder}
-            className="flex items-center gap-2 bg-emerald-500 text-white px-5 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-emerald-600 transition-all active:scale-95 shrink-0"
+            onClick={() => setShowRegisterModal(true)}
+            className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 shrink-0"
           >
-            <Send size={18} /> Simular WA
+            <Plus size={18} /> Registrar Venta/Ped.
           </button>
           <div className="relative w-full md:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -252,7 +296,7 @@ export default function Dashboard() {
                       'bg-slate-100 text-slate-500 animate-pulse'
                     }`}>
                       <div className={`w-1.5 h-1.5 rounded-full ${order.status === 'delivered' ? 'bg-emerald-500' : 'bg-sky-500'}`} />
-                      {order.status === 'assigned' ? 'En Ruta' : order.status === 'delivered' ? 'Entregado' : 'Pendiente'}
+                      {order.status === 'assigned' ? 'En Ruta' : order.status === 'delivered' ? (order.source === 'local' ? 'Venta Local' : 'Entregado') : 'Pendiente'}
                     </span>
                   </td>
                   <td className="px-8 py-6 text-right">
@@ -345,6 +389,150 @@ export default function Dashboard() {
                   Cancelar Operación
                 </button>
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Registration Modal */}
+      <AnimatePresence>
+        {showRegisterModal && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowRegisterModal(false)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl bg-white rounded-[40px] shadow-2xl z-[101] overflow-hidden"
+            >
+              <div className="p-8 pb-4 flex justify-between items-center">
+                <h2 className="text-2xl font-black text-slate-800 uppercase italic">Registrar <span className="text-sky-500">Venta/Pedido</span></h2>
+                <button onClick={() => setShowRegisterModal(false)} className="p-2 text-slate-400 hover:text-slate-800">
+                  <X />
+                </button>
+              </div>
+
+              <form onSubmit={handleRegisterOrder} className="p-8 pt-4 grid grid-cols-2 gap-6">
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Fuente del Registro</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'local', label: 'Local', icon: Store, color: 'bg-emerald-500' },
+                      { id: 'phone', label: 'Teléfono', icon: Phone, color: 'bg-sky-500' },
+                      { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'bg-green-500' }
+                    ].map(btn => (
+                      <button
+                        key={btn.id}
+                        type="button"
+                        onClick={() => setNewOrder({...newOrder, source: btn.id as any})}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
+                          newOrder.source === btn.id 
+                            ? `border-transparent text-white ${btn.color}` 
+                            : 'border-slate-50 text-slate-400 bg-slate-50 hover:bg-slate-100'
+                        }`}
+                      >
+                        <btn.icon size={20} />
+                        <span className="text-[9px] font-black uppercase tracking-widest">{btn.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={newOrder.source === 'local' ? 'col-span-2' : 'col-span-1'}>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Nombre del Cliente</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newOrder.customer_name}
+                    onChange={(e) => setNewOrder({...newOrder, customer_name: e.target.value})}
+                    placeholder="Ej. Juan Pérez"
+                    className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                  />
+                </div>
+
+                {newOrder.source !== 'local' && (
+                  <div className="col-span-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Dirección de Entrega</label>
+                    <input 
+                      required
+                      type="text"
+                      value={newOrder.address}
+                      onChange={(e) => setNewOrder({...newOrder, address: e.target.value})}
+                      placeholder="Calle, Colonia, CP"
+                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                    />
+                  </div>
+                )}
+
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Detalle de Productos</label>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {products.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          const currentItems = newOrder.items ? newOrder.items + ', ' : '';
+                          const currentTotal = (parseFloat(newOrder.total_price) || 0) + p.price;
+                          setNewOrder({
+                            ...newOrder, 
+                            items: currentItems + '1x ' + p.name,
+                            total_price: currentTotal.toFixed(2)
+                          });
+                        }}
+                        className="bg-slate-100 hover:bg-sky-50 text-slate-600 hover:text-sky-600 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                      >
+                        + {p.name} (${p.price})
+                      </button>
+                    ))}
+                  </div>
+                  <textarea 
+                    required
+                    value={newOrder.items}
+                    onChange={(e) => setNewOrder({...newOrder, items: e.target.value})}
+                    placeholder="Ej. 1x Garrafón 20L"
+                    className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none h-20 resize-none"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Total ($)</label>
+                  <div className="relative">
+                    <DollarSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" />
+                    <input 
+                      required
+                      type="number"
+                      step="0.01"
+                      value={newOrder.total_price}
+                      onChange={(e) => setNewOrder({...newOrder, total_price: e.target.value})}
+                      placeholder="0.00"
+                      className="w-full p-4 pl-10 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none text-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="col-span-2 pt-4 flex gap-4">
+                  <button 
+                    type="button"
+                    onClick={() => setShowRegisterModal(false)}
+                    className="flex-1 p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest text-slate-400 hover:bg-slate-50"
+                  >
+                    Cerrar
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isSavingOrder}
+                    className="flex-[2] bg-sky-500 text-white p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-200 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    {isSavingOrder ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                    Finalizar Registro
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </>
         )}
