@@ -1,6 +1,6 @@
 
 -- ==========================================
--- SCRIPT TOTAL DE BASE DE DATOS QUALITYWATER
+-- SCRIPT FINAL DE BASE DE DATOS QUALITYWATER
 -- ==========================================
 -- Instrucciones: Copia y pega TODO este script en el SQL EDITOR de Supabase
 -- y presiona "RUN". Esto reseteará las tablas y aplicará los permisos correctos.
@@ -43,14 +43,14 @@ CREATE TABLE public.orders (
   address TEXT NOT NULL,
   items TEXT NOT NULL,
   total_price DECIMAL(10, 2) DEFAULT 0,
-  status TEXT DEFAULT 'pending', -- 'pending', 'shipped', 'delivered', 'cancelled'
+  status TEXT DEFAULT 'pending', 
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
 -- Asistencia (Historial Completo)
 CREATE TABLE public.daily_attendance (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID, -- Puede ser NULL si es manual
+  user_id UUID, 
   user_name TEXT NOT NULL,
   user_role TEXT,
   work_date DATE DEFAULT CURRENT_DATE,
@@ -60,7 +60,7 @@ CREATE TABLE public.daily_attendance (
   check_out TIMESTAMP WITH TIME ZONE,
   last_location JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  UNIQUE(user_name, work_date) -- Evita duplicados de registro por dia/persona
+  UNIQUE(user_name, work_date) 
 );
 
 -- Calidad
@@ -74,7 +74,7 @@ CREATE TABLE public.quality_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Notificaciones / Log de Sistema
+-- Registro de Sistema
 CREATE TABLE public.notifications_log (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -84,7 +84,8 @@ CREATE TABLE public.notifications_log (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- 3. SEGURIDAD (DESHABILITAR RLS PARA PRODUCCIÓN RÁPIDA / DESARROLLO)
+-- 3. PERMISOS TOTALES (Bypass RLS y Grant All)
+-- Deshabilitamos RLS en todas las tablas
 ALTER TABLE public.employees DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
@@ -92,52 +93,28 @@ ALTER TABLE public.daily_attendance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quality_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications_log DISABLE ROW LEVEL SECURITY;
 
--- 4. PERMISOS DE ACCESO (MIND BLOWING PERMISSIONS)
+-- Otorgamos todos los permisos a todos los roles posibles
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 
--- 5. CONFIGURACIÓN DE TIEMPO REAL (REALTIME)
+-- 4. REALTIME (Configuración Robusta)
 DO $$
 BEGIN
-    -- Asegurar que existe la publicación de Realtime
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
         CREATE PUBLICATION supabase_realtime;
     END IF;
-
-    -- Añadir tablas a la publicación (Manejo de errores si ya existen)
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.employees;
-    EXCEPTION WHEN OTHERS THEN NULL;
-    END;
-
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.customers;
-    EXCEPTION WHEN OTHERS THEN NULL;
-    END;
-
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
-    EXCEPTION WHEN OTHERS THEN NULL;
-    END;
-
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.daily_attendance;
-    EXCEPTION WHEN OTHERS THEN NULL;
-    END;
-
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.quality_logs;
-    EXCEPTION WHEN OTHERS THEN NULL;
-    END;
-
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications_log;
-    EXCEPTION WHEN OTHERS THEN NULL;
-    END;
 END $$;
 
--- 6. REFRESCAR CACHE DE LA API (CRUCIAL PARA EL ERROR DE SCHEMA CACHÉ)
+ALTER PUBLICATION supabase_realtime ADD TABLE public.employees;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.customers;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.daily_attendance;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.quality_logs;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications_log;
+
+-- 5. REFRESCAR SISTEMA
 NOTIFY pgrst, 'reload schema';

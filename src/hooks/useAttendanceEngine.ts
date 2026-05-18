@@ -34,7 +34,7 @@ export function useAttendanceEngine() {
             [action]: timestamp,
             last_location: location || null
           },
-          { onConflict: 'user_id, work_date' }
+          { onConflict: 'user_name, work_date' }
         )
         .select()
         .single();
