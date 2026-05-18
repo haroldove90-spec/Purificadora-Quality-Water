@@ -2,19 +2,26 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Clock, MapPin, Camera, CheckCircle2, AlertCircle, Loader2, ArrowRight, LogOut } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
+import { useAttendanceLogic } from '../hooks/useAttendanceLogic';
 
 export default function Attendance() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [type, setType] = useState<'clock_in' | 'clock_out' | null>(null);
-  const [lastEntry, setLastEntry] = useState<{ type: string, time: string } | null>(null);
+  const [lastAction, setLastAction] = useState<string | null>(null);
+  
+  const { handleClockIn, handleClockOut } = useAttendanceLogic();
 
-  const handleAction = async (actionType: 'clock_in' | 'clock_out') => {
+  // Mock de datos de sesión (en producción vendrían de un AuthContext)
+  const userData = {
+    user_id: '00000000-0000-0000-0000-000000000000',
+    user_name: 'Luis Repartidor',
+    user_role: 'repartidor'
+  };
+
+  const handleAction = async (type: 'in' | 'out') => {
     setStatus('loading');
-    setType(actionType);
-
+    
     try {
-      // 1. Get location if permission granted
+      // Obtener ubicación
       let location = null;
       try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -22,26 +29,19 @@ export default function Attendance() {
         });
         location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       } catch (e) {
-        console.warn('Location blocked');
+        console.warn('Geolocation blocked');
       }
 
-      // 2. Register in Supabase
-      // Assuming a valid user session exists, or using a fallback user_id for demo
-      const { error } = await supabase
-        .from('staff_attendance')
-        .insert({
-          user_id: (await supabase.auth.getUser()).data.user?.id || '00000000-0000-0000-0000-000000000000',
-          type: actionType,
-          location: location ? `(${location.lat},${location.lng})` : null,
-          timestamp: new Date().toISOString()
-        });
+      const action = type === 'in' ? handleClockIn : handleClockOut;
+      const result = await action({ ...userData, location });
 
-      if (error) throw error;
-
-      // 3. Update state
-      setLastEntry({ type: actionType, time: new Date().toLocaleTimeString() });
-      setStatus('success');
-      setTimeout(() => setStatus('idle'), 3000);
+      if (result.success) {
+        setStatus('success');
+        setLastAction(`${type === 'in' ? 'Entrada' : 'Salida'} - ${new Date().toLocaleTimeString()}`);
+        setTimeout(() => setStatus('idle'), 3000);
+      } else {
+        throw new Error('Action failed');
+      }
     } catch (e) {
       console.error(e);
       setStatus('error');
@@ -53,7 +53,7 @@ export default function Attendance() {
     <div className="p-8 max-w-4xl mx-auto">
       <div className="mb-12">
         <h2 className="text-3xl font-black text-slate-800 italic uppercase">Control de <span className="text-sky-500">Asistencia</span></h2>
-        <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest">Planta Iztapalapa • Registro Biométrico y Geo-Localizado</p>
+        <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest">Sincronizado en tiempo real con Administrador</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -65,14 +65,14 @@ export default function Attendance() {
                 <Clock size={28} />
               </div>
               <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-tighter">Estado Actual</p>
-                <p className="text-lg font-black text-slate-800 italic uppercase">Turno Matutino</p>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-tighter">Sesión de: {userData.user_name}</p>
+                <p className="text-lg font-black text-slate-800 italic uppercase">Turno Activo</p>
               </div>
             </div>
 
             <div className="space-y-6">
               <button 
-                onClick={() => handleAction('clock_in')}
+                onClick={() => handleAction('in')}
                 disabled={status === 'loading'}
                 className="w-full flex items-center justify-between p-6 bg-emerald-500 hover:bg-emerald-600 text-white rounded-3xl font-black uppercase tracking-widest text-sm shadow-xl shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50"
               >
@@ -86,7 +86,7 @@ export default function Attendance() {
               </button>
 
               <button 
-                onClick={() => handleAction('clock_out')}
+                onClick={() => handleAction('out')}
                 disabled={status === 'loading'}
                 className="w-full flex items-center justify-between p-6 bg-slate-900 hover:bg-slate-800 text-white rounded-3xl font-black uppercase tracking-widest text-sm shadow-xl shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-50"
               >
@@ -114,69 +114,50 @@ export default function Attendance() {
                   <>
                     <Loader2 size={64} className="text-sky-500 animate-spin mb-6" />
                     <p className="text-xl font-black text-slate-800 uppercase italic">Procesando <span className="text-sky-500">Registro...</span></p>
-                    <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Validando posición GPS</p>
                   </>
                 ) : status === 'success' ? (
                   <>
                     <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-6">
                       <CheckCircle2 size={48} />
                     </div>
-                    <p className="text-2xl font-black text-slate-800 uppercase italic">¡Registro <span className="text-emerald-500">Exitoso!</span></p>
-                    <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest">{type === 'clock_in' ? 'Entrada' : 'Salida'} marcada a las {new Date().toLocaleTimeString()}</p>
+                    <p className="text-2xl font-black text-slate-800 uppercase italic">¡Notificado al <span className="text-emerald-500">Admin!</span></p>
                   </>
                 ) : (
                   <>
                     <div className="w-20 h-20 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mb-6">
                       <AlertCircle size={48} />
                     </div>
-                    <p className="text-2xl font-black text-slate-800 uppercase italic">¡Error en <span className="text-rose-500">Conexión!</span></p>
-                    <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Verifica tu conexión a internet o GPS</p>
+                    <p className="text-2xl font-black text-slate-800 uppercase italic">Error en <span className="text-rose-500">Registro</span></p>
                   </>
                 )}
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Decorative background shape */}
           <div className="absolute -bottom-12 -right-12 w-64 h-64 bg-slate-100 rounded-full group-hover:scale-110 transition-transform duration-700 opacity-50" />
         </div>
 
         {/* Info & Logs */}
         <div className="space-y-6">
           <div className="bg-slate-50 p-8 rounded-[40px] border border-slate-100">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Último Movimiento</h4>
-            {lastEntry ? (
-              <div className="flex items-center gap-6">
-                <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center shadow-lg ${
-                  lastEntry.type === 'clock_in' ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'
-                }`}>
-                  {lastEntry.type === 'clock_in' ? <ArrowRight size={24} /> : <LogOut size={24} />}
-                </div>
-                <div>
-                  <p className="text-2xl font-black text-slate-800 italic uppercase">
-                    {lastEntry.type === 'clock_in' ? 'Entrada' : 'Salida'}
-                  </p>
-                  <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Hoy • {lastEntry.time}</p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm font-bold text-slate-300 uppercase italic">Sin registros en la sesión actual</p>
-            )}
-          </div>
-
-          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Seguridad Perimetral</h4>
-            <div className="flex gap-4">
-              <div className="w-12 h-12 bg-sky-50 text-sky-500 rounded-2xl flex items-center justify-center shrink-0">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Estado del Sensor</h4>
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-16 rounded-[24px] bg-sky-50 text-sky-500 flex items-center justify-center shadow-sm">
                 <MapPin size={24} />
               </div>
               <div>
-                <p className="text-xs font-black text-slate-800 uppercase tracking-tight">Geocerca Activa</p>
+                <p className="text-xs font-black text-slate-800 uppercase italic">GPS Activo</p>
                 <p className="text-[10px] text-slate-500 font-medium leading-relaxed mt-1">
-                  Solo puedes marcar asistencia dentro del radio de 100m de la Planta Iztapalapa.
+                  Tu ubicación se envía automáticamente para validación de zona.
                 </p>
               </div>
             </div>
+            {lastAction && (
+              <div className="mt-8 pt-8 border-t border-slate-200">
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest italic">Último marcado local:</p>
+                <p className="text-sm font-bold text-slate-700">{lastAction}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -33,30 +33,26 @@ import Profile from './components/Profile';
 import Attendance from './components/Attendance';
 import NotificationHub from './components/NotificationHub';
 import QualityLog from './components/QualityLog';
+import ClientStatus from './components/ClientStatus';
 
 import Lobby from './components/Lobby';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<View>('metrics');
-  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | null>('admin');
+  const [activeView, setActiveView] = useState<View>('lobby');
+  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [notification, setNotification] = useState<string | null>(null);
 
   const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
-    if (role === 'client') {
-      const msg = 'Hola Quality Water, quiero solicitar un servicio de llenado.';
-      window.open(`https://wa.me/525500000000?text=${encodeURIComponent(msg)}`, '_blank');
-      return;
-    }
-    
     setUserRole(role);
     switch(role) {
       case 'admin': setActiveView('metrics'); break;
       case 'operator': setActiveView('dashboard'); break;
       case 'driver': setActiveView('route'); break;
+      case 'client': setActiveView('client_status'); break;
     }
   };
 
@@ -78,12 +74,30 @@ export default function App() {
       ];
     }
 
-    return [
-      { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
-      { id: 'route', label: 'Ruta', icon: Truck },
-      { id: 'inventory', label: 'Envases', icon: Package },
-      { id: 'profile', label: 'Ajustes', icon: User },
-    ];
+    if (userRole === 'driver') {
+      return [
+        { id: 'route', label: 'Mi Ruta', icon: Truck },
+        { id: 'profile', label: 'Ajustes', icon: User },
+      ];
+    }
+
+    if (userRole === 'operator') {
+      return [
+        { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
+        { id: 'inventory', label: 'Inventario', icon: Package },
+        { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'quality', label: 'Calidad', icon: ShieldCheck },
+      ];
+    }
+
+    if (userRole === 'client') {
+      return [
+        { id: 'client_status', label: 'Mi Pedido', icon: MessageSquare },
+        { id: 'profile', label: 'Configuración', icon: User },
+      ];
+    }
+
+    return [];
   };
 
   const navItems = getNavItems();
@@ -133,11 +147,11 @@ export default function App() {
           ))}
           
           <button
-            onClick={() => {}}
-            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-600 cursor-not-allowed mt-8"
+            onClick={() => setActiveView('lobby')}
+            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 mt-8"
           >
             <LogOut size={22} />
-            {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">Sesión Admin</span>}
+            {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider text-slate-400">Cerrar Sesión</span>}
           </button>
         </nav>
 
@@ -161,6 +175,19 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-6">
+            <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
+              {(['admin', 'operator', 'driver', 'client'] as const).map(role => (
+                <button
+                  key={role}
+                  onClick={() => handleRoleSelection(role)}
+                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                    userRole === role ? 'bg-sky-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {role === 'operator' ? 'Planta' : role === 'driver' ? 'Chofer' : role === 'client' ? 'Cliente' : 'Admin'}
+                </button>
+              ))}
+            </div>
             <NotificationHub userRole={userRole} />
             <button 
               onClick={() => setDarkMode(!darkMode)}
@@ -198,6 +225,7 @@ export default function App() {
                  activeView === 'attendance' ? <Attendance /> :
                  activeView === 'quality' ? <QualityLog /> :
                  activeView === 'route' ? <DeliveryRoute /> :
+                 activeView === 'client_status' ? <ClientStatus /> :
                  <Profile />}
               </motion.div>
             </AnimatePresence>
@@ -222,11 +250,11 @@ export default function App() {
           </button>
         ))}
         <button
-          onClick={() => {}}
+          onClick={() => setActiveView('lobby')}
           className="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl text-slate-400 shrink-0"
         >
           <LogOut size={20} strokeWidth={2.5} />
-          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Admin</span>
+          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Cerrar</span>
         </button>
       </nav>
 

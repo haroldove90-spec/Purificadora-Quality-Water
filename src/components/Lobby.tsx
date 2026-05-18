@@ -26,30 +26,30 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
     },
     {
       id: 'operator',
-      title: 'Operador de Planta',
-      desc: 'Módulo temporalmente desactivado.',
+      title: 'Personal de Planta',
+      desc: 'Gestión de inventarios, producción y control de calidad.',
       icon: Waves,
-      color: 'bg-slate-300',
-      shadow: 'shadow-slate-300/20',
-      disabled: true
+      color: 'bg-sky-500',
+      shadow: 'shadow-sky-500/20',
+      disabled: false
     },
     {
       id: 'driver',
-      title: 'Repartidor',
-      desc: 'Módulo temporalmente desactivado.',
+      title: 'Repartidor / Chofer',
+      desc: 'Seguimiento de rutas, navegación y confirmación de entregas.',
       icon: Truck,
-      color: 'bg-slate-300',
-      shadow: 'shadow-slate-300/20',
-      disabled: true
+      color: 'bg-emerald-500',
+      shadow: 'shadow-emerald-500/20',
+      disabled: false
     },
     {
       id: 'client',
-      title: 'Cliente',
-      desc: 'Módulo temporalmente desactivado.',
+      title: 'Cliente / WhatsApp',
+      desc: 'Seguimiento de pedidos en tiempo real y asistencia directa.',
       icon: MessageCircle,
-      color: 'bg-slate-300',
-      shadow: 'shadow-slate-300/20',
-      disabled: true
+      color: 'bg-rose-500',
+      shadow: 'shadow-rose-500/20',
+      disabled: false
     }
   ];
 

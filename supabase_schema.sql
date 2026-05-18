@@ -51,43 +51,29 @@ CREATE TABLE public.orders (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
--- 6. Tabla de Asistencia (Attendance)
-CREATE TABLE public.staff_attendance (
+-- 6. Tabla de Asistencia (Attendance) - Refactorizada para seguimiento diario opcional o log de eventos
+-- Usaremos un log de eventos para máxima flexibilidad en Realtime
+CREATE TABLE public.attendance_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) NOT NULL,
-  type TEXT CHECK (type IN ('clock_in', 'clock_out')),
+  user_id UUID NOT NULL,
+  user_name TEXT,
+  user_role TEXT,
+  event_type TEXT NOT NULL, -- 'clock_in', 'clock_out', 'break_start', 'break_end'
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  photo_url TEXT,
-  location POINT
+  location JSONB, -- { lat, lng }
+  metadata JSONB
 );
 
--- 7. Tabla de Notificaciones (Log para historial)
-CREATE TABLE public.notifications (
+-- 7. Tabla de Notificaciones (Log unificado para historial)
+CREATE TABLE public.notifications_log (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id), -- NULL si es para todos
   title TEXT NOT NULL,
   message TEXT NOT NULL,
-  type TEXT DEFAULT 'system',
-  read BOOLEAN DEFAULT false,
+  type TEXT DEFAULT 'system', -- 'order', 'attendance', 'quality'
   payload JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- RLS (Row Level Security) - Ejemplos básicos
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Admins can do everything on orders"
-ON public.orders FOR ALL TO authenticated
-USING ( 
-  EXISTS (
-    SELECT 1 FROM public.profiles 
-    WHERE id = auth.uid() AND role = 'admin'
-  )
-);
-
-CREATE POLICY "Drivers can view their assigned orders"
-ON public.orders FOR SELECT TO authenticated
-USING ( driver_id = auth.uid() );
-
--- Habilitar Realtime para la tabla orders
-ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+-- Habilitar Realtime para estas tablas
+ALTER PUBLICATION supabase_realtime ADD TABLE attendance_logs;
+ALTER PUBLICATION supabase_realtime ADD TABLE notifications_log;
