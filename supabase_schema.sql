@@ -1,13 +1,14 @@
 -- ======================================================
 -- SCRIPT FINAL DE BASE DE DATOS QUALITYWATER (VERSIÓN SUPREMA)
 -- ======================================================
--- Instrucciones: 
--- 1. Copia TODO el contenido de este archivo (desde esta línea hasta el final).
--- 2. Ve al SQL Editor en Supabase.
+-- Instrucciones para corregir el error de RLS:
+-- 1. Copia TODO el contenido de este archivo.
+-- 2. Ve al SQL Editor en tu panel de Supabase.
 -- 3. Haz click en "+ New Query".
--- 4. Borra cualquier código que aparezca, pega este y presiona el botón "RUN".
+-- 4. PEGA este código y presiona el botón "RUN".
+-- ======================================================
 
--- 1. LIMPIEZA TOTAL (Reseteo profundo)
+-- 1. LIMPIEZA TOTAL
 DROP TABLE IF EXISTS public.employees CASCADE;
 DROP TABLE IF EXISTS public.customers CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
@@ -17,7 +18,6 @@ DROP TABLE IF EXISTS public.notifications_log CASCADE;
 
 -- 2. CREACIÓN DE TABLAS
 
--- Tabla de Empleados
 CREATE TABLE public.employees (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
@@ -27,7 +27,6 @@ CREATE TABLE public.employees (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Tabla de Clientes
 CREATE TABLE public.customers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
@@ -38,7 +37,6 @@ CREATE TABLE public.customers (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Tabla de Pedidos
 CREATE TABLE public.orders (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   customer_name TEXT NOT NULL,
@@ -49,7 +47,6 @@ CREATE TABLE public.orders (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Tabla de Asistencia (Manejo de tiempos y GPS)
 CREATE TABLE public.daily_attendance (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id TEXT, 
@@ -65,7 +62,6 @@ CREATE TABLE public.daily_attendance (
   UNIQUE(user_name, work_date) 
 );
 
--- Tabla de Calidad de Agua
 CREATE TABLE public.quality_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   supervisor_name TEXT NOT NULL,
@@ -76,7 +72,6 @@ CREATE TABLE public.quality_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Tabla de Log de Sistema
 CREATE TABLE public.notifications_log (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -86,8 +81,8 @@ CREATE TABLE public.notifications_log (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- 3. PERMISOS TOTALES (Bypass RLS)
--- Deshabilitamos RLS para evitar errores de permisos en desarrollo
+-- 3. DESACTIVAR RLS COMPLETAMENTE PARA DESARROLLO
+-- Esto es lo que soluciona el error "violates row-level security policy"
 ALTER TABLE public.employees DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
@@ -95,26 +90,18 @@ ALTER TABLE public.daily_attendance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quality_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications_log DISABLE ROW LEVEL SECURITY;
 
--- Otorgamos todos los permisos a todos los roles
+-- 4. OTORGAR PERMISOS MASIVOS
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON SCHEMA public TO anon;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-GRANT USAGE ON SCHEMA public TO anon;
-GRANT USAGE ON SCHEMA public TO authenticated;
 
--- 4. REALTIME (Configuración Simplificada)
--- Recreamos la publicación para que todo se sincronice al instante
+-- 5. REALTIME (Configuración Simplificada)
 DROP PUBLICATION IF EXISTS supabase_realtime;
-CREATE PUBLICATION supabase_realtime FOR TABLE 
-    public.employees, 
-    public.customers, 
-    public.orders, 
-    public.daily_attendance, 
-    public.quality_logs, 
-    public.notifications_log;
+CREATE PUBLICATION supabase_realtime FOR ALL TABLES;
 
--- 5. ACTUALIZAR CACHÉ
+-- 6. REFRESCAR SISTEMA
 NOTIFY pgrst, 'reload schema';

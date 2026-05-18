@@ -189,13 +189,16 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
         .from('customers')
         .insert([newCustomer]);
 
-      if (error) throw error;
+      if (error) {
+        console.error('RLS Error details:', error.message, error.details);
+        throw error;
+      }
       
       await fetchCustomers();
       setShowNewCustomerModal(false);
     } catch (error: any) {
-      console.error('Error saving customer:', error.message);
-      alert('Error al guardar cliente: ' + error.message);
+      console.error('Error saving customer:', error);
+      alert('Error al guardar cliente (RLS Check): ' + error.message);
     } finally {
       setIsSavingCustomer(false);
     }
@@ -218,7 +221,10 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
         .from('employees')
         .insert([newEmployee]);
 
-      if (error) throw error;
+      if (error) {
+        console.error('RLS Error details (employees):', error.message, error.details);
+        throw error;
+      }
       
       await fetchEmployees();
       setShowNewEmployeeModal(false);
@@ -232,8 +238,8 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
       });
 
     } catch (error: any) {
-      console.error('Error saving employee:', error.message);
-      alert('Error al guardar empleado: ' + error.message);
+      console.error('Error saving employee:', error);
+      alert('Error al guardar empleado (RLS Check): ' + error.message);
     } finally {
       setIsSavingEmployee(false);
     }
