@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '../lib/supabaseClient';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -89,10 +90,25 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [isFinalizingCut, setIsFinalizingCut] = useState(false);
+  const [customersList, setCustomersList] = useState<any[]>([]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setActiveTab(initialTab);
-  }, [initialTab]);
+    if (activeTab === 'customers') {
+      fetchCustomers();
+    }
+  }, [initialTab, activeTab]);
+
+  const fetchCustomers = async () => {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      setCustomersList(data);
+    }
+  };
 
   const handleExport = (type: string) => {
     setIsExporting(true);
@@ -102,13 +118,34 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
     }, 2000);
   };
 
-  const handleNewCustomerSubmit = (e: React.FormEvent) => {
+  const handleNewCustomerSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSavingCustomer(true);
-    setTimeout(() => {
-      setIsSavingCustomer(false);
+    
+    const formData = new FormData(e.currentTarget);
+    const newCustomer = {
+      name: formData.get('name') as string,
+      address: formData.get('address') as string,
+      phone: formData.get('phone') as string,
+      tier: (formData.get('tier') as string)?.toLowerCase() || 'frequent',
+      geolocation_url: formData.get('geolocation_url') as string,
+    };
+
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .insert([newCustomer]);
+
+      if (error) throw error;
+      
+      await fetchCustomers();
       setShowNewCustomerModal(false);
-    }, 1500);
+    } catch (error: any) {
+      console.error('Error saving customer:', error.message);
+      alert('Error al guardar cliente: ' + error.message);
+    } finally {
+      setIsSavingCustomer(false);
+    }
   };
 
   const handleFinalizeCut = () => {
@@ -312,7 +349,28 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {CLIENT_MANAGEMENT.map((client) => (
+                    {customersList.length > 0 ? customersList.map((client) => (
+                      <tr key={client.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <p className="font-black text-slate-800 text-sm">{client.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{client.address || 'Sin zona'}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
+                            client.tier?.toUpperCase() === 'VIP' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+                          }`}>
+                            {client.tier || 'Frecuente'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs font-black text-slate-800">0 Entregas</td>
+                        <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase italic">Hoy</td>
+                        <td className="px-6 py-4 text-right">
+                          <button className="p-2 text-slate-300 hover:text-sky-500 transition-colors">
+                            <MoreVertical size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    )) : CLIENT_MANAGEMENT.map((client) => (
                       <tr key={client.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <p className="font-black text-slate-800 text-sm">{client.name}</p>
@@ -506,23 +564,23 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
               <form onSubmit={handleNewCustomerSubmit} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo</label>
-                  <input required type="text" placeholder="Ej. Residencial Palmas" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                  <input name="name" required type="text" placeholder="Ej. Residencial Palmas" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Colonia / Zona</label>
-                  <input required type="text" placeholder="Ej. Santa Fe" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                  <input name="address" required type="text" placeholder="Ej. Santa Fe" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
-                    <input required type="tel" placeholder="55 1234 5678" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                    <input name="phone" required type="tel" placeholder="55 1234 5678" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nivel</label>
-                    <select className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
-                      <option>Frecuente</option>
-                      <option>VIP</option>
-                      <option>Empresa</option>
+                    <select name="tier" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
+                      <option value="frequent">Frecuente</option>
+                      <option value="vip">VIP</option>
+                      <option value="company">Empresa</option>
                     </select>
                   </div>
                 </div>
