@@ -24,7 +24,7 @@ export function useRealtimeNotifications(userRole: string | null) {
 
   const fetchNotificationLogs = async () => {
     const today = new Date().toISOString().split('T')[0];
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('notifications_log')
       .select('*')
       .gte('created_at', `${today}T00:00:00`)
@@ -32,16 +32,18 @@ export function useRealtimeNotifications(userRole: string | null) {
       .limit(50);
     
     if (data) {
-      const formatted = data.map(log => ({
+      const formatted: Notification[] = data.map(log => ({
         id: log.id,
         title: log.title,
         message: log.message,
-        type: log.type,
-        read: log.read,
-        created_at: log.created_at,
-        payload: log.payload
+        type: log.type as any,
+        read: log.is_read,
+        created_at: log.created_at
       }));
       setNotifications(formatted);
+      
+      const unreadCount = formatted.filter(n => !n.read).length;
+      setUnreadCount(unreadCount);
     }
   };
 
@@ -49,8 +51,8 @@ export function useRealtimeNotifications(userRole: string | null) {
     const today = new Date().toISOString().split('T')[0];
     const { error } = await supabase
       .from('notifications_log')
-      .update({ read: true })
-      .eq('read', false)
+      .update({ is_read: true })
+      .eq('is_read', false)
       .gte('created_at', `${today}T00:00:00`);
 
     if (!error) {
@@ -60,71 +62,47 @@ export function useRealtimeNotifications(userRole: string | null) {
   };
 
   useEffect(() => {
-    if (!userRole || userRole !== 'admin') return;
+    if (!userRole) return;
 
-    // Use a more unique name to avoid conflicts if multiple instances exist
-    const channelName = `admin_realtime_${crypto.randomUUID().slice(0, 8)}`;
+    fetchNotificationLogs();
+
+    const channelName = `notifications_realtime_${crypto.randomUUID().slice(0, 8)}`;
     const channel = supabase.channel(channelName);
 
     channel
-      // 1. Escuchar Nuevos Pedidos
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
-        setLatestOrder(payload.new as Order);
+      // 1. Escuchar Historial de Notificaciones (Tablas directas)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications_log' }, (payload) => {
+        const newLog = payload.new;
+        
+        // Formatear para el estado local
+        const formatted: Notification = {
+          id: newLog.id,
+          title: newLog.title,
+          message: newLog.message,
+          type: newLog.type as any,
+          read: newLog.is_read,
+          created_at: newLog.created_at
+        };
+
+        setNotifications(prev => [formatted, ...prev]);
         setUnreadCount(prev => prev + 1);
         playNotificationSound();
         addToast({
-          title: 'Nuevo Pedido WA',
-          message: `${payload.new.customer_name} solicita servicio`,
-          type: 'order'
+          title: formatted.title,
+          message: formatted.message,
+          type: formatted.type
         });
       })
-      // 2. Escuchar Broadcast de Asistencia Unificada
-      .on('broadcast', { event: 'attendance_event' }, (payload) => {
-        const { usuario_id, nombre_empleado, rol_empleado, tipo_evento, timestamp } = payload.payload;
-        
-        setUnreadCount(prev => prev + 1);
-        
-        // Actualizar estado reactivo de la plantilla
-        setStaffStatus(prev => ({
-          ...prev,
-          [usuario_id]: {
-            name: nombre_empleado,
-            role: rol_empleado,
-            last_event: tipo_evento,
-            time: timestamp
-          }
-        }));
-
-        addToast({
-          title: 'Asistencia: ' + nombre_empleado,
-          message: `${tipo_evento} a las ${new Date(timestamp).toLocaleTimeString()}`,
-          type: 'attendance'
-        });
-      })
-      // 3. Escuchar Broadcast de Calidad
-      .on('broadcast', { event: 'quality_alert' }, (payload) => {
-        const { supervisor, volumen, hora } = payload.payload;
-        setUnreadCount(prev => prev + 1);
-        addToast({
-          title: 'Producción Auditada',
-          message: `${supervisor} registró entrada de ${volumen}L`,
-          type: 'quality'
-        });
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[Realtime] Admin channel active:', channelName);
-        }
-      });
+      .subscribe();
 
     return () => {
-      console.log('[Realtime] Cleaning up channel:', channelName);
       supabase.removeChannel(channel);
     };
   }, [userRole]);
 
-  const markAsRead = (id: string) => {
+  const markAsRead = async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    await supabase.from('notifications_log').update({ is_read: true }).eq('id', id);
   };
 
   const clearUnread = () => setUnreadCount(0);

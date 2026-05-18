@@ -170,14 +170,15 @@ export default function Dashboard() {
       if (error) throw error;
 
       // Notificación si es WhatsApp o Teléfono
-      if (newOrder.source !== 'local') {
-        await supabase.from('notifications_log').insert([{
-          title: `Nuevo Pedido ${newOrder.source === 'whatsapp' ? 'WA' : 'Tel'}`,
-          message: `Nuevo pedido de ${newOrder.customer_name} por ${newOrder.source}`,
-          type: 'new_order',
-          user_role: 'operator'
-        }]);
-      }
+      const sourceType = newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono';
+      const notificationType = newOrder.source === 'local' ? 'sale' : 'order';
+      
+      await supabase.from('notifications_log').insert([{
+        title: `Nuevo Registro: ${sourceType}`,
+        message: `${newOrder.customer_name} - ${newOrder.items}`,
+        type: notificationType,
+        user_role: 'operator'
+      }]);
 
       setShowRegisterModal(false);
       setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local' });

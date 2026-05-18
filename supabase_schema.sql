@@ -91,6 +91,7 @@ CREATE TABLE public.notifications_log (
   message TEXT,
   type TEXT,
   user_role TEXT,
+  is_read BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
