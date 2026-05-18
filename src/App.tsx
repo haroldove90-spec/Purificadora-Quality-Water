@@ -275,7 +275,7 @@ export default function App() {
                  activeView === 'quality' ? <QualityLog userRole={userRole} /> :
                  activeView === 'route' ? <DeliveryRoute /> :
                  activeView === 'client_status' ? <ClientStatus /> :
-                 activeView === 'notifications' ? <Notifications /> :
+                 activeView === 'notifications' ? <Notifications userRole={userRole} /> :
                  <Profile />}
               </motion.div>
             </AnimatePresence>

@@ -61,7 +61,9 @@ export default function Dashboard() {
     address: '',
     items: '',
     total_price: '',
-    source: 'local' as 'local' | 'phone' | 'whatsapp'
+    source: 'local' as 'local' | 'phone' | 'whatsapp',
+    assigned_to: '',
+    assigned_to_name: ''
   });
 
   const fetchOrders = async () => {
@@ -124,12 +126,20 @@ export default function Dashboard() {
       if (error) throw error;
 
       // Crear notificación para el repartidor
-      await supabase.from('notifications_log').insert([{
-        title: 'Nuevo Pedido Asignado',
-        message: `Se te ha asignado el pedido de ${selectedOrder.customer_name}`,
-        type: 'order_assigned',
-        user_role: 'driver'
-      }]);
+      await supabase.from('notifications_log').insert([
+        {
+          title: 'Nuevo Pedido Asignado',
+          message: `Se te ha asignado el pedido de ${selectedOrder.customer_name}`,
+          type: 'order',
+          user_role: 'driver'
+        },
+        {
+          title: 'Pedido Despachado',
+          message: `El pedido de ${selectedOrder.customer_name} fue asignado a ${driverName}`,
+          type: 'order',
+          user_role: 'admin'
+        }
+      ]);
 
       setSelectedOrder(null);
       fetchOrders();
@@ -156,7 +166,9 @@ export default function Dashboard() {
     setIsSavingOrder(true);
     
     try {
-      const { error } = await supabase
+      const isAssigned = newOrder.source !== 'local' && newOrder.assigned_to !== '';
+      
+      const { data: orderData, error } = await supabase
         .from('orders')
         .insert([{
           customer_name: newOrder.customer_name,
@@ -164,24 +176,48 @@ export default function Dashboard() {
           items: newOrder.items,
           total_price: parseFloat(newOrder.total_price) || 0,
           source: newOrder.source,
-          status: newOrder.source === 'local' ? 'delivered' : 'pending'
-        }]);
+          status: newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending'),
+          assigned_to: isAssigned ? newOrder.assigned_to : null,
+          assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
+        }])
+        .select()
+        .single();
 
       if (error) throw error;
 
-      // Notificación si es WhatsApp o Teléfono
+      // Notificación para todos los roles relevantes
       const sourceType = newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono';
       const notificationType = newOrder.source === 'local' ? 'sale' : 'order';
       
-      await supabase.from('notifications_log').insert([{
-        title: `Nuevo Registro: ${sourceType}`,
-        message: `${newOrder.customer_name} - ${newOrder.items}`,
-        type: notificationType,
-        user_role: 'operator'
-      }]);
+      const notifications = [
+        {
+          title: `Nuevo Registro: ${sourceType}`,
+          message: `${newOrder.customer_name} - ${newOrder.items}`,
+          type: notificationType,
+          user_role: 'admin'
+        },
+        {
+          title: `Nuevo Registro: ${sourceType}`,
+          message: `${newOrder.customer_name} - ${newOrder.items}`,
+          type: notificationType,
+          user_role: 'operator'
+        }
+      ];
+
+      // Si se asignó un chofer directamente, notificarle
+      if (isAssigned) {
+        notifications.push({
+          title: 'Nuevo Pedido Asignado',
+          message: `Se te ha asignado el pedido de ${newOrder.customer_name}`,
+          type: 'order',
+          user_role: 'driver'
+        });
+      }
+
+      await supabase.from('notifications_log').insert(notifications);
 
       setShowRegisterModal(false);
-      setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local' });
+      setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '' });
       fetchOrders();
     } catch (e: any) {
       console.error('Order Save Error:', e);
@@ -516,6 +552,31 @@ export default function Dashboard() {
                     />
                   </div>
                 </div>
+
+                {newOrder.source !== 'local' && (
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Asignar Repartidor (Opcional)</label>
+                    <select 
+                      value={newOrder.assigned_to}
+                      onChange={(e) => {
+                        const driver = drivers.find(d => d.id === e.target.value);
+                        setNewOrder({
+                          ...newOrder, 
+                          assigned_to: e.target.value,
+                          assigned_to_name: driver ? driver.name : ''
+                        });
+                      }}
+                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none appearance-none"
+                    >
+                      <option value="">Pendiente de Asignar</option>
+                      {drivers.map(driver => (
+                        <option key={driver.id} value={driver.id}>
+                          {driver.name.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="col-span-2 pt-4 flex gap-4">
                   <button 

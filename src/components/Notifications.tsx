@@ -13,7 +13,11 @@ interface NotificationLog {
   created_at: string;
 }
 
-export default function Notifications() {
+interface NotificationsProps {
+  userRole: string | null;
+}
+
+export default function Notifications({ userRole }: NotificationsProps) {
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -27,6 +31,11 @@ export default function Notifications() {
       .select('*')
       .gte('created_at', `${today}T00:00:00`)
       .order('created_at', { ascending: false });
+
+    // Filtrado por rol si no es admin
+    if (userRole !== 'admin') {
+      query = query.eq('user_role', userRole);
+    }
 
     if (filter === 'unread') {
       query = query.eq('is_read', false);

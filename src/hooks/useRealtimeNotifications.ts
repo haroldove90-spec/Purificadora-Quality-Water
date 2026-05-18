@@ -24,12 +24,18 @@ export function useRealtimeNotifications(userRole: string | null) {
 
   const fetchNotificationLogs = async () => {
     const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
+    let query = supabase
       .from('notifications_log')
       .select('*')
       .gte('created_at', `${today}T00:00:00`)
-      .order('created_at', { ascending: false })
-      .limit(50);
+      .order('created_at', { ascending: false });
+
+    // Filtrar por rol si no es admin
+    if (userRole !== 'admin') {
+      query = query.eq('user_role', userRole);
+    }
+
+    const { data } = await query.limit(50);
     
     if (data) {
       const formatted: AppNotification[] = data.map(log => ({
@@ -74,6 +80,12 @@ export function useRealtimeNotifications(userRole: string | null) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications_log' }, (payload) => {
         const newLog = payload.new;
         
+        // Filtrar por rol
+        // Si no es admin y el rol no coincide, ignorar
+        if (userRole !== 'admin' && newLog.user_role !== userRole) {
+          return;
+        }
+
         // Formatear para el estado local
         const formatted: AppNotification = {
           id: newLog.id,
