@@ -6,9 +6,10 @@ import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 
 interface NotificationHubProps {
   userRole: string | null;
+  onViewAll?: () => void;
 }
 
-export default function NotificationHub({ userRole }: NotificationHubProps) {
+export default function NotificationHub({ userRole, onViewAll }: NotificationHubProps) {
   const { notifications, unreadCount, toasts, markAsRead, clearUnread, fetchNotificationLogs } = useRealtimeNotifications(userRole);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -18,6 +19,12 @@ export default function NotificationHub({ userRole }: NotificationHubProps) {
       clearUnread();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
 
   return (
     <div className="relative">
@@ -132,7 +139,18 @@ export default function NotificationHub({ userRole }: NotificationHubProps) {
                 )}
               </div>
               
-              <div className="p-4 border-t border-slate-50 bg-slate-50/50">
+              <div className="p-4 border-t border-slate-50 bg-slate-50/50 space-y-2">
+                {onViewAll && (
+                  <button 
+                    onClick={() => {
+                      onViewAll();
+                      setIsOpen(false);
+                    }}
+                    className="w-full p-4 bg-sky-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-sky-500/20 active:scale-95"
+                  >
+                    Ver todas las notificaciones
+                  </button>
+                )}
                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center">
                   Sincronizado vía Supabase Realtime
                 </p>

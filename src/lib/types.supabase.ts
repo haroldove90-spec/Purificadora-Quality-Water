@@ -31,11 +31,11 @@ export interface Attendance {
   location?: { lat: number; lng: number };
 }
 
-export interface Notification {
+export interface AppNotification {
   id: string;
   title: string;
   message: string;
-  type: 'order' | 'attendance' | 'quality' | 'system';
+  type: 'order' | 'attendance' | 'quality' | 'system' | 'sale';
   read: boolean;
   created_at: string;
   payload?: any;

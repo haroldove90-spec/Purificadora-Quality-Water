@@ -41,14 +41,30 @@ import Lobby from './components/Lobby';
 type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<View>('lobby');
-  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
+  const [activeView, setActiveView] = useState<View>(() => {
+    const saved = localStorage.getItem('qw_activeView');
+    return (saved as View) || 'lobby';
+  });
+  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(() => {
+    const saved = localStorage.getItem('qw_userRole');
+    return (saved as any) || null;
+  });
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [notification, setNotification] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('qw_activeView', activeView);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (userRole) {
+      localStorage.setItem('qw_userRole', userRole);
+    }
+  }, [userRole]);
 
   const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
     setUserRole(role);
+    localStorage.setItem('qw_userRole', role);
     
     // Simulación de Sesión por Rol (Mock Auth Context)
     const mockUserData = {
@@ -209,7 +225,7 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <NotificationHub userRole={userRole} />
+            <NotificationHub userRole={userRole} onViewAll={() => setActiveView('notifications')} />
             <button 
               onClick={() => setDarkMode(!darkMode)}
               className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-500'}`}
@@ -282,7 +298,7 @@ export default function App() {
 
       {/* Mobile Top Actions Overlay */}
       <div className="md:hidden fixed top-4 right-4 z-[70] flex items-center gap-3">
-        <NotificationHub userRole={userRole} />
+        <NotificationHub userRole={userRole} onViewAll={() => setActiveView('notifications')} />
         <button 
           onClick={() => setDarkMode(!darkMode)}
           className="p-3 rounded-full shadow-lg bg-white dark:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700"

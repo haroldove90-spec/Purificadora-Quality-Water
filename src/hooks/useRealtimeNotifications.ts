@@ -1,10 +1,10 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { Order, Notification } from '../lib/types.supabase';
+import { Order, AppNotification } from '../lib/types.supabase';
 
 export function useRealtimeNotifications(userRole: string | null) {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [latestOrder, setLatestOrder] = useState<Order | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState<any[]>([]); 
@@ -32,7 +32,7 @@ export function useRealtimeNotifications(userRole: string | null) {
       .limit(50);
     
     if (data) {
-      const formatted: Notification[] = data.map(log => ({
+      const formatted: AppNotification[] = data.map(log => ({
         id: log.id,
         title: log.title,
         message: log.message,
@@ -75,7 +75,7 @@ export function useRealtimeNotifications(userRole: string | null) {
         const newLog = payload.new;
         
         // Formatear para el estado local
-        const formatted: Notification = {
+        const formatted: AppNotification = {
           id: newLog.id,
           title: newLog.title,
           message: newLog.message,
@@ -87,6 +87,15 @@ export function useRealtimeNotifications(userRole: string | null) {
         setNotifications(prev => [formatted, ...prev]);
         setUnreadCount(prev => prev + 1);
         playNotificationSound();
+
+        // Native Browser Notification (Using global Window.Notification)
+        if (typeof window !== 'undefined' && "Notification" in window && window.Notification.permission === "granted") {
+          new window.Notification(formatted.title, {
+            body: formatted.message,
+            icon: '/favicon.ico'
+          });
+        }
+
         addToast({
           title: formatted.title,
           message: formatted.message,
