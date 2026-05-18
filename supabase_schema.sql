@@ -51,17 +51,19 @@ CREATE TABLE public.orders (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
--- 6. Tabla de Asistencia (Attendance) - Refactorizada para seguimiento diario opcional o log de eventos
--- Usaremos un log de eventos para máxima flexibilidad en Realtime
-CREATE TABLE public.attendance_logs (
+-- 6. Tabla de Asistencia (Attendance) - Registro único por empleado por día
+CREATE TABLE public.daily_attendance (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   user_name TEXT,
   user_role TEXT,
-  event_type TEXT NOT NULL, -- 'clock_in', 'clock_out', 'break_start', 'break_end'
-  timestamp TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  location JSONB, -- { lat, lng }
-  metadata JSONB
+  work_date DATE DEFAULT CURRENT_DATE,
+  check_in TIMESTAMP WITH TIME ZONE,
+  break_start TIMESTAMP WITH TIME ZONE,
+  break_end TIMESTAMP WITH TIME ZONE,
+  check_out TIMESTAMP WITH TIME ZONE,
+  last_location JSONB, -- { lat, lng }
+  UNIQUE(user_id, work_date)
 );
 
 -- 7. Tabla de Notificaciones (Log unificado para historial)
@@ -74,6 +76,6 @@ CREATE TABLE public.notifications_log (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Habilitar Realtime para estas tablas
-ALTER PUBLICATION supabase_realtime ADD TABLE attendance_logs;
+-- Habilitar Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE daily_attendance;
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications_log;

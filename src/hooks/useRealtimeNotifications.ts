@@ -7,7 +7,8 @@ export function useRealtimeNotifications(userRole: string | null) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [latestOrder, setLatestOrder] = useState<Order | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [toasts, setToasts] = useState<any[]>([]); // Alertas emergentes temporales
+  const [toasts, setToasts] = useState<any[]>([]); 
+  const [staffStatus, setStaffStatus] = useState<Record<string, any>>({}); // { user_id: { name, role, last_event, time } }
 
   const playNotificationSound = () => {
     console.log('--- SOUND PLACEHOLDER: Reproduciendo alerta de WhatsApp ---');
@@ -18,7 +19,7 @@ export function useRealtimeNotifications(userRole: string | null) {
     setToasts(prev => [...prev, { ...toast, id }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000); // El toast desaparece en 5 segundos
+    }, 5000);
   };
 
   const fetchNotificationLogs = async () => {
@@ -34,7 +35,7 @@ export function useRealtimeNotifications(userRole: string | null) {
         title: log.title,
         message: log.message,
         type: log.type,
-        read: true, // El historial se considera "visto"
+        read: true,
         created_at: log.created_at,
         payload: log.payload
       }));
@@ -43,12 +44,12 @@ export function useRealtimeNotifications(userRole: string | null) {
   };
 
   useEffect(() => {
-    // Si no es admin, no activamos la escucha pesada de alertas globales
     if (!userRole || userRole !== 'admin') return;
 
-    // 1. Escuchar Nuevos Pedidos (INSERT en orders)
-    const ordersSubscription = supabase
-      .channel('admin_realtime')
+    const channel = supabase.channel('admin_realtime_system');
+
+    channel
+      // 1. Escuchar Nuevos Pedidos
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
         setLatestOrder(payload.new as Order);
         setUnreadCount(prev => prev + 1);
@@ -59,20 +60,33 @@ export function useRealtimeNotifications(userRole: string | null) {
           type: 'order'
         });
       })
-      // 2. Escuchar Broadcast de Asistencia
-      .on('broadcast', { event: 'attendance_alert' }, (payload) => {
-        console.log('Attendance Alert Broadcast:', payload);
+      // 2. Escuchar Broadcast de Asistencia Unificada
+      .on('broadcast', { event: 'attendance_event' }, (payload) => {
+        const { usuario_id, nombre_empleado, rol_empleado, tipo_evento, timestamp } = payload.payload;
+        
         setUnreadCount(prev => prev + 1);
+        
+        // Actualizar estado reactivo de la plantilla
+        setStaffStatus(prev => ({
+          ...prev,
+          [usuario_id]: {
+            name: nombre_empleado,
+            role: rol_empleado,
+            last_event: tipo_evento,
+            time: timestamp
+          }
+        }));
+
         addToast({
-          title: 'Alerta de Personal',
-          message: `${payload.payload.empleado} (${payload.payload.rol}) marcó ${payload.payload.evento}`,
+          title: 'Asistencia: ' + nombre_empleado,
+          message: `${tipo_evento} a las ${new Date(timestamp).toLocaleTimeString()}`,
           type: 'attendance'
         });
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(ordersSubscription);
+      supabase.removeChannel(channel);
     };
   }, [userRole]);
 
@@ -87,6 +101,7 @@ export function useRealtimeNotifications(userRole: string | null) {
     latestOrder, 
     unreadCount, 
     toasts, 
+    staffStatus,
     markAsRead, 
     clearUnread, 
     fetchNotificationLogs 

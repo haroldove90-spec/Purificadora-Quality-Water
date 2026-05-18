@@ -48,6 +48,15 @@ export default function App() {
 
   const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
     setUserRole(role);
+    
+    // Simulación de Sesión por Rol (Mock Auth Context)
+    const mockUserData = {
+      user_id: role === 'driver' ? 'driver_uid_1' : role === 'operator' ? 'operator_uid_1' : 'admin_uid_1',
+      user_name: role === 'driver' ? 'Luis Moreno' : role === 'operator' ? 'Carlos Ruiz' : 'Admin Sistema',
+      user_role: role
+    };
+    localStorage.setItem('qw_session', JSON.stringify(mockUserData));
+
     switch(role) {
       case 'admin': setActiveView('metrics'); break;
       case 'operator': setActiveView('dashboard'); break;
@@ -56,9 +65,15 @@ export default function App() {
     }
   };
 
-  // Simulated Notifications
+  // Cargar sesión guardada al inicio (Opcional, pero ayuda a la persistencia)
   useEffect(() => {
-    // Notifications disabled per user request
+    const savedSession = localStorage.getItem('qw_session');
+    if (savedSession) {
+      try {
+        const session = JSON.parse(savedSession);
+        // Podríamos auto-autenticar aquí, pero por ahora respetamos el Lobby inicial
+      } catch (e) {}
+    }
   }, []);
 
   const getNavItems = () => {
@@ -77,6 +92,7 @@ export default function App() {
     if (userRole === 'driver') {
       return [
         { id: 'route', label: 'Mi Ruta', icon: Truck },
+        { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'profile', label: 'Ajustes', icon: User },
       ];
     }
@@ -222,7 +238,7 @@ export default function App() {
                  activeView === 'customers' ? <Finances initialTab="customers" /> :
                  activeView === 'driver_sales' ? <Finances initialTab="driver_sales" /> :
                  activeView === 'plant_cut' ? <Finances initialTab="plant_cut" /> :
-                 activeView === 'attendance' ? <Attendance /> :
+                 activeView === 'attendance' ? <Attendance userRole={userRole} /> :
                  activeView === 'quality' ? <QualityLog /> :
                  activeView === 'route' ? <DeliveryRoute /> :
                  activeView === 'client_status' ? <ClientStatus /> :
