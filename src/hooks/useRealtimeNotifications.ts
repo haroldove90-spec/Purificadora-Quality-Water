@@ -23,11 +23,13 @@ export function useRealtimeNotifications(userRole: string | null) {
   };
 
   const fetchNotificationLogs = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    
     let query = supabase
       .from('notifications_log')
       .select('*')
-      .gte('created_at', `${today}T00:00:00`)
+      .gte('created_at', twentyFourHoursAgo.toISOString())
       .order('created_at', { ascending: false });
 
     // Filtrar por rol si no es admin
@@ -54,16 +56,27 @@ export function useRealtimeNotifications(userRole: string | null) {
   };
 
   const markAllAsRead = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const { error } = await supabase
-      .from('notifications_log')
-      .update({ is_read: true })
-      .eq('is_read', false)
-      .gte('created_at', `${today}T00:00:00`);
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    
+    try {
+      console.log('Marking notifications from last 24h as read...');
+      const { error } = await supabase
+        .from('notifications_log')
+        .update({ is_read: true })
+        .eq('is_read', false)
+        .gte('created_at', twentyFourHoursAgo.toISOString());
 
-    if (!error) {
+      if (error) {
+        console.error('Persistence Error (markAllAsRead):', error);
+        return;
+      }
+
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
+      console.log('Successfully marked all as read in DB and local state');
+    } catch (err) {
+      console.error('Critical failure in markAllAsRead:', err);
     }
   };
 
@@ -172,14 +185,33 @@ export function useRealtimeNotifications(userRole: string | null) {
   }, [userRole]);
 
   const markAsRead = async (id: string) => {
-    const notif = notifications.find(n => n.id === id);
-    if (notif && !notif.read) {
+    try {
+      // 1. Actualizar estado local inmediatamente para UI responsiva
       setNotifications(prev => {
-        const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
-        setUnreadCount(updated.filter(x => !x.read).length);
-        return updated;
+        const itemIndex = prev.findIndex(n => n.id === id);
+        if (itemIndex === -1 || prev[itemIndex].read) return prev;
+        
+        const newNotifs = [...prev];
+        newNotifs[itemIndex] = { ...newNotifs[itemIndex], read: true };
+        setUnreadCount(newNotifs.filter(n => !n.read).length);
+        return newNotifs;
       });
-      await supabase.from('notifications_log').update({ is_read: true }).eq('id', id);
+
+      // 2. Persistir en Base de Datos
+      const { error, data } = await supabase
+        .from('notifications_log')
+        .update({ is_read: true })
+        .eq('id', id)
+        .select();
+
+      if (error) {
+        console.error('Supabase update error (markAsRead):', error);
+        // Podríamos revertir el estado local aquí si el error es crítico
+      } else {
+        console.log(`Notification ${id} marked as read in DB:`, data);
+      }
+    } catch (err) {
+      console.error('Unexpected error in markAsRead:', err);
     }
   };
 

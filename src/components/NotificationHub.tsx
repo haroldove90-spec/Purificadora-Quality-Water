@@ -15,9 +15,7 @@ export default function NotificationHub({ userRole, onViewAll }: NotificationHub
 
   useEffect(() => {
     if (isOpen) {
-      fetchNotificationLogs().then(() => {
-        clearUnread();
-      });
+      fetchNotificationLogs();
     }
   }, [isOpen]);
 
