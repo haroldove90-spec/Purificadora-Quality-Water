@@ -239,7 +239,7 @@ export default function App() {
                  activeView === 'driver_sales' ? <Finances initialTab="driver_sales" /> :
                  activeView === 'plant_cut' ? <Finances initialTab="plant_cut" /> :
                  activeView === 'attendance' ? <Attendance userRole={userRole} /> :
-                 activeView === 'quality' ? <QualityLog /> :
+                 activeView === 'quality' ? <QualityLog userRole={userRole} /> :
                  activeView === 'route' ? <DeliveryRoute /> :
                  activeView === 'client_status' ? <ClientStatus /> :
                  <Profile />}

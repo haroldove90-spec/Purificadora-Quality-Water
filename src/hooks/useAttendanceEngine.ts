@@ -62,14 +62,6 @@ export function useAttendanceEngine() {
         }
       });
 
-      // 3. Registrar en el log de notificaciones persistente
-      await supabase.from('notifications_log').insert([{
-        title: 'Movimiento de Personal',
-        message: `${session.user_name} (${session.user_role}) marcó ${labelMap[action]}`,
-        type: 'attendance',
-        payload: { action, ...session, timestamp }
-      }]);
-
       return { success: true, data };
     } catch (err: any) {
       console.error('Attendance Engine Error:', err.message);

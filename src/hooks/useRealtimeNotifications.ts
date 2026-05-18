@@ -23,9 +23,11 @@ export function useRealtimeNotifications(userRole: string | null) {
   };
 
   const fetchNotificationLogs = async () => {
+    const today = new Date().toISOString().split('T')[0];
     const { data, error } = await supabase
       .from('notifications_log')
       .select('*')
+      .gte('created_at', `${today}T00:00:00`)
       .order('created_at', { ascending: false })
       .limit(50);
     
@@ -35,11 +37,25 @@ export function useRealtimeNotifications(userRole: string | null) {
         title: log.title,
         message: log.message,
         type: log.type,
-        read: true,
+        read: log.read,
         created_at: log.created_at,
         payload: log.payload
       }));
       setNotifications(formatted);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const { error } = await supabase
+      .from('notifications_log')
+      .update({ read: true })
+      .eq('read', false)
+      .gte('created_at', `${today}T00:00:00`);
+
+    if (!error) {
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
     }
   };
 
@@ -83,6 +99,16 @@ export function useRealtimeNotifications(userRole: string | null) {
           type: 'attendance'
         });
       })
+      // 3. Escuchar Broadcast de Calidad
+      .on('broadcast', { event: 'quality_alert' }, (payload) => {
+        const { supervisor, volumen, hora } = payload.payload;
+        setUnreadCount(prev => prev + 1);
+        addToast({
+          title: 'Producción Auditada',
+          message: `${supervisor} registró entrada de ${volumen}L`,
+          type: 'quality'
+        });
+      })
       .subscribe();
 
     return () => {
@@ -103,6 +129,7 @@ export function useRealtimeNotifications(userRole: string | null) {
     toasts, 
     staffStatus,
     markAsRead, 
+    markAllAsRead,
     clearUnread, 
     fetchNotificationLogs 
   };
