@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { exportToPDF } from '../utils/pdfExport';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabaseClient';
 import { 
@@ -88,16 +89,33 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [isExporting, setIsExporting] = useState(false);
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
+  const [showNewEmployeeModal, setShowNewEmployeeModal] = useState(false);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+  const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isFinalizingCut, setIsFinalizingCut] = useState(false);
   const [customersList, setCustomersList] = useState<any[]>([]);
+  const [employeesList, setEmployeesList] = useState<any[]>([]);
 
   useEffect(() => {
     setActiveTab(initialTab);
     if (activeTab === 'customers') {
       fetchCustomers();
     }
+    if (activeTab === 'driver_sales') {
+      fetchEmployees();
+    }
   }, [initialTab, activeTab]);
+
+  const fetchEmployees = async () => {
+    const { data, error } = await supabase
+      .from('employees')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      setEmployeesList(data);
+    }
+  };
 
   const fetchCustomers = async () => {
     const { data, error } = await supabase
@@ -112,10 +130,45 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
 
   const handleExport = (type: string) => {
     setIsExporting(true);
-    // Simulating PDF generation
-    setTimeout(() => {
+    
+    try {
+      let columns: string[] = [];
+      let data: any[][] = [];
+      let filename = '';
+
+      if (activeTab === 'sales') {
+        filename = 'Reporte_Ventas';
+        columns = ['Folio', 'Cliente', 'Items', 'Método', 'Monto', 'Hora'];
+        data = GLOBAL_SALES.map(s => [s.id, s.customer, s.items, s.method, `$${s.amount}`, s.time]);
+      } else if (activeTab === 'customers') {
+        filename = 'Directorio_Clientes';
+        columns = ['Nombre', 'Zona', 'Nivel', 'Pedidos'];
+        const list = customersList.length > 0 ? customersList : CLIENT_MANAGEMENT;
+        data = list.map(c => [c.name, c.address || c.neighborhood, c.tier, c.totalOrders || '0']);
+      } else if (activeTab === 'driver_sales') {
+        filename = 'Directorio_Empleados';
+        columns = ['Nombre', 'Rol', 'Teléfono', 'Estatus'];
+        const list = employeesList.length > 0 ? employeesList : SELLER_PERFORMANCE;
+        data = list.map(e => [e.name, e.role, e.phone || '-', e.status || 'active']);
+      } else {
+        // Fallback for Metrics
+        filename = 'Metricas_Operativas';
+        columns = ['Dia', 'Ventas', 'Pedidos'];
+        data = SALES_DATA.map(d => [d.day, `$${d.sales}`, d.orders]);
+      }
+
+      exportToPDF({
+        title: `Reporte: ${type}`,
+        subtitle: `Generado el ${new Date().toLocaleDateString()} - Sistema Admin QualityWater`,
+        columns,
+        data,
+        filename
+      });
+    } catch (error) {
+      console.error('PDF Export failed:', error);
+    } finally {
       setIsExporting(false);
-    }, 2000);
+    }
   };
 
   const handleNewCustomerSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -145,6 +198,44 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
       alert('Error al guardar cliente: ' + error.message);
     } finally {
       setIsSavingCustomer(false);
+    }
+  };
+
+  const handleNewEmployeeSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSavingEmployee(true);
+    
+    const formData = new FormData(e.currentTarget);
+    const newEmployee = {
+      name: formData.get('name') as string,
+      role: formData.get('role') as string,
+      phone: formData.get('phone') as string,
+      status: 'active'
+    };
+
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .insert([newEmployee]);
+
+      if (error) throw error;
+      
+      await fetchEmployees();
+      setShowNewEmployeeModal(false);
+      
+      // Notify via Realtime (Optional)
+      await supabase.from('notifications_log').insert({
+        title: 'Nuevo Empleado',
+        message: `${newEmployee.name} se ha unido como ${newEmployee.role}`,
+        type: 'system',
+        user_role: 'admin'
+      });
+
+    } catch (error: any) {
+      console.error('Error saving employee:', error.message);
+      alert('Error al guardar empleado: ' + error.message);
+    } finally {
+      setIsSavingEmployee(false);
     }
   };
 
@@ -402,44 +493,87 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
             <div className="space-y-6">
               <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Ventas por Repartidor</h3>
-                  <button 
-                    onClick={() => handleExport('Ventas por Repartidor')}
-                    className="flex items-center gap-2 bg-slate-100 text-slate-600 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
-                  >
-                    <Download size={14} /> Reporte PDF
-                  </button>
+                  <div>
+                    <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Gestión de Capital Humano</h3>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 italic tracking-widest leading-none">Administración de puestos y accesos</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleExport('Directorio de Empleados')}
+                      className="flex items-center gap-2 bg-slate-100 text-slate-600 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
+                    >
+                      <Download size={14} /> Exportar
+                    </button>
+                    <button 
+                      onClick={() => setShowNewEmployeeModal(true)}
+                      className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all shrink-0"
+                    >
+                      <Plus size={16} /> Alta de Empleado
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest">
                       <tr>
-                        <th className="px-6 py-4">Repartidor / Ruta</th>
-                        <th className="px-6 py-4">Entregas</th>
-                        <th className="px-6 py-4">Efectivo Cobrado</th>
-                        <th className="px-6 py-4 text-right">Emeticiencia</th>
+                        <th className="px-6 py-4">Empleado / Cargo</th>
+                        <th className="px-6 py-4">Teléfono</th>
+                        <th className="px-6 py-4">Ingreso</th>
+                        <th className="px-6 py-4">Estatus</th>
+                        <th className="px-6 py-4 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {liquidations.map((liqi, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50">
+                      {employeesList.length > 0 ? employeesList.map((emp) => (
+                        <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
-                            <p className="font-black text-slate-800 text-sm">{liqi.driver}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">{liqi.route}</p>
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-sky-500 text-white flex items-center justify-center font-black text-xs">
+                                {emp.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-black text-slate-800 text-sm italic">{emp.name}</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight leading-none mt-0.5">{emp.role}</p>
+                              </div>
+                            </div>
                           </td>
-                          <td className="px-6 py-4 text-xs font-black text-slate-800">{liqi.delivered} Unidades ({liqi.orders} pedidos)</td>
+                          <td className="px-6 py-4 text-xs font-black text-slate-800">{emp.phone || 'N/A'}</td>
+                          <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase italic">
+                            {new Date(emp.created_at).toLocaleDateString()}
+                          </td>
                           <td className="px-6 py-4">
-                            <p className="text-sm font-black text-slate-900">${liqi.actualCash}</p>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase italic">Esperado: ${liqi.expectedCash}</p>
+                            <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
+                              emp.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {emp.status === 'active' ? 'Activo' : 'Inactivo'}
+                            </span>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <div className="flex flex-col items-end">
-                              <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
-                                liqi.status === 'ok' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                              }`}>
-                                {liqi.status === 'ok' ? 'Óptimo' : 'Faltante'}
-                              </span>
+                            <button className="p-2 text-slate-300 hover:text-sky-500 transition-colors">
+                              <MoreVertical size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      )) : SELLER_PERFORMANCE.map((emp, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50 transition-colors opacity-50 italic">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-400 flex items-center justify-center font-black text-xs italic">
+                                ?
+                              </div>
+                              <div>
+                                <p className="font-black text-slate-400 text-sm whitespace-nowrap">{emp.name} (Demo)</p>
+                                <p className="text-[10px] text-slate-300 font-bold uppercase tracking-tight">Vendedor</p>
+                              </div>
                             </div>
+                          </td>
+                          <td className="px-6 py-4 text-xs font-black text-slate-300">55 XXXX XXXX</td>
+                          <td className="px-6 py-4 text-[10px] font-bold text-slate-300 uppercase italic">N/A</td>
+                          <td className="px-6 py-4">
+                            <span className="px-2 py-1 bg-slate-50 text-slate-300 rounded-lg text-[9px] font-black uppercase">Offline</span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <X size={14} className="text-slate-200" />
                           </td>
                         </tr>
                       ))}
@@ -535,6 +669,76 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
         </motion.div>
       </AnimatePresence>
       <AnimatePresence>
+        {showNewEmployeeModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isSavingEmployee && setShowNewEmployeeModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-black text-slate-800 uppercase italic">Alta de <span className="text-sky-500">Empleado</span></h3>
+                <button 
+                  onClick={() => setShowNewEmployeeModal(false)}
+                  disabled={isSavingEmployee}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-0"
+                >
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+
+              <form onSubmit={handleNewEmployeeSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre del Trabajador</label>
+                  <input name="name" required type="text" placeholder="Ej. Juan Pérez" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Rol / Puesto Operativo</label>
+                  <select name="role" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
+                    <option value="driver">Chofer / Repartidor</option>
+                    <option value="operator">Operador de Planta</option>
+                    <option value="admin">Administrador / Supervisor</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono Móvil</label>
+                  <input name="phone" required type="tel" placeholder="55 0000 0000" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                </div>
+
+                <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 mt-2">
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight leading-relaxed italic">
+                    Al registrar un nuevo empleado, tendrá acceso a las funciones correspondientes a su rol en el dispositivo móvil de la planta.
+                  </p>
+                </div>
+
+                <button 
+                  type="submit"
+                  disabled={isSavingEmployee}
+                  className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-slate-800 transition-all active:scale-95 mt-4 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isSavingEmployee ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Registrando...
+                    </>
+                  ) : (
+                    'Guardar Empleado'
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
         {showNewCustomerModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div

@@ -62,7 +62,9 @@ export function useRealtimeNotifications(userRole: string | null) {
   useEffect(() => {
     if (!userRole || userRole !== 'admin') return;
 
-    const channel = supabase.channel('admin_realtime_system');
+    // Use a more unique name to avoid conflicts if multiple instances exist
+    const channelName = `admin_realtime_${crypto.randomUUID().slice(0, 8)}`;
+    const channel = supabase.channel(channelName);
 
     channel
       // 1. Escuchar Nuevos Pedidos
@@ -109,9 +111,14 @@ export function useRealtimeNotifications(userRole: string | null) {
           type: 'quality'
         });
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Realtime] Admin channel active:', channelName);
+        }
+      });
 
     return () => {
+      console.log('[Realtime] Cleaning up channel:', channelName);
       supabase.removeChannel(channel);
     };
   }, [userRole]);

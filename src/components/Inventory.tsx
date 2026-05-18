@@ -1,9 +1,36 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { User, Archive, ArrowDownLeft, Search, MapPin, ChevronRight, PackageCheck } from 'lucide-react';
+import { User, Archive, ArrowDownLeft, Search, MapPin, ChevronRight, PackageCheck, Download, Loader2 } from 'lucide-react';
 import { MOCK_CUSTOMER_BALANCES } from '../constants';
+import { exportToPDF } from '../utils/pdfExport';
 
 export default function Inventory() {
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = () => {
+    setIsExporting(true);
+    try {
+      const columns = ['Cliente', 'Zona', 'Saldo Garrafones'];
+      const data = MOCK_CUSTOMER_BALANCES.map(c => [
+        c.name,
+        c.neighborhood,
+        c.jugBalance
+      ]);
+
+      exportToPDF({
+        title: 'Reporte de Saldos de Envases',
+        subtitle: `Generado el ${new Date().toLocaleDateString()} - Control de Inventario en Calle`,
+        columns,
+        data,
+        filename: 'Saldos_Envases'
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -12,13 +39,23 @@ export default function Inventory() {
           <p className="text-slate-500 mt-2 italic">Control de garrafones vacíos pendientes por recolectar</p>
         </div>
         
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar por cliente o colonia..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all shadow-sm"
-          />
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportPDF}
+            disabled={isExporting}
+            className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            Exportar PDF
+          </button>
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Buscar por cliente o colonia..."
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all shadow-sm"
+            />
+          </div>
         </div>
       </div>
 

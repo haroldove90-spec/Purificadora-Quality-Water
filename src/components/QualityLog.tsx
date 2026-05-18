@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle } from 'lucide-react';
+import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle, Download } from 'lucide-react';
 import { useQualityEngine } from '../hooks/useQualityEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
+import { exportToPDF } from '../utils/pdfExport';
 
 interface QualityLogProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
@@ -17,6 +18,33 @@ export default function QualityLog({ userRole }: QualityLogProps) {
 
   // Determinar si es Admin (Monitor) o Planta (Registro)
   const isMonitorMode = userRole === 'admin';
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = () => {
+    setIsExporting(true);
+    try {
+      const columns = ['Supervisor', 'Parámetro', 'Valor', 'Estatus', 'Fecha'];
+      const data = dbLogs.map(l => [
+        l.supervisor_name,
+        'Entrada de Agua',
+        `${l.volume_received}L / ${l.chlorine_dosage}g`,
+        l.pipeline_status === 'good' ? 'Óptimo' : 'Revisión',
+        new Date(l.created_at).toLocaleString()
+      ]);
+
+      exportToPDF({
+        title: 'Bitácora de Calidad QualityWater',
+        subtitle: `Reporte de auditoría generado el ${new Date().toLocaleDateString()}`,
+        columns,
+        data,
+        filename: 'Reporte_Calidad'
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Mock de sesión local
   const [session, setSession] = useState({
@@ -76,14 +104,24 @@ export default function QualityLog({ userRole }: QualityLogProps) {
           <h2 className="text-3xl font-black text-slate-800 italic uppercase">Bitácoras de <span className="text-sky-500">Calidad</span></h2>
           <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest italic">Monitoreo Físico-Químico • NORMA-127-SSA1</p>
         </div>
-        {!isMonitorMode && (
+        <div className="flex items-center gap-3">
           <button 
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all"
+            onClick={handleExportPDF}
+            disabled={isExporting || dbLogs.length === 0}
+            className="flex items-center gap-3 bg-slate-100 text-slate-600 px-6 py-4 rounded-3xl font-black uppercase tracking-widest text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
           >
-            <Plus size={18} /> Nuevo Registro
+            {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+            PDF Auditoría
           </button>
-        )}
+          {!isMonitorMode && (
+            <button 
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all"
+            >
+              <Plus size={18} /> Nuevo Registro
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

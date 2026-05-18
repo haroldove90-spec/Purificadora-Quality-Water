@@ -77,5 +77,13 @@ export function useAttendanceEngine() {
     registrarSalidaComer: (s: UserSession, loc?: any) => performAttendanceAction(s, 'break_start', loc),
     registrarRegresoComer: (s: UserSession, loc?: any) => performAttendanceAction(s, 'break_end', loc),
     registrarSalidaDefinitiva: (s: UserSession, loc?: any) => performAttendanceAction(s, 'check_out', loc),
+    fetchHistory: async () => {
+      const { data, error } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .order('work_date', { ascending: false })
+        .order('user_name', { ascending: true });
+      return { success: !error, data, error };
+    }
   };
 }

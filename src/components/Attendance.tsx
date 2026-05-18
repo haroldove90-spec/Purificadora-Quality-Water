@@ -1,23 +1,66 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, MapPin, CheckCircle2, AlertCircle, Loader2, ArrowRight, LogOut, Coffee, Users, Search } from 'lucide-react';
+import { Clock, MapPin, CheckCircle2, AlertCircle, Loader2, ArrowRight, LogOut, Coffee, Users, Search, Download, ClipboardList } from 'lucide-react';
 import { useAttendanceEngine, AttendanceAction } from '../hooks/useAttendanceEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
+import { exportToPDF } from '../utils/pdfExport';
 
 interface AttendanceProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
 }
 
 export default function Attendance({ userRole }: AttendanceProps) {
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [lastAction, setLastAction] = useState<string | null>(null);
-  
-  const { registrarAsistencia, registrarSalidaComer, registrarRegresoComer, registrarSalidaDefinitiva } = useAttendanceEngine();
-  const { staffStatus } = useRealtimeNotifications(userRole || null);
-
   // Determinar si estamos en modo monitor (Admin) o modo marcado (Empleado)
   const isMonitorMode = userRole === 'admin';
+
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [lastAction, setLastAction] = useState<string | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  const { registrarAsistencia, registrarSalidaComer, registrarRegresoComer, registrarSalidaDefinitiva, fetchHistory } = useAttendanceEngine();
+  const { staffStatus } = useRealtimeNotifications(userRole || null);
+
+  useEffect(() => {
+    if (isMonitorMode) {
+      loadHistory();
+    }
+  }, [isMonitorMode]);
+
+  const loadHistory = async () => {
+    const res = await (fetchHistory as any)();
+    if (res.success) {
+      setHistory(res.data);
+    }
+  };
+
+  const handleExportPDF = () => {
+    setIsExporting(true);
+    try {
+      const columns = ['Empleado', 'Fecha', 'Entrada', 'Comida I', 'Comida R', 'Salida'];
+      const data = history.map(h => [
+        h.user_name,
+        h.work_date,
+        h.check_in ? new Date(h.check_in).toLocaleTimeString() : '-',
+        h.break_start ? new Date(h.break_start).toLocaleTimeString() : '-',
+        h.break_end ? new Date(h.break_end).toLocaleTimeString() : '-',
+        h.check_out ? new Date(h.check_out).toLocaleTimeString() : '-'
+      ]);
+
+      exportToPDF({
+        title: 'Reporte de Asistencia Personal',
+        subtitle: `Generado el ${new Date().toLocaleDateString()} - Historial Completo`,
+        columns,
+        data,
+        filename: 'Reporte_Asistencia'
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Datos de sesión - Prioriza localStorage para coherencia entre módulos
   const [userData, setUserData] = useState({
@@ -95,9 +138,19 @@ export default function Attendance({ userRole }: AttendanceProps) {
         </div>
         
         {isMonitorMode && (
-          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
-            <Users size={16} className="text-sky-500" />
-            <span className="text-xs font-black text-slate-600 uppercase tracking-tight">Activos: {Object.keys(staffStatus).length}</span>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleExportPDF}
+              disabled={isExporting || history.length === 0}
+              className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+            >
+              {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              Exportar PDF
+            </button>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
+              <Users size={16} className="text-sky-500" />
+              <span className="text-xs font-black text-slate-600 uppercase tracking-tight">Activos: {Object.keys(staffStatus).length}</span>
+            </div>
           </div>
         )}
       </div>
@@ -206,7 +259,7 @@ export default function Attendance({ userRole }: AttendanceProps) {
           </>
         ) : (
           /* Monitor Mode (Admin) */
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-50 flex items-center justify-between">
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Personal Activo Hoy</span>
@@ -215,15 +268,15 @@ export default function Attendance({ userRole }: AttendanceProps) {
                   <input 
                     type="text" 
                     placeholder="Buscar empleado..." 
-                    className="pl-9 pr-4 py-2 bg-slate-50 border-none rounded-xl text-xs placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20"
+                    className="pl-9 pr-4 py-2 bg-slate-50 border-none rounded-xl text-xs placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 placeholder:font-bold"
                   />
                 </div>
               </div>
               
               <div className="divide-y divide-slate-50">
                 {Object.keys(staffStatus).length === 0 ? (
-                  <div className="p-12 text-center">
-                    <p className="text-sm font-bold text-slate-300 italic">No hay movimientos registrados hoy</p>
+                  <div className="p-8 text-center">
+                    <p className="text-xs font-bold text-slate-300 italic uppercase">Sin actividad realtime reciente</p>
                   </div>
                 ) : (
                   Object.entries(staffStatus).map(([id, info]: [string, any]) => (
@@ -231,22 +284,22 @@ export default function Attendance({ userRole }: AttendanceProps) {
                       key={id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-6 flex items-center justify-between hover:bg-slate-50/50 transition-colors"
+                      className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white ${
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-white text-xs ${
                           id.includes('chofer') ? 'bg-emerald-500' : 'bg-sky-500'
                         }`}>
                           {info.name.charAt(0)}
                         </div>
                         <div>
-                          <h4 className="text-sm font-black text-slate-800 leading-none">{info.name}</h4>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">{info.role}</p>
+                          <h4 className="text-xs font-black text-slate-800 leading-none">{info.name}</h4>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter mt-1">{info.role}</p>
                         </div>
                       </div>
                       
                       <div className="text-right">
-                        <span className={`inline-block px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                        <span className={`inline-block px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${
                           info.last_event === 'Llegada' ? 'bg-emerald-100 text-emerald-600' :
                           info.last_event === 'Salida a Comer' ? 'bg-amber-100 text-amber-600' :
                           info.last_event === 'Regreso de Comer' ? 'bg-sky-100 text-sky-600' :
@@ -254,13 +307,77 @@ export default function Attendance({ userRole }: AttendanceProps) {
                         }`}>
                           {info.last_event}
                         </span>
-                        <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">
+                        <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase">
                           {new Date(info.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     </motion.div>
                   ))
                 )}
+              </div>
+            </div>
+
+            {/* Historical Table */}
+            <div className="bg-white rounded-[40px] border border-slate-100 shadow-xl overflow-hidden">
+              <div className="p-8 border-b border-slate-50 flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                    <ClipboardList size={18} className="text-sky-500" />
+                    Historial de Asistencia Completo
+                  </h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Todas las entradas, salidas y comidas registradas</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50/50 text-[9px] font-black uppercase text-slate-400 tracking-widest">
+                    <tr>
+                      <th className="px-8 py-4">Empleado / Fecha</th>
+                      <th className="px-8 py-4">Entrada</th>
+                      <th className="px-8 py-4">Comida (I/R)</th>
+                      <th className="px-8 py-4 text-right">Salida</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {history.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-8 py-12 text-center text-slate-300 font-bold uppercase italic text-xs">Cargando historial...</td>
+                      </tr>
+                    ) : history.map((record) => (
+                      <tr key={record.id} className="hover:bg-slate-50 transition-colors group">
+                        <td className="px-8 py-5">
+                          <p className="font-black text-slate-800 text-xs italic">{record.user_name}</p>
+                          <p className="text-[9px] text-slate-400 font-black uppercase tracking-tight">{record.work_date}</p>
+                        </td>
+                        <td className="px-8 py-5">
+                          {record.check_in ? (
+                            <span className="text-xs font-black text-emerald-500">{new Date(record.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-300 uppercase">Sin marc.</span>
+                          )}
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black text-amber-500">
+                              {record.break_start ? new Date(record.break_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                            </span>
+                            <span className="text-slate-200">/</span>
+                            <span className="text-[10px] font-black text-sky-500">
+                              {record.break_end ? new Date(record.break_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5 text-right">
+                          {record.check_out ? (
+                            <span className="text-xs font-black text-slate-700">{new Date(record.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-300 uppercase italic">Activo</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

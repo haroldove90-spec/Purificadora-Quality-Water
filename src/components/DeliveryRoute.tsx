@@ -11,12 +11,14 @@ import {
   MessageCircle,
   Truck,
   ArrowLeft,
-  Loader2
+  Loader2,
+  Download
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Order } from '../lib/types.supabase';
 import { useDriverRoute } from '../hooks/useDriverRoute';
 import { handleCompleteDelivery } from '../services/deliveryService';
+import { exportToPDF } from '../utils/pdfExport';
 
 export default function DeliveryRoute() {
   const [deliveries, setDeliveries] = useState<Order[]>([]);
@@ -25,6 +27,27 @@ export default function DeliveryRoute() {
   const [jugsReceived, setJugsReceived] = useState(0);
   const [step, setStep] = useState(1); // 1: Route List, 2: Delivery Detail, 3: Completion
   const [completing, setCompleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = () => {
+    setIsExporting(true);
+    try {
+      const columns = ['Cliente', 'Dirección', 'Artículos', 'Estatus'];
+      const data = deliveries.map(d => [d.customer_name, d.address, d.items, d.status]);
+      
+      exportToPDF({
+        title: 'Hoja de Ruta del Repartidor',
+        subtitle: `Ruta: Santa Fe / Poniente - ${new Date().toLocaleDateString()}`,
+        columns,
+        data,
+        filename: 'Hoja_Ruta'
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Demo: Usamos un ID de chofer fijo o el del usuario logueado
   const driverId = '00000000-0000-0000-0000-000000000000'; 
@@ -96,11 +119,21 @@ export default function DeliveryRoute() {
               <p className="text-lg font-black italic">Santa Fe / Poniente</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-2xl font-black text-sky-400">
-              {deliveries.filter(d => d.status === 'delivered').length}/{deliveries.length}
-            </p>
-            <p className="text-[10px] font-bold text-slate-400 uppercase">Entregas</p>
+          <div className="text-right flex flex-col items-end gap-2">
+            <button 
+              onClick={handleExportPDF}
+              disabled={isExporting || deliveries.length === 0}
+              className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all disabled:opacity-50"
+            >
+              {isExporting ? <Loader2 size={10} className="animate-spin" /> : <Download size={10} />}
+              Hoja de Ruta
+            </button>
+            <div>
+              <p className="text-2xl font-black text-sky-400">
+                {deliveries.filter(d => d.status === 'delivered').length}/{deliveries.length}
+              </p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">Entregas</p>
+            </div>
           </div>
         </div>
         

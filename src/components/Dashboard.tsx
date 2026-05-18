@@ -11,8 +11,11 @@ import {
   Search,
   CheckCircle2,
   Truck,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Download,
+  Loader2
 } from 'lucide-react';
+import { exportToPDF } from '../utils/pdfExport';
 import { MOCK_ORDERS } from '../constants';
 import { Order } from '../types';
 
@@ -21,6 +24,33 @@ import WhatsAppSimulator from './WhatsAppSimulator';
 export default function Dashboard() {
   const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = () => {
+    setIsExporting(true);
+    try {
+      const columns = ['Cliente', 'Dirección', 'Productos', 'E/R', 'Estatus'];
+      const data = orders.map(o => [
+        o.client,
+        `${o.address} (${o.neighborhood})`,
+        o.items.map(i => `${i.quantity}x ${i.name}`).join(', '),
+        `${o.jugsDelivered}/${o.jugsReceived}`,
+        o.status
+      ]);
+
+      exportToPDF({
+        title: 'Hoja de Pedidos del Día',
+        subtitle: `Generado el ${new Date().toLocaleString()} - Control Operativo`,
+        columns,
+        data,
+        filename: 'Pedidos_Hoy'
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const stats = [
     { label: 'Garrafones en Calle', value: '842', subValue: '/ 1200', color: 'text-slate-900' },
@@ -50,15 +80,25 @@ export default function Dashboard() {
           <p className="text-slate-500 mt-1 italic">Haciendo el agua más inteligente en CDMX</p>
         </div>
         
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input 
-            type="text" 
-            placeholder="Filtrar por cliente o colonia..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all shadow-sm"
-          />
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleExportPDF}
+            disabled={isExporting}
+            className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            Exportar Pedidos
+          </button>
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Filtrar por cliente o colonia..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none transition-all shadow-sm"
+            />
+          </div>
         </div>
       </div>
 

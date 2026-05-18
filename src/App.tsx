@@ -80,11 +80,11 @@ export default function App() {
     if (userRole === 'admin') {
       return [
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
+        { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'sales', label: 'Ventas Globales', icon: History },
         { id: 'customers', label: 'Clientes', icon: Users },
-        { id: 'driver_sales', label: 'Choferes', icon: Truck },
+        { id: 'driver_sales', label: 'Empleados', icon: Truck },
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
-        { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
       ];
     }
