@@ -1,9 +1,7 @@
--- 1. LIMPIEZA INICIAL
-DROP TABLE IF EXISTS public.customers CASCADE;
-DROP TABLE IF EXISTS public.orders CASCADE;
+-- SCRIPT DE ACCESO TOTAL (Copia y pega en Supabase SQL Editor)
 
--- 2. CREACIÓN DE TABLAS
-CREATE TABLE public.customers (
+-- 1. Asegurar que la tabla existe con la estructura correcta
+CREATE TABLE IF NOT EXISTS public.customers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   address TEXT,
@@ -13,48 +11,25 @@ CREATE TABLE public.customers (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
-CREATE TABLE public.orders (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  customer_name TEXT NOT NULL,
-  address TEXT NOT NULL,
-  items TEXT NOT NULL,
-  total_price DECIMAL(10, 2) DEFAULT 0,
-  status TEXT DEFAULT 'pending',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-);
+-- 2. Activar RLS (Seguridad de Fila)
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
 
--- 3. SEGURIDAD (DESHABILITAR RLS PARA PRUEBAS)
-ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
+-- 3. Borrar políticas viejas para evitar conflictos
+DROP POLICY IF EXISTS "Acceso publico total" ON public.customers;
 
--- 4. PERMISOS
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
+-- 4. CREAR POLÍTICA DE ACCESO TOTAL (Esto permite INSERTAR sin errores)
+CREATE POLICY "Acceso publico total" 
+ON public.customers 
+FOR ALL 
+TO anon, authenticated 
+USING (true) 
+WITH CHECK (true);
+
+-- 5. Dar permisos de tabla al rol anónimo (el que usa Vite)
+GRANT ALL ON public.customers TO anon;
+GRANT ALL ON public.customers TO authenticated;
+GRANT ALL ON public.customers TO postgres;
 GRANT USAGE ON SCHEMA public TO anon;
-GRANT USAGE ON SCHEMA public TO authenticated;
 
--- 5. CONFIGURACIÓN DE REALTIME (CORREGIDO)
-DO $$
-BEGIN
-    -- Asegurar que existe la publicación
-    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
-        CREATE PUBLICATION supabase_realtime;
-    END IF;
-
-    -- Intentar añadir tablas a la publicación
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.customers;
-    EXCEPTION WHEN OTHERS THEN 
-        RAISE NOTICE 'Tabla customers ya estaba en tiempo real.';
-    END;
-
-    BEGIN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
-    EXCEPTION WHEN OTHERS THEN 
-        RAISE NOTICE 'Tabla orders ya estaba en tiempo real.';
-    END;
-END $$;
-
--- 6. RECARGAR ESQUEMA PARA LA API
+-- 6. Refrescar el cache de la API para que reconozca los cambios
 NOTIFY pgrst, 'reload schema';
