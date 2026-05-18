@@ -1,5 +1,8 @@
 
--- 1. Asegurar Enums (Evita errores de duplicado)
+-- 1. EXTENSIONES (Opcional pero recomendado)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 2. ENUMS (Manejo robusto para evitar errores de duplicidad)
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
@@ -8,13 +11,64 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_method') THEN
         CREATE TYPE payment_method AS ENUM ('cash', 'card', 'transfer');
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('admin', 'planta', 'repartidor');
+    END IF;
 END$$;
 
--- 2. Actualizar Tabla de Clientes (Agregar columna de ubicación si no existe)
-ALTER TABLE public.customers 
-ADD COLUMN IF NOT EXISTS geolocation_url TEXT;
+-- 3. TABLA DE PERFILES
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID REFERENCES auth.users NOT NULL PRIMARY KEY,
+  full_name TEXT,
+  role user_role DEFAULT 'repartidor',
+  phone TEXT,
+  avatar_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
 
--- 3. Tabla de Bitácoras de Calidad (Si no existe)
+-- 4. TABLA DE CLIENTES
+CREATE TABLE IF NOT EXISTS public.customers (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  address TEXT,
+  phone TEXT UNIQUE,
+  tier TEXT DEFAULT 'frequent', -- frequent, vip, company
+  location POINT, -- Coordenadas para logística
+  geolocation_url TEXT, -- Link de Google Maps/Waze
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 5. TABLA DE PEDIDOS
+CREATE TABLE IF NOT EXISTS public.orders (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  customer_id UUID REFERENCES public.customers(id),
+  customer_name TEXT NOT NULL,
+  address TEXT NOT NULL,
+  items TEXT NOT NULL,
+  total_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  status order_status DEFAULT 'pending',
+  payment_method payment_method DEFAULT 'cash',
+  driver_id UUID REFERENCES auth.users(id),
+  whatsapp_number TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- 6. TABLA DE ASISTENCIA
+CREATE TABLE IF NOT EXISTS public.daily_attendance (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  user_name TEXT,
+  user_role TEXT,
+  work_date DATE DEFAULT CURRENT_DATE,
+  check_in TIMESTAMP WITH TIME ZONE,
+  break_start TIMESTAMP WITH TIME ZONE,
+  break_end TIMESTAMP WITH TIME ZONE,
+  check_out TIMESTAMP WITH TIME ZONE,
+  last_location JSONB, 
+  UNIQUE(user_id, work_date)
+);
+
+-- 7. TABLA DE BITÁCORAS DE CALIDAD
 CREATE TABLE IF NOT EXISTS public.quality_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   staff_id UUID NOT NULL,
@@ -25,7 +79,7 @@ CREATE TABLE IF NOT EXISTS public.quality_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- 4. Tabla de Log de Notificaciones (Si no existe)
+-- 8. TABLA DE LOG DE NOTIFICACIONES (PARA REALTIME)
 CREATE TABLE IF NOT EXISTS public.notifications_log (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -36,7 +90,7 @@ CREATE TABLE IF NOT EXISTS public.notifications_log (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- 5. Función de Notificación Unificada
+-- 9. FUNCIÓN DE TRIGGER PARA LOG DE NOTIFICACIONES
 CREATE OR REPLACE FUNCTION public.fn_log_notification()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -73,26 +127,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 6. Re-vincular Triggers (Garantiza que estén activos)
+-- 10. TRIGGERS
 DROP TRIGGER IF EXISTS tr_log_order_notification ON public.orders;
 CREATE TRIGGER tr_log_order_notification AFTER INSERT ON public.orders FOR EACH ROW EXECUTE FUNCTION public.fn_log_notification();
 
 DROP TRIGGER IF EXISTS tr_log_quality_notification ON public.quality_logs;
 CREATE TRIGGER tr_log_quality_notification AFTER INSERT ON public.quality_logs FOR EACH ROW EXECUTE FUNCTION public.fn_log_notification();
 
--- 7. Activar Realtime (A prueba de errores)
+-- 11. HABILITAR REALTIME Y DESHABILITAR RLS PARA PRUEBAS
+ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.daily_attendance DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.quality_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications_log DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
+
 DO $$
 BEGIN
-  BEGIN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE daily_attendance';
-  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'daily_attendance ya en publicacion';
-  END;
-  BEGIN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE notifications_log';
-  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'notifications_log ya en publicacion';
-  END;
-  BEGIN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE quality_logs';
-  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'quality_logs ya en publicacion';
-  END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+    EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Publicación orders ya existe';
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.daily_attendance;
+    EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Publicación daily_attendance ya existe';
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications_log;
+    EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Publicación notifications_log ya existe';
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.quality_logs;
+    EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Publicación quality_logs ya existe';
+    END;
 END$$;
