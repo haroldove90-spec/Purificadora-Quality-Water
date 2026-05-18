@@ -73,8 +73,8 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
         <p className="text-slate-500 font-bold italic">Selecciona tu perfil de acceso para continuar</p>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl">
-        {roles.map((role, idx) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-5xl">
+        {roles.filter(role => role.id !== 'client').map((role, idx) => (
           <motion.div
             key={role.id}
             initial={{ opacity: 0, y: 20 }}
