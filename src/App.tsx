@@ -79,6 +79,7 @@ export default function App() {
   const getNavItems = () => {
     if (userRole === 'admin') {
       return [
+        { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'sales', label: 'Ventas Globales', icon: History },
@@ -100,7 +101,7 @@ export default function App() {
     if (userRole === 'operator') {
       return [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
-        { id: 'inventory', label: 'Inventario', icon: Package },
+        { id: 'inventory', label: 'Productos', icon: Package },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
       ];

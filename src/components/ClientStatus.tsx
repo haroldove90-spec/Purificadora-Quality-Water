@@ -1,183 +1,195 @@
-
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { Package, MapPin, Phone, MessageSquare, Clock, CheckCircle2, Truck, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Package, MapPin, Phone, MessageSquare, Clock, CheckCircle2, Truck, AlertCircle, ShoppingCart, Tag, TagIcon, Store } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-import { Order } from '../lib/types.supabase';
+
+interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+}
+
+interface Order {
+  id: string;
+  customer_name: string;
+  address: string;
+  items: string;
+  total_price: number;
+  status: string;
+  created_at: string;
+}
 
 export default function ClientStatus() {
   const [order, setOrder] = useState<Order | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const WHATSAPP_NUMBER = '525544771611';
+
+  const fetchProducts = async () => {
+    const { data } = await supabase.from('products').select('*').order('name');
+    if (data) setProducts(data);
+  };
+
+  const fetchLatestOrder = async () => {
+    const { data } = await supabase
+      .from('orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (data && data[0]) {
+      setOrder(data[0] as Order);
+    }
+  };
 
   useEffect(() => {
-    // Para propósitos de demo, buscamos el pedido más reciente de este "cliente"
-    // En producción usaríamos la sesión del usuario o el número de WA
-    const fetchLatestOrder = async () => {
+    const init = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (data && data[0]) {
-        setOrder(data[0] as Order);
-      }
+      await Promise.all([fetchLatestOrder(), fetchProducts()]);
       setLoading(false);
     };
+    init();
 
-    fetchLatestOrder();
-
-    // Realtime update for this specific order
-    const subscription = supabase
-      .channel('client_order_status')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'orders' },
-        (payload) => {
-          if (order && payload.new.id === order.id) {
-            setOrder(payload.new as Order);
-          }
+    const orderSubscription = supabase
+      .channel('client_order_updates')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
+        if (order && payload.new.id === order.id) {
+          setOrder(payload.new as Order);
         }
-      )
+      })
+      .subscribe();
+
+    const productsSubscription = supabase
+      .channel('products_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        fetchProducts();
+      })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(orderSubscription);
+      supabase.removeChannel(productsSubscription);
     };
   }, [order?.id]);
+
+  const handleOrderWhatsApp = (productName?: string) => {
+    const message = productName 
+      ? `Hola QualityWater, me gustaría pedir: ${productName}`
+      : 'Hola QualityWater, me gustaría realizar un pedido de agua.';
+    
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
+  };
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400">
         <div className="w-12 h-12 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="font-black uppercase tracking-widest text-xs italic">Buscando tu pedido...</p>
+        <p className="font-black uppercase tracking-widest text-[10px] italic">Sincronizando con QualityWater...</p>
       </div>
     );
   }
-
-  if (!order) {
-    return (
-      <div className="p-8 text-center max-w-md mx-auto">
-        <div className="bg-white p-12 rounded-[48px] shadow-xl border border-slate-100">
-          <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-200">
-            <Package size={40} />
-          </div>
-          <h3 className="text-xl font-black text-slate-800 uppercase italic">Sin pedidos <span className="text-sky-500">activos</span></h3>
-          <p className="text-sm font-bold text-slate-400 mt-4 leading-relaxed">
-            Parece que no tienes solicitudes pendientes. ¿Deseas pedir agua ahora?
-          </p>
-          <button 
-            onClick={() => window.open('https://wa.me/525500000000', '_blank')}
-            className="w-full mt-8 bg-emerald-500 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-          >
-            <MessageSquare size={16} /> Pedir por WhatsApp
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const steps = [
-    { id: 'pending', label: 'Solicitud Recibida', icon: MessageSquare, description: 'Tu pedido está en cola para procesamiento.' },
-    { id: 'assigned', label: 'En Camino', icon: Truck, description: 'Un repartidor ha sido asignado a tu entrega.' },
-    { id: 'delivered', label: 'Entregado', icon: CheckCircle2, description: '¡Gracias por tu compra! Agua de calidad en tu hogar.' }
-  ];
-
-  const currentStepIndex = steps.findIndex(s => s.id === order.status);
 
   return (
-    <div className="p-4 md:p-8 max-w-2xl mx-auto pb-24">
-      <div className="mb-10 text-center">
-        <h2 className="text-3xl font-black text-slate-800 uppercase italic">Estado de <span className="text-sky-500">Mi Pedido</span></h2>
-        <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mt-2">Folio: {order.id.slice(0, 8)}</p>
+    <div className="space-y-12 pb-32 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="text-center">
+        <h1 className="text-4xl font-black text-slate-800 uppercase italic tracking-tight">Agua de <span className="text-sky-500">Calidad</span></h1>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-3 italic">Purificadora Iztapalapa - Servicio a Domicilio</p>
       </div>
 
-      {/* Main Status Card */}
-      <div className="bg-white p-8 md:p-12 rounded-[48px] shadow-2xl border border-slate-100 mb-8 relative overflow-hidden">
-        <div className="relative z-10">
-          <div className="space-y-12">
-            {steps.map((step, idx) => {
-              const isPast = idx < currentStepIndex || order.status === 'delivered';
-              const isCurrent = idx === currentStepIndex && order.status !== 'delivered';
-              const isFuture = idx > currentStepIndex && order.status !== 'delivered';
-
-              return (
-                <div key={step.id} className="flex gap-6 relative">
-                  {idx < steps.length - 1 && (
-                    <div className={`absolute left-6 top-10 w-0.5 h-12 ${isPast ? 'bg-emerald-500' : 'bg-slate-100'}`} />
-                  )}
-                  
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
-                    isPast ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' :
-                    isCurrent ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20 animate-pulse' :
-                    'bg-slate-50 text-slate-300'
-                  }`}>
-                    <step.icon size={24} />
-                  </div>
-
-                  <div>
-                    <h4 className={`font-black uppercase italic tracking-tight ${isFuture ? 'text-slate-300' : 'text-slate-800'}`}>
-                      {step.label}
-                    </h4>
-                    <p className={`text-xs font-bold leading-relaxed mt-1 ${isFuture ? 'text-slate-300' : 'text-slate-500'}`}>
-                      {step.description}
-                    </p>
-                    {isCurrent && (
-                      <div className="mt-4 inline-flex items-center gap-2 bg-sky-50 text-sky-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">
-                        <Clock size={12} /> Actualizado: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Floating background indicator */}
-        <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50/50 rounded-bl-[100px] -z-0" />
-      </div>
-
-      {/* Order Details */}
-      <div className="bg-slate-900 text-white p-8 rounded-[40px] shadow-xl mb-6">
-        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Detalles de Entrega</h4>
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
-              <Package size={20} className="text-sky-400" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400">Producto</p>
-              <p className="font-black text-sm italic">{order.items}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
-              <MapPin size={20} className="text-rose-400" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400">Dirección</p>
-              <p className="font-black text-sm italic leading-tight">{order.address}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 pt-8 border-t border-white/10 flex justify-between items-center">
-          <p className="text-xs font-bold text-slate-400 uppercase">Total a pagar</p>
-          <p className="text-3xl font-black text-emerald-400">${order.total_price.toFixed(2)}</p>
-        </div>
-      </div>
-
-      {/* Help Action */}
-      <div className="flex gap-4">
-        <button 
-          onClick={() => window.open('https://wa.me/525500000000', '_blank')}
-          className="flex-1 bg-white border border-slate-200 text-slate-600 p-5 rounded-3xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 shadow-sm hover:bg-slate-50 active:scale-95 transition-all"
+      {/* active Order Status IF exists */}
+      {order && order.status !== 'delivered' && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white p-10 rounded-[48px] shadow-2xl border border-sky-100 flex flex-col md:flex-row gap-10 items-center relative overflow-hidden"
         >
-          <MessageSquare size={16} /> Necesito Ayuda
-        </button>
+          <div className="relative z-10 flex-1">
+            <span className="text-[9px] font-black bg-sky-500 text-white px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block">Pedido en Curso</span>
+            <h3 className="text-2xl font-black text-slate-800 uppercase italic">Tu pedido está <span className="text-sky-500">{order.status === 'assigned' ? 'en camino' : 'siendo preparado'}</span></h3>
+            <p className="text-sm font-bold text-slate-400 mt-2 italic">Fecha: {new Date(order.created_at).toLocaleDateString()}</p>
+            
+            <div className="mt-8 flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${order.status === 'assigned' ? 'bg-sky-500 text-white animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
+                <Truck size={24} />
+              </div>
+              <div className="h-px flex-1 bg-slate-100" />
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${order.status === 'delivered' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                <CheckCircle2 size={24} />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-slate-900 text-white p-8 rounded-[32px] w-full md:w-72 shrink-0">
+             <div className="flex justify-between items-center mb-6">
+               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total</span>
+               <p className="text-2xl font-black text-emerald-400">${order.total_price.toFixed(2)}</p>
+             </div>
+             <p className="text-[10px] font-bold text-slate-400 leading-relaxed mb-4">{order.items}</p>
+             <button 
+              onClick={() => handleOrderWhatsApp()}
+              className="w-full bg-white/10 hover:bg-white/20 p-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+             >
+               Soporte Pedido
+             </button>
+          </div>
+          <div className="absolute top-0 right-0 w-32 h-32 bg-sky-50/50 rounded-bl-full -z-0" />
+        </motion.div>
+      )}
+
+      {/* Product Catalog */}
+      <div className="space-y-8">
+        <div className="flex items-center gap-4 px-4">
+          <div className="h-px flex-1 bg-slate-200" />
+          <h2 className="text-xl font-black text-slate-800 uppercase italic tracking-widest flex items-center gap-3">
+             <ShoppingCart size={20} className="text-sky-500" /> Productos Disponibles
+          </h2>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        {products.length === 0 ? (
+          <div className="text-center p-20 bg-slate-50 rounded-[48px] border border-dashed border-slate-200">
+             <Store size={48} className="mx-auto text-slate-300 mb-4" />
+             <p className="font-black text-slate-400 uppercase tracking-widest text-xs">Cargando catálogo...</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
+            {products.map((product) => (
+              <motion.div 
+                key={product.id}
+                whileHover={{ y: -5 }}
+                className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-100 flex items-center justify-between group hover:shadow-xl transition-all"
+              >
+                <div className="flex-1">
+                  <span className="text-[9px] font-black text-sky-500 uppercase tracking-[0.2em]">QualityWater</span>
+                  <h4 className="text-lg font-black text-slate-800 uppercase italic mt-1">{product.name}</h4>
+                  <p className="text-xs font-bold text-slate-400 mt-2 line-clamp-2 italic">{product.description}</p>
+                  <p className="text-2xl font-black text-emerald-500 mt-4">${product.price.toFixed(2)}</p>
+                </div>
+                <button 
+                  onClick={() => handleOrderWhatsApp(product.name)}
+                  className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 group-hover:scale-110 active:scale-95 transition-all shrink-0"
+                  title="Pedir por WhatsApp"
+                >
+                  <MessageSquare size={24} fill="currentColor" />
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Floating CTA for WhatsApp */}
+      <motion.button 
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        onClick={() => handleOrderWhatsApp()}
+        className="fixed bottom-24 right-4 md:right-8 bg-emerald-500 text-white px-8 py-4 rounded-full font-black uppercase tracking-widest text-xs shadow-2xl shadow-emerald-500/40 flex items-center gap-3 z-50 group hover:pr-10 transition-all active:scale-95 border-b-4 border-emerald-700"
+      >
+        <MessageSquare size={20} className="group-hover:rotate-12 transition-transform" />
+        Pedir ahora
+      </motion.button>
     </div>
   );
 }

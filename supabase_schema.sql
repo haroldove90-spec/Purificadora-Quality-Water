@@ -12,6 +12,7 @@
 DROP TABLE IF EXISTS public.employees CASCADE;
 DROP TABLE IF EXISTS public.customers CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
+DROP TABLE IF EXISTS public.products CASCADE;
 DROP TABLE IF EXISTS public.daily_attendance CASCADE;
 DROP TABLE IF EXISTS public.quality_logs CASCADE;
 DROP TABLE IF EXISTS public.notifications_log CASCADE;
@@ -43,7 +44,18 @@ CREATE TABLE public.orders (
   address TEXT NOT NULL,
   items TEXT NOT NULL,
   total_price DECIMAL(10, 2) DEFAULT 0,
-  status TEXT DEFAULT 'pending', 
+  status TEXT DEFAULT 'pending', -- 'pending', 'assigned', 'delivered', 'cancelled'
+  assigned_to UUID, -- ID del repartidor
+  assigned_to_name TEXT, -- Nombre del repartidor
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE public.products (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  image_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
@@ -86,6 +98,7 @@ CREATE TABLE public.notifications_log (
 ALTER TABLE public.employees DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_attendance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quality_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications_log DISABLE ROW LEVEL SECURITY;
@@ -103,5 +116,11 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 DROP PUBLICATION IF EXISTS supabase_realtime;
 CREATE PUBLICATION supabase_realtime FOR ALL TABLES;
 
--- 6. REFRESCAR SISTEMA
+-- 6. DATOS INICIALES (Demo)
+INSERT INTO public.products (name, description, price) VALUES 
+('Garrafón 20L', 'Agua purificada certificada, envase de 20 litros.', 55.00),
+('Garrafón 10L', 'Agua purificada certificada, envase de 10 litros.', 35.00),
+('Botella 1.5L (Paquete 6)', 'Paquete de 6 botellas de 1.5 litros.', 72.00);
+
+-- 7. REFRESCAR SISTEMA
 NOTIFY pgrst, 'reload schema';
