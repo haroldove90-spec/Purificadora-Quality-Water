@@ -51,15 +51,32 @@ export default function Notifications({ userRole }: NotificationsProps) {
 
     const channel = supabase
       .channel('notif_module_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications_log' }, () => {
-        fetchLogs();
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications_log' 
+      }, (payload) => {
+        const newLog = payload.new as NotificationLog;
+        
+        // Sincronización Realtime: Filtrar por rol si no es admin
+        if (userRole === 'admin' || newLog.user_role === userRole) {
+          setLogs(prev => [newLog, ...prev]);
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'notifications_log'
+      }, (payload) => {
+        const updated = payload.new as NotificationLog;
+        setLogs(prev => prev.map(log => log.id === updated.id ? updated : log));
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [filter]);
+  }, [filter, userRole]);
 
   const markAllAsRead = async () => {
     const today = new Date().toISOString().split('T')[0];
