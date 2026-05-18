@@ -100,9 +100,25 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
     setActiveTab(initialTab);
     if (activeTab === 'customers') {
       fetchCustomers();
+      
+      const channel = supabase
+        .channel('customers_sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
+          fetchCustomers();
+        })
+        .subscribe();
+      return () => { supabase.removeChannel(channel); };
     }
     if (activeTab === 'driver_sales') {
       fetchEmployees();
+      
+      const channel = supabase
+        .channel('employees_sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+          fetchEmployees();
+        })
+        .subscribe();
+      return () => { supabase.removeChannel(channel); };
     }
   }, [initialTab, activeTab]);
 

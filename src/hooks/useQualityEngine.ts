@@ -25,8 +25,16 @@ export function useQualityEngine() {
         .single();
 
       if (error) throw error;
+      
+      // 2. Insertar notificación para el administrador
+      await supabase.from('notifications_log').insert([{
+        title: 'Nueva Bitácora de Calidad',
+        message: `${data.supervisor_name} registró una auditoría (${data.volume_received}L)`,
+        type: 'attendance', // Usamos clock icon de attendance para calidad también
+        user_role: 'admin'
+      }]);
 
-      // 2. Disparar Broadcast en tiempo real para el Administrador
+      // 3. Disparar Broadcast en tiempo real para el Administrador
       const channel = supabase.channel('produccion_en_vivo');
       await channel.send({
         type: 'broadcast',

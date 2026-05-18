@@ -88,6 +88,11 @@ export default function Notifications({ userRole }: NotificationsProps) {
     fetchLogs();
   };
 
+  const markAsRead = async (id: string) => {
+    setLogs(prev => prev.map(log => log.id === id ? { ...log, is_read: true } : log));
+    await supabase.from('notifications_log').update({ is_read: true }).eq('id', id);
+  };
+
   const getIcon = (type: string) => {
     switch(type) {
       case 'sale': return <CheckCircle2 size={18} className="text-emerald-500" />;
@@ -154,7 +159,8 @@ export default function Notifications({ userRole }: NotificationsProps) {
               key={log.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              className={`bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border ${log.is_read ? 'border-slate-50' : 'border-sky-100 shadow-lg shadow-sky-500/5'} flex items-start gap-4 md:gap-6 group transition-all`}
+              onClick={() => markAsRead(log.id)}
+              className={`bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border cursor-pointer ${log.is_read ? 'border-slate-50' : 'border-sky-100 shadow-lg shadow-sky-500/5'} flex items-start gap-4 md:gap-6 group transition-all`}
             >
               <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center shrink-0 ${
                 log.is_read ? 'bg-slate-50 text-slate-400' : 'bg-sky-50 text-sky-500'

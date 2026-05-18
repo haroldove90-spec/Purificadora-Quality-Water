@@ -5,6 +5,7 @@ import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckC
 import { useQualityEngine } from '../hooks/useQualityEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 import { exportToPDF } from '../utils/pdfExport';
+import { supabase } from '../lib/supabaseClient';
 
 interface QualityLogProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
@@ -62,6 +63,18 @@ export default function QualityLog({ userRole }: QualityLogProps) {
     }
     
     loadHistory();
+
+    // Suscripción Realtime para actualizar la tabla histórica automáticamente
+    const channel = supabase
+      .channel('quality_logs_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quality_logs' }, () => {
+        loadHistory();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadHistory = async () => {

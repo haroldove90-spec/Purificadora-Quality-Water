@@ -44,6 +44,13 @@ interface Order {
   created_at: string;
 }
 
+interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+}
+
 export default function Dashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [drivers, setDrivers] = useState<Employee[]>([]);

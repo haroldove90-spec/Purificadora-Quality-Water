@@ -135,8 +135,12 @@ export function useRealtimeNotifications(userRole: string | null) {
   }, [userRole]);
 
   const markAsRead = async (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    await supabase.from('notifications_log').update({ is_read: true }).eq('id', id);
+    const notif = notifications.find(n => n.id === id);
+    if (notif && !notif.read) {
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+      await supabase.from('notifications_log').update({ is_read: true }).eq('id', id);
+    }
   };
 
   const clearUnread = () => setUnreadCount(0);
