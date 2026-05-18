@@ -34,10 +34,11 @@ import Attendance from './components/Attendance';
 import NotificationHub from './components/NotificationHub';
 import QualityLog from './components/QualityLog';
 import ClientStatus from './components/ClientStatus';
+import Notifications from './components/Notifications';
 
 import Lobby from './components/Lobby';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications';
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>('lobby');
@@ -87,6 +88,7 @@ export default function App() {
         { id: 'driver_sales', label: 'Empleados', icon: Truck },
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
+        { id: 'notifications', label: 'Notificaciones', icon: Bell },
       ];
     }
 
@@ -94,6 +96,7 @@ export default function App() {
       return [
         { id: 'route', label: 'Mi Ruta', icon: Truck },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Ajustes', icon: User },
       ];
     }
@@ -104,6 +107,7 @@ export default function App() {
         { id: 'inventory', label: 'Productos', icon: Package },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
+        { id: 'notifications', label: 'Notificaciones', icon: Bell },
       ];
     }
 
@@ -243,6 +247,7 @@ export default function App() {
                  activeView === 'quality' ? <QualityLog userRole={userRole} /> :
                  activeView === 'route' ? <DeliveryRoute /> :
                  activeView === 'client_status' ? <ClientStatus /> :
+                 activeView === 'notifications' ? <Notifications /> :
                  <Profile />}
               </motion.div>
             </AnimatePresence>
@@ -275,13 +280,16 @@ export default function App() {
         </button>
       </nav>
 
-      {/* Mobile Dark Mode Toggle Overlay */}
-      <button 
-        onClick={() => setDarkMode(!darkMode)}
-        className="md:hidden fixed top-4 right-4 z-[70] p-3 rounded-full shadow-lg bg-white dark:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700"
-      >
-        {darkMode ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-slate-500" />}
-      </button>
+      {/* Mobile Top Actions Overlay */}
+      <div className="md:hidden fixed top-4 right-4 z-[70] flex items-center gap-3">
+        <NotificationHub userRole={userRole} />
+        <button 
+          onClick={() => setDarkMode(!darkMode)}
+          className="p-3 rounded-full shadow-lg bg-white dark:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700"
+        >
+          {darkMode ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-slate-500" />}
+        </button>
+      </div>
 
       {/* Bottom Spacer for Mobile Nav */}
       <div className="h-20 md:hidden flex-shrink-0" />

@@ -23,7 +23,7 @@ export default function NotificationHub({ userRole }: NotificationHubProps) {
     <div className="relative">
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600 focus:outline-none"
+        className="relative p-3 rounded-full shadow-lg bg-white dark:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 focus:outline-none active:scale-95"
       >
         <Bell size={20} />
         {unreadCount > 0 && (
