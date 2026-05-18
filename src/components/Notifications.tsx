@@ -76,8 +76,8 @@ export default function Notifications() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-800 tracking-tight uppercase italic leading-none">Historial de <span className="text-sky-500">Notificaciones</span></h1>
-          <p className="text-slate-500 mt-2 font-bold italic uppercase text-[10px] tracking-wider">Registros de actividad del día: {new Date().toLocaleDateString()}</p>
+          <h1 className="text-xl md:text-3xl font-black text-slate-800 tracking-tight uppercase italic leading-none">Historial de <span className="text-sky-500">Notificaciones</span></h1>
+          <p className="text-slate-500 mt-2 font-bold italic uppercase text-[9px] md:text-[10px] tracking-wider">Registros de actividad del día: {new Date().toLocaleDateString()}</p>
         </div>
         
         <div className="flex bg-white p-1 rounded-2xl border border-slate-100 shadow-sm">
@@ -128,9 +128,9 @@ export default function Notifications() {
               key={log.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              className={`bg-white p-6 rounded-[32px] border ${log.is_read ? 'border-slate-50' : 'border-sky-100 shadow-lg shadow-sky-500/5'} flex items-start gap-6 group transition-all`}
+              className={`bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border ${log.is_read ? 'border-slate-50' : 'border-sky-100 shadow-lg shadow-sky-500/5'} flex items-start gap-4 md:gap-6 group transition-all`}
             >
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${
+              <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center shrink-0 ${
                 log.is_read ? 'bg-slate-50 text-slate-400' : 'bg-sky-50 text-sky-500'
               }`}>
                 {getIcon(log.type)}

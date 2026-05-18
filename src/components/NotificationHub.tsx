@@ -74,10 +74,10 @@ export default function NotificationHub({ userRole, onViewAll }: NotificationHub
               className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-[2px] md:hidden"
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10, x: -20 }}
-              animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="absolute right-0 mt-3 w-[320px] md:w-[400px] z-50 bg-white rounded-[32px] shadow-2xl border border-slate-100 overflow-hidden"
+              className="fixed inset-x-4 top-20 md:absolute md:inset-auto md:right-0 md:mt-3 w-auto md:w-[400px] z-50 bg-white rounded-[32px] shadow-2xl border border-slate-100 overflow-hidden"
             >
               <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
                 <div>

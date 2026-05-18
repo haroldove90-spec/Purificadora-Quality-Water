@@ -59,17 +59,29 @@ export default function App() {
   useEffect(() => {
     if (userRole) {
       localStorage.setItem('qw_userRole', userRole);
+      // If we are at lobby but have a role, move to the role's default dashboard
+      if (activeView === 'lobby') {
+        switch(userRole) {
+          case 'admin': setActiveView('metrics'); break;
+          case 'operator': setActiveView('dashboard'); break;
+          case 'driver': setActiveView('route'); break;
+          case 'client': setActiveView('client_status'); break;
+        }
+      }
+    } else {
+      localStorage.removeItem('qw_userRole');
+      localStorage.removeItem('qw_session');
+      setActiveView('lobby');
     }
   }, [userRole]);
 
   const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
     setUserRole(role);
-    localStorage.setItem('qw_userRole', role);
     
     // Simulación de Sesión por Rol (Mock Auth Context)
     const mockUserData = {
-      user_id: role === 'driver' ? 'driver_uid_1' : role === 'operator' ? 'operator_uid_1' : 'admin_uid_1',
-      user_name: role === 'driver' ? 'Luis Moreno' : role === 'operator' ? 'Carlos Ruiz' : 'Admin Sistema',
+      user_id: role === 'driver' ? 'driver_uid_1' : role === 'operator' ? 'operator_uid_1' : role === 'admin' ? 'admin_uid_1' : 'client_uid_1',
+      user_name: role === 'driver' ? 'Luis Moreno' : role === 'operator' ? 'Carlos Ruiz' : role === 'admin' ? 'Admin Sistema' : 'Cliente Particular',
       user_role: role
     };
     localStorage.setItem('qw_session', JSON.stringify(mockUserData));
@@ -184,7 +196,7 @@ export default function App() {
           ))}
           
           <button
-            onClick={() => setActiveView('lobby')}
+            onClick={() => setUserRole(null)}
             className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 mt-8"
           >
             <LogOut size={22} />
@@ -288,7 +300,7 @@ export default function App() {
           </button>
         ))}
         <button
-          onClick={() => setActiveView('lobby')}
+          onClick={() => setUserRole(null)}
           className="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl text-slate-400 shrink-0"
         >
           <LogOut size={20} strokeWidth={2.5} />
