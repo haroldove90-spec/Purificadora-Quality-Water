@@ -183,7 +183,8 @@ export default function Dashboard() {
       setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local' });
       fetchOrders();
     } catch (e: any) {
-      alert('Error: ' + e.message);
+      console.error('Order Save Error:', e);
+      alert('Error al registrar pedido: ' + (e.message || 'Verifica tu conexión'));
     } finally {
       setIsSavingOrder(false);
     }
@@ -407,7 +408,7 @@ export default function Dashboard() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl bg-white rounded-[40px] shadow-2xl z-[101] overflow-hidden"
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] md:w-full max-w-xl bg-white rounded-[40px] shadow-2xl z-[101] overflow-y-auto max-h-[90vh] md:max-h-auto"
             >
               <div className="p-8 pb-4 flex justify-between items-center">
                 <h2 className="text-2xl font-black text-slate-800 uppercase italic">Registrar <span className="text-sky-500">Venta/Pedido</span></h2>
