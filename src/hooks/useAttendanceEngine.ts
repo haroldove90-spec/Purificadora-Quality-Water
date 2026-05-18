@@ -52,25 +52,37 @@ export function useAttendanceEngine() {
         check_out: 'Salida Final'
       };
 
-      await supabase.from('notifications_log').insert([{
-        title: 'Registro de Asistencia',
-        message: `${session.user_name} ha marcado: ${labelMap[action]}`,
-        type: 'attendance',
-        user_role: 'admin',
-        is_read: false
-      }]);
+      try {
+        await supabase.from('notifications_log').insert([{
+          title: 'Registro de Asistencia',
+          message: `${session.user_name} ha marcado: ${labelMap[action]}`,
+          type: 'attendance',
+          user_role: 'admin',
+          is_read: false
+        }]);
+      } catch (notifErr) {
+        console.error('Error al insertar notificación de asistencia:', notifErr);
+      }
 
       // 3. Disparar Broadcast para Admin en tiempo real (Staff Monitor)
-      const channel = supabase.channel('asistencias_en_vivo');
-      await channel.send({
-        type: 'broadcast',
-        event: 'attendance_event',
-        payload: {
-          usuario_id: session.user_id,
-          nombre_empleado: session.user_name,
-          rol_empleado: session.user_role,
-          tipo_evento: labelMap[action],
-          timestamp
+      const broadcastChannel = supabase.channel('asistencias_en_vivo');
+      broadcastChannel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await broadcastChannel.send({
+            type: 'broadcast',
+            event: 'attendance_event',
+            payload: {
+              usuario_id: session.user_id,
+              nombre_empleado: session.user_name,
+              rol_empleado: session.user_role,
+              tipo_evento: labelMap[action],
+              timestamp
+            }
+          });
+          // Limpiar el canal después de enviar el broadcast para evitar conflictos
+          setTimeout(() => {
+            supabase.removeChannel(broadcastChannel);
+          }, 1000);
         }
       });
 

@@ -466,22 +466,25 @@ export default function Dashboard() {
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Fuente del Registro</label>
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { id: 'local', label: 'Local', icon: Store, color: 'bg-emerald-500' },
-                      { id: 'phone', label: 'Teléfono', icon: Phone, color: 'bg-sky-500' },
-                      { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'bg-green-500' }
+                      { id: 'local', label: 'Local', icon: Store, color: 'bg-emerald-500', disabled: false },
+                      { id: 'phone', label: 'Teléfono', icon: Phone, color: 'bg-sky-500', disabled: false },
+                      { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'bg-green-500', disabled: true }
                     ].map(btn => (
                       <button
                         key={btn.id}
                         type="button"
+                        disabled={btn.disabled}
                         onClick={() => setNewOrder({...newOrder, source: btn.id as any})}
                         className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
-                          newOrder.source === btn.id 
-                            ? `border-transparent text-white ${btn.color}` 
-                            : 'border-slate-50 text-slate-400 bg-slate-50 hover:bg-slate-100'
+                          btn.disabled 
+                            ? 'opacity-40 cursor-not-allowed border-slate-50 bg-slate-50 text-slate-300'
+                            : newOrder.source === btn.id 
+                              ? `border-transparent text-white ${btn.color}` 
+                              : 'border-slate-50 text-slate-400 bg-slate-50 hover:bg-slate-100'
                         }`}
                       >
                         <btn.icon size={20} />
-                        <span className="text-[9px] font-black uppercase tracking-widest">{btn.label}</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest">{btn.disabled ? 'Inactivo' : btn.label}</span>
                       </button>
                     ))}
                   </div>

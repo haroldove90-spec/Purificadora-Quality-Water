@@ -1,6 +1,11 @@
 {
   "name": "Purificadora Quality Water",
-  "description": "Sistema integral de gestión para la purificadora Quality Water, facilitando la operación, finanzas, reparto y pedidos automatizados.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
+  "description": "Sistema integral de gestión para la purificadora Quality Water, facilitando la operación, finanzas, reparto y pedidos automatizados. Compatible con PWA e instalable.",
+  "requestFramePermissions": [
+    "geolocation",
+    "notifications"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -48,8 +48,8 @@ export function useRealtimeNotifications(userRole: string | null) {
       }));
       setNotifications(formatted);
       
-      const unreadCount = formatted.filter(n => !n.read).length;
-      setUnreadCount(unreadCount);
+      const count = formatted.filter(n => !n.read).length;
+      setUnreadCount(count);
     }
   };
 
@@ -72,10 +72,9 @@ export function useRealtimeNotifications(userRole: string | null) {
 
     fetchNotificationLogs();
 
-    const channelName = `notifications_realtime_${crypto.randomUUID().slice(0, 8)}`;
-    const channel = supabase.channel(channelName);
+    const psqlChannel = supabase.channel(`notifs_psql_${crypto.randomUUID().slice(0, 8)}`);
 
-    channel
+    psqlChannel
       // 1. Escuchar Historial de Notificaciones (Tablas directas)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications_log' }, (payload) => {
         const newLog = payload.new;
@@ -97,7 +96,9 @@ export function useRealtimeNotifications(userRole: string | null) {
         };
 
         setNotifications(prev => [formatted, ...prev]);
-        setUnreadCount(prev => prev + 1);
+        if (!formatted.read) {
+          setUnreadCount(prev => prev + 1);
+        }
         playNotificationSound();
 
         // Native Browser Notification (Using global Window.Notification)
@@ -114,7 +115,42 @@ export function useRealtimeNotifications(userRole: string | null) {
           type: formatted.type
         });
       })
-      // 2. Escuchar Broadcast de Asistencia (Staff Monitor)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications_log' }, (payload) => {
+        const updatedLog = payload.new;
+        
+        // Si no es admin y el rol no coincide, ignorar
+        if (userRole !== 'admin' && updatedLog.user_role !== userRole) {
+          return;
+        }
+
+        setNotifications(prev => {
+          const oldIndex = prev.findIndex(n => n.id === updatedLog.id);
+          if (oldIndex === -1) return prev;
+          
+          const oldNotif = prev[oldIndex];
+          const newNotifs = [...prev];
+          newNotifs[oldIndex] = {
+            ...oldNotif,
+            read: updatedLog.is_read
+          };
+
+          // Sincronizar contador de no leídos basándose en el nuevo estado
+          const newCount = newNotifs.filter(n => !n.read).length;
+          setUnreadCount(newCount);
+
+          return newNotifs;
+        });
+      })
+      .subscribe();
+
+    // 2. Escuchar Broadcast de Asistencia en un canal separado (Staff Monitor)
+    const broadcastChannel = supabase.channel(`staff_bcast_${crypto.randomUUID().slice(0, 8)}`);
+    // Note: To receive broadcasts sent by others, we must listen to the same channel name.
+    // Wait, if I use a unique name, I won't hear them if they send to a specific name.
+    // But broadcast is sent to WHATEVER channel name the sender specified.
+    
+    const sharedBroadcast = supabase.channel('asistencias_en_vivo');
+    sharedBroadcast
       .on('broadcast', { event: 'attendance_event' }, (payload) => {
         const { usuario_id, nombre_empleado, rol_empleado, tipo_evento, timestamp } = payload.payload;
         setStaffStatus(prev => ({
@@ -130,15 +166,19 @@ export function useRealtimeNotifications(userRole: string | null) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(psqlChannel);
+      supabase.removeChannel(sharedBroadcast);
     };
   }, [userRole]);
 
   const markAsRead = async (id: string) => {
     const notif = notifications.find(n => n.id === id);
     if (notif && !notif.read) {
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      setNotifications(prev => {
+        const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
+        setUnreadCount(updated.filter(x => !x.read).length);
+        return updated;
+      });
       await supabase.from('notifications_log').update({ is_read: true }).eq('id', id);
     }
   };

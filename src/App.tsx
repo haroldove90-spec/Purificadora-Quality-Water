@@ -23,6 +23,8 @@ import {
   History,
   Store,
   ShieldCheck,
+  Download,
+  Settings,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
@@ -37,10 +39,12 @@ import ClientStatus from './components/ClientStatus';
 import Notifications from './components/Notifications';
 
 import Lobby from './components/Lobby';
+import { usePWA } from './hooks/usePWA';
 
 type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications';
 
 export default function App() {
+  const { isInstallable, installApp, requestPermissions } = usePWA();
   const [activeView, setActiveView] = useState<View>(() => {
     const saved = localStorage.getItem('qw_activeView');
     return (saved as View) || 'lobby';
@@ -77,6 +81,7 @@ export default function App() {
 
   const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
     setUserRole(role);
+    requestPermissions();
     
     // Simulación de Sesión por Rol (Mock Auth Context)
     const mockUserData = {
@@ -179,8 +184,18 @@ export default function App() {
           )}
         </div>
 
-        <nav className="flex-1 px-4 mt-4 space-y-2">
-          {navItems.map((item) => (
+          <nav className="flex-1 px-4 mt-4 space-y-2">
+            {isInstallable && (
+              <button
+                onClick={installApp}
+                className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all bg-sky-500/10 text-sky-400 hover:bg-sky-500 hover:text-white mb-4 border border-sky-500/20"
+              >
+                <Download size={22} className="shrink-0" />
+                {isSidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest text-left">Instalar Aplicación</span>}
+              </button>
+            )}
+
+            {navItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveView(item.id as View)}
@@ -225,7 +240,7 @@ export default function App() {
           
           <div className="flex items-center gap-6">
             <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
-              {(['admin', 'operator', 'driver', 'client'] as const).map(role => (
+              {(['admin', 'operator', 'driver'] as const).map(role => (
                 <button
                   key={role}
                   onClick={() => handleRoleSelection(role)}
@@ -233,11 +248,21 @@ export default function App() {
                     userRole === role ? 'bg-sky-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'
                   }`}
                 >
-                  {role === 'operator' ? 'Planta' : role === 'driver' ? 'Chofer' : role === 'client' ? 'Cliente' : 'Admin'}
+                  {role === 'operator' ? 'Planta' : role === 'driver' ? 'Chofer' : 'Admin'}
                 </button>
               ))}
             </div>
             <NotificationHub userRole={userRole} onViewAll={() => setActiveView('notifications')} />
+            {isInstallable && (
+              <button
+                onClick={installApp}
+                title="Instalar App"
+                className="p-2 rounded-lg bg-sky-500/10 text-sky-500 hover:bg-sky-500 hover:text-white transition-all flex items-center gap-2"
+              >
+                <Download size={18} />
+                <span className="text-[9px] font-black uppercase tracking-tight">Instalar</span>
+              </button>
+            )}
             <button 
               onClick={() => setDarkMode(!darkMode)}
               className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-500'}`}
@@ -310,6 +335,14 @@ export default function App() {
 
       {/* Mobile Top Actions Overlay */}
       <div className="md:hidden fixed top-4 right-4 z-[70] flex items-center gap-3">
+        {isInstallable && (
+          <button
+            onClick={installApp}
+            className="p-3 rounded-full shadow-lg bg-sky-500 text-white transition-all border border-sky-400 animate-bounce"
+          >
+            <Download size={20} />
+          </button>
+        )}
         <NotificationHub userRole={userRole} onViewAll={() => setActiveView('notifications')} />
         <button 
           onClick={() => setDarkMode(!darkMode)}

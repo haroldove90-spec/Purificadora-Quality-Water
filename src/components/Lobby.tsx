@@ -49,7 +49,7 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
       icon: MessageCircle,
       color: 'bg-rose-500',
       shadow: 'shadow-rose-500/20',
-      disabled: false
+      disabled: true
     }
   ];
 

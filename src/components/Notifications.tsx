@@ -1,97 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Bell, Calendar, User, MessageSquare, Clock, Filter, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
-
-interface NotificationLog {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  user_role: string;
-  is_read: boolean;
-  created_at: string;
-}
+import { Bell, Clock, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 
 interface NotificationsProps {
   userRole: string | null;
 }
 
 export default function Notifications({ userRole }: NotificationsProps) {
-  const [logs, setLogs] = useState<NotificationLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { notifications: logs, markAsRead, markAllAsRead } = useRealtimeNotifications(userRole);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const fetchLogs = async () => {
-    setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
-    
-    let query = supabase
-      .from('notifications_log')
-      .select('*')
-      .gte('created_at', `${today}T00:00:00`)
-      .order('created_at', { ascending: false });
-
-    // Filtrado por rol si no es admin
-    if (userRole !== 'admin') {
-      query = query.eq('user_role', userRole);
-    }
-
-    if (filter === 'unread') {
-      query = query.eq('is_read', false);
-    }
-
-    const { data } = await query;
-    if (data) setLogs(data);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchLogs();
-
-    const channel = supabase
-      .channel('notif_module_sync')
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'notifications_log' 
-      }, (payload) => {
-        const newLog = payload.new as NotificationLog;
-        
-        // Sincronización Realtime: Filtrar por rol si no es admin
-        if (userRole === 'admin' || newLog.user_role === userRole) {
-          setLogs(prev => [newLog, ...prev]);
-        }
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'notifications_log'
-      }, (payload) => {
-        const updated = payload.new as NotificationLog;
-        setLogs(prev => prev.map(log => log.id === updated.id ? updated : log));
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [filter, userRole]);
-
-  const markAllAsRead = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    await supabase
-      .from('notifications_log')
-      .update({ is_read: true })
-      .eq('is_read', false)
-      .gte('created_at', `${today}T00:00:00`);
-    fetchLogs();
-  };
-
-  const markAsRead = async (id: string) => {
-    setLogs(prev => prev.map(log => log.id === id ? { ...log, is_read: true } : log));
-    await supabase.from('notifications_log').update({ is_read: true }).eq('id', id);
-  };
+  const filteredLogs = filter === 'all' ? logs : logs.filter(l => !l.read);
 
   const getIcon = (type: string) => {
     switch(type) {
@@ -141,29 +61,24 @@ export default function Notifications({ userRole }: NotificationsProps) {
           </button>
         </div>
 
-        {loading ? (
-          <div className="bg-white p-20 rounded-[48px] border border-slate-100 flex flex-col items-center justify-center">
-            <div className="w-12 h-12 border-4 border-sky-100 border-t-sky-500 rounded-full animate-spin mb-4" />
-            <p className="font-black uppercase tracking-widest text-[10px] text-slate-400">Sincronizando logs...</p>
-          </div>
-        ) : logs.length === 0 ? (
+        {filteredLogs.length === 0 ? (
           <div className="bg-white p-20 rounded-[48px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-center">
              <Bell size={48} className="text-slate-200 mb-4" />
              <h3 className="text-xl font-black text-slate-800 uppercase italic">Sin notificaciones</h3>
              <p className="text-sm font-bold text-slate-400 mt-2 italic">Aún no hay registros para el día de hoy.</p>
           </div>
         ) : (
-          logs.map((log) => (
+          filteredLogs.map((log) => (
             <motion.div
               layout
               key={log.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               onClick={() => markAsRead(log.id)}
-              className={`bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border cursor-pointer ${log.is_read ? 'border-slate-50' : 'border-sky-100 shadow-lg shadow-sky-500/5'} flex items-start gap-4 md:gap-6 group transition-all`}
+              className={`bg-white p-4 md:p-6 rounded-[24px] md:rounded-[32px] border cursor-pointer ${log.read ? 'border-slate-50' : 'border-sky-100 shadow-lg shadow-sky-500/5'} flex items-start gap-4 md:gap-6 group transition-all`}
             >
               <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center shrink-0 ${
-                log.is_read ? 'bg-slate-50 text-slate-400' : 'bg-sky-50 text-sky-500'
+                log.read ? 'bg-slate-50 text-slate-400' : 'bg-sky-50 text-sky-500'
               }`}>
                 {getIcon(log.type)}
               </div>
@@ -172,13 +87,13 @@ export default function Notifications({ userRole }: NotificationsProps) {
                 <div className="flex justify-between items-start">
                   <div>
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">
-                      {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {log.user_role}
+                      {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
-                    <h3 className={`font-black uppercase italic tracking-tight ${log.is_read ? 'text-slate-600' : 'text-slate-900 group-hover:text-sky-500 transition-colors'}`}>
+                    <h3 className={`font-black uppercase italic tracking-tight ${log.read ? 'text-slate-600' : 'text-slate-900 group-hover:text-sky-500 transition-colors'}`}>
                       {log.title}
                     </h3>
                   </div>
-                  {!log.is_read && (
+                  {!log.read && (
                     <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
                   )}
                 </div>
