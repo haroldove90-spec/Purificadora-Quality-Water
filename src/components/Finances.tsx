@@ -529,7 +529,12 @@ export default function Finances({ initialTab = 'metrics' }: FinancesProps) {
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Link de Ubicación (Google Maps / Waze)</label>
-                  <input type="url" placeholder="https://maps.google.com/..." className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                  <input 
+                    name="geolocation_url"
+                    type="url" 
+                    placeholder="https://maps.google.com/..." 
+                    className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" 
+                  />
                 </div>
 
                 <div className="bg-sky-50 p-4 rounded-2xl border border-sky-100 mt-2">

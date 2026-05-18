@@ -1,10 +1,7 @@
 
--- 1. Enums para estados y roles (Evita duplicados)
+-- 1. Asegurar Enums (Evita errores de duplicado)
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-        CREATE TYPE user_role AS ENUM ('admin', 'planta', 'repartidor');
-    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
         CREATE TYPE order_status AS ENUM ('pending', 'assigned', 'delivered', 'cancelled');
     END IF;
@@ -13,81 +10,11 @@ BEGIN
     END IF;
 END$$;
 
--- 2. Tabla de Usuarios (Extiende auth.users)
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID REFERENCES auth.users NOT NULL PRIMARY KEY,
-  full_name TEXT,
-  role user_role DEFAULT 'repartidor',
-  phone TEXT,
-  avatar_url TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
+-- 2. Actualizar Tabla de Clientes (Agregar columna de ubicación si no existe)
+ALTER TABLE public.customers 
+ADD COLUMN IF NOT EXISTS geolocation_url TEXT;
 
--- 3. Tabla de Productos
-CREATE TABLE IF NOT EXISTS public.products (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT,
-  price DECIMAL(10, 2) NOT NULL,
-  unit TEXT DEFAULT 'unidad', -- e.g., '20L'
-  stock INTEGER DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-);
-
--- 4. Tabla de Clientes
-CREATE TABLE IF NOT EXISTS public.customers (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  address TEXT,
-  phone TEXT UNIQUE,
-  tier TEXT DEFAULT 'frequent', -- frequent, vip, company
-  location POINT, -- Coordenadas para logística
-  geolocation_url TEXT, -- Link de Google Maps/Waze
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-);
-
--- 5. Tabla de Pedidos (Orders)
-CREATE TABLE IF NOT EXISTS public.orders (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  customer_id UUID REFERENCES public.customers(id),
-  customer_name TEXT NOT NULL, -- Backup en caso de cliente no registrado
-  address TEXT NOT NULL,
-  items TEXT NOT NULL, -- e.g., "3 Garrafones"
-  total_price DECIMAL(10, 2) NOT NULL,
-  status order_status DEFAULT 'pending',
-  payment_method payment_method DEFAULT 'cash',
-  driver_id UUID REFERENCES auth.users(id),
-  whatsapp_number TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-);
-
--- 6. Tabla de Asistencia (Daily Attendance)
-CREATE TABLE IF NOT EXISTS public.daily_attendance (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL,
-  user_name TEXT,
-  user_role TEXT,
-  work_date DATE DEFAULT CURRENT_DATE,
-  check_in TIMESTAMP WITH TIME ZONE,
-  break_start TIMESTAMP WITH TIME ZONE,
-  break_end TIMESTAMP WITH TIME ZONE,
-  check_out TIMESTAMP WITH TIME ZONE,
-  last_location JSONB, -- { lat, lng }
-  UNIQUE(user_id, work_date)
-);
-
--- 7. Tabla de Notificaciones (Log)
-CREATE TABLE IF NOT EXISTS public.notifications_log (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  type TEXT DEFAULT 'system',
-  payload JSONB,
-  read BOOLEAN DEFAULT false,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-);
-
--- 8. Bitácoras de Calidad
+-- 3. Tabla de Bitácoras de Calidad (Si no existe)
 CREATE TABLE IF NOT EXISTS public.quality_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   staff_id UUID NOT NULL,
@@ -98,7 +25,18 @@ CREATE TABLE IF NOT EXISTS public.quality_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- 9. Funciones y Triggers (REPLACE siempre actualiza la función)
+-- 4. Tabla de Log de Notificaciones (Si no existe)
+CREATE TABLE IF NOT EXISTS public.notifications_log (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  type TEXT DEFAULT 'system',
+  payload JSONB,
+  read BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 5. Función de Notificación Unificada
 CREATE OR REPLACE FUNCTION public.fn_log_notification()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -119,7 +57,6 @@ BEGIN
       IF NEW.check_out IS DISTINCT FROM OLD.check_out THEN v_message := NEW.user_name || ' marcó Salida Final';
       ELSIF NEW.break_end IS DISTINCT FROM OLD.break_end THEN v_message := NEW.user_name || ' volvió de Comer';
       ELSIF NEW.break_start IS DISTINCT FROM OLD.break_start THEN v_message := NEW.user_name || ' salió a Comer';
-      ELSIF NEW.check_in IS DISTINCT FROM OLD.check_in THEN v_message := NEW.user_name || ' marcó Entrada';
       ELSE RETURN NEW;
       END IF;
     END IF;
@@ -136,42 +73,26 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Dropping before creating to avoid "already exists" errors
+-- 6. Re-vincular Triggers (Garantiza que estén activos)
 DROP TRIGGER IF EXISTS tr_log_order_notification ON public.orders;
-CREATE TRIGGER tr_log_order_notification
-AFTER INSERT ON public.orders
-FOR EACH ROW EXECUTE FUNCTION public.fn_log_notification();
-
-DROP TRIGGER IF EXISTS tr_log_attendance_notification ON public.daily_attendance;
-CREATE TRIGGER tr_log_attendance_notification
-AFTER INSERT OR UPDATE ON public.daily_attendance
-FOR EACH ROW EXECUTE FUNCTION public.fn_log_notification();
+CREATE TRIGGER tr_log_order_notification AFTER INSERT ON public.orders FOR EACH ROW EXECUTE FUNCTION public.fn_log_notification();
 
 DROP TRIGGER IF EXISTS tr_log_quality_notification ON public.quality_logs;
-CREATE TRIGGER tr_log_quality_notification
-AFTER INSERT ON public.quality_logs
-FOR EACH ROW EXECUTE FUNCTION public.fn_log_notification();
+CREATE TRIGGER tr_log_quality_notification AFTER INSERT ON public.quality_logs FOR EACH ROW EXECUTE FUNCTION public.fn_log_notification();
 
--- 10. Habilitar Realtime (Manejo de errores si ya existe en la publicación)
+-- 7. Activar Realtime (A prueba de errores)
 DO $$
 BEGIN
-  -- Intenta añadir las tablas a la publicación de realtime
-  -- Ignora si falla porque ya están añadidas
-  EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE daily_attendance';
-EXCEPTION WHEN OTHERS THEN 
-  RAISE NOTICE 'Table daily_attendance already in publication or publication missing';
-END$$;
-
-DO $$
-BEGIN
-  EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE notifications_log';
-EXCEPTION WHEN OTHERS THEN 
-  RAISE NOTICE 'Table notifications_log already in publication';
-END$$;
-
-DO $$
-BEGIN
-  EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE quality_logs';
-EXCEPTION WHEN OTHERS THEN 
-  RAISE NOTICE 'Table quality_logs already in publication';
+  BEGIN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE daily_attendance';
+  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'daily_attendance ya en publicacion';
+  END;
+  BEGIN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE notifications_log';
+  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'notifications_log ya en publicacion';
+  END;
+  BEGIN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE quality_logs';
+  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'quality_logs ya en publicacion';
+  END;
 END$$;
