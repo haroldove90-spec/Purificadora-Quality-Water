@@ -39,7 +39,10 @@ export function useAttendanceEngine() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase Error Details:', error);
+        throw error;
+      }
 
       // 2. Disparar Broadcast para Admin en tiempo real
       const labelMap: Record<AttendanceAction, string> = {

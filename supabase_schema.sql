@@ -32,7 +32,7 @@ CREATE TABLE public.customers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   address TEXT,
-  phone TEXT, -- Sin UNIQUE para facilitar pruebas iniciales
+  phone TEXT, 
   tier TEXT DEFAULT 'frequent',
   geolocation_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
