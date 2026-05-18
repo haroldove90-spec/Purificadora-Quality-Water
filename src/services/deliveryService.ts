@@ -23,7 +23,27 @@ export async function handleCompleteDelivery(orderId: string) {
 
     const order = data as Order;
 
-    // 2. Generar texto para el Ticket Digital de WhatsApp
+    // 2. Notificar a Admin y Planta que la venta/entrega se completó
+    try {
+      await supabase.from('notifications_log').insert([
+        {
+          title: 'Venta Completada (Ruta)',
+          message: `${order.customer_name} recibió su pedido. Total: $${order.total_price.toFixed(2)}`,
+          type: 'sale',
+          user_role: 'admin'
+        },
+        {
+          title: 'Venta Completada (Ruta)',
+          message: `${order.customer_name} recibió su pedido. Total: $${order.total_price.toFixed(2)}`,
+          type: 'sale',
+          user_role: 'operator'
+        }
+      ]);
+    } catch (notifError) {
+      console.warn('Error sending delivery notifications:', notifError);
+    }
+
+    // 3. Generar texto para el Ticket Digital de WhatsApp
     const ticketText = `
 *✅ TICKET DIGITAL - QUALITY WATER*
 ----------------------------------

@@ -18,6 +18,7 @@ import {
   Send,
   X,
   Plus,
+  Trash2,
   Phone,
   Store,
   Save,
@@ -51,7 +52,7 @@ interface Product {
   price: number;
 }
 
-export default function Dashboard() {
+export default function Dashboard({ userRole }: { userRole: string | null }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [drivers, setDrivers] = useState<Employee[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -234,6 +235,28 @@ export default function Dashboard() {
     }
   };
 
+  const handleDeleteOrder = async (id: string, customer: string) => {
+    if (!confirm(`¿Estás seguro de eliminar el pedido de ${customer}? Esta acción no se puede deshacer.`)) return;
+    
+    const { error } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert('Error al eliminar: ' + error.message);
+    } else {
+      fetchOrders();
+      // Notificar eliminación si es necesario
+      await supabase.from('notifications_log').insert({
+        title: 'Pedido Eliminado',
+        message: `El pedido de ${customer} fue eliminado del sistema por el administrador`,
+        type: 'system',
+        user_role: 'admin'
+      });
+    }
+  };
+
   return (
     <div className="space-y-6 pb-24">
       {/* Header */}
@@ -345,18 +368,29 @@ export default function Dashboard() {
                     </span>
                   </td>
                   <td className="px-8 py-6 text-right">
-                    {order.status === 'pending' ? (
-                      <button 
-                        onClick={() => setSelectedOrder(order)}
-                        className="bg-sky-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-200 hover:bg-sky-600 transition-all active:scale-95 flex items-center gap-2 ml-auto"
-                      >
-                        <UserPlus size={14} /> Asignar
-                      </button>
-                    ) : (
-                      <button className="text-slate-300 hover:text-sky-500 p-2 transition-colors">
-                        <ChevronRight size={20} />
-                      </button>
-                    )}
+                    <div className="flex items-center justify-end gap-2">
+                      {userRole === 'admin' && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id, order.customer_name); }}
+                          className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                          title="Eliminar Pedido"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                      {order.status === 'pending' ? (
+                        <button 
+                          onClick={() => setSelectedOrder(order)}
+                          className="bg-sky-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-200 hover:bg-sky-600 transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <UserPlus size={14} /> Asignar
+                        </button>
+                      ) : (
+                        <button className="text-slate-300 hover:text-sky-500 p-2 transition-colors">
+                          <ChevronRight size={20} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

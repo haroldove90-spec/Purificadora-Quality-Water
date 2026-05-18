@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, MapPin, CheckCircle2, AlertCircle, Loader2, ArrowRight, LogOut, Coffee, Users, Search, Download, ClipboardList } from 'lucide-react';
+import { Clock, MapPin, CheckCircle2, AlertCircle, Loader2, ArrowRight, LogOut, Coffee, Users, Search, Download, ClipboardList, Trash2 } from 'lucide-react';
 import { useAttendanceEngine, AttendanceAction } from '../hooks/useAttendanceEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 import { exportToPDF } from '../utils/pdfExport';
@@ -73,6 +73,13 @@ export default function Attendance({ userRole }: AttendanceProps) {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleDeleteAttendance = async (id: string, name: string) => {
+    if (!confirm(`¿Eliminar registro de asistencia de ${name}?`)) return;
+    const { error } = await supabase.from('daily_attendance').delete().eq('id', id);
+    if (error) alert('Error: ' + error.message);
+    else loadHistory();
   };
 
   // Datos de sesión - Prioriza localStorage para coherencia entre módulos
@@ -348,13 +355,14 @@ export default function Attendance({ userRole }: AttendanceProps) {
                       <th className="px-8 py-4">Empleado / Fecha</th>
                       <th className="px-8 py-4">Entrada</th>
                       <th className="px-8 py-4">Comida (I/R)</th>
-                      <th className="px-8 py-4 text-right">Salida</th>
+                      <th className="px-8 py-4">Salida</th>
+                      {isMonitorMode && <th className="px-8 py-4 text-right">Acción</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {history.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-8 py-12 text-center text-slate-300 font-bold uppercase italic text-xs">Cargando historial...</td>
+                        <td colSpan={isMonitorMode ? 5 : 4} className="px-8 py-12 text-center text-slate-300 font-bold uppercase italic text-xs">Cargando historial...</td>
                       </tr>
                     ) : history.map((record) => (
                       <tr key={record.id} className="hover:bg-slate-50 transition-colors group">
@@ -381,11 +389,21 @@ export default function Attendance({ userRole }: AttendanceProps) {
                           </div>
                         </td>
                         <td className="px-8 py-5 text-right">
-                          {record.check_out ? (
-                            <span className="text-xs font-black text-slate-700">{new Date(record.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          ) : (
-                            <span className="text-[10px] font-bold text-slate-300 uppercase italic">Activo</span>
-                          )}
+                          <div className="flex items-center justify-end gap-3">
+                            {record.check_out ? (
+                              <span className="text-xs font-black text-slate-700">{new Date(record.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-slate-300 uppercase italic">Activo</span>
+                            )}
+                            {isMonitorMode && (
+                              <button 
+                                onClick={() => handleDeleteAttendance(record.id, record.user_name)}
+                                className="p-1.5 text-slate-200 hover:text-rose-500 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

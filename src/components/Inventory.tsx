@@ -11,7 +11,7 @@ interface Product {
   price: number;
 }
 
-export default function Products() {
+export default function Products({ userRole }: { userRole: string | null }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -149,12 +149,14 @@ export default function Products() {
                   <button className="p-2 text-slate-400 hover:text-sky-500 transition-colors">
                     <Edit3 size={18} />
                   </button>
-                  <button 
-                    onClick={() => handleDeleteProduct(product.id)}
-                    className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  {userRole === 'admin' && (
+                    <button 
+                      onClick={() => handleDeleteProduct(product.id)}
+                      className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
                 </div>
               </div>
               

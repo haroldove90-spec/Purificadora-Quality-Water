@@ -138,6 +138,7 @@ export default function App() {
       return [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'inventory', label: 'Productos', icon: Package },
+        { id: 'sales', label: 'Ventas Globales', icon: History },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
@@ -288,18 +289,18 @@ export default function App() {
                 transition={{ duration: 0.2 }}
                 className="flex-1"
               >
-                {activeView === 'dashboard' ? <Dashboard /> : 
-                 activeView === 'inventory' ? <Inventory /> :
-                 activeView === 'finances' ? <Finances /> :
-                 activeView === 'metrics' ? <Finances initialTab="metrics" /> :
-                 activeView === 'sales' ? <Finances initialTab="sales" /> :
-                 activeView === 'customers' ? <Finances initialTab="customers" /> :
-                 activeView === 'driver_sales' ? <Finances initialTab="driver_sales" /> :
-                 activeView === 'plant_cut' ? <Finances initialTab="plant_cut" /> :
+                {activeView === 'dashboard' ? <Dashboard userRole={userRole} /> : 
+                 activeView === 'inventory' ? <Inventory userRole={userRole} /> :
+                 activeView === 'finances' ? <Finances userRole={userRole} /> :
+                 activeView === 'metrics' ? <Finances initialTab="metrics" userRole={userRole} /> :
+                 activeView === 'sales' ? <Finances initialTab="sales" userRole={userRole} /> :
+                 activeView === 'customers' ? <Finances initialTab="customers" userRole={userRole} /> :
+                 activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={userRole} /> :
+                 activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={userRole} /> :
                  activeView === 'attendance' ? <Attendance userRole={userRole} /> :
                  activeView === 'quality' ? <QualityLog userRole={userRole} /> :
-                 activeView === 'route' ? <DeliveryRoute /> :
-                 activeView === 'client_status' ? <ClientStatus /> :
+                 activeView === 'route' ? <DeliveryRoute userRole={userRole} /> :
+                 activeView === 'client_status' ? <ClientStatus userRole={userRole} /> :
                  activeView === 'notifications' ? <Notifications userRole={userRole} /> :
                  <Profile />}
               </motion.div>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle, Download } from 'lucide-react';
+import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle, Download, Trash2 } from 'lucide-react';
 import { useQualityEngine } from '../hooks/useQualityEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 import { exportToPDF } from '../utils/pdfExport';
@@ -82,6 +82,13 @@ export default function QualityLog({ userRole }: QualityLogProps) {
     if (res.success) setDbLogs(res.data);
   };
 
+  const handleDeleteLog = async (id: string) => {
+    if (!confirm('¿Eliminar este registro de calidad?')) return;
+    const { error } = await supabase.from('quality_logs').delete().eq('id', id);
+    if (error) alert('Error: ' + error.message);
+    else loadHistory();
+  };
+
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -159,12 +166,13 @@ export default function QualityLog({ userRole }: QualityLogProps) {
                     <th className="px-8 py-6">Valor / Auditoría</th>
                     <th className="px-8 py-6">Estatus</th>
                     <th className="px-8 py-6">Hora</th>
+                    {isMonitorMode && <th className="px-8 py-6 text-right">Acción</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {dbLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-8 py-12 text-center text-slate-300 font-bold italic">No hay registros dinámicos aún</td>
+                      <td colSpan={isMonitorMode ? 5 : 4} className="px-8 py-12 text-center text-slate-300 font-bold italic">No hay registros dinámicos aún</td>
                     </tr>
                   ) : dbLogs.map((log) => (
                     <tr key={log.id} className="hover:bg-slate-50 group transition-colors">
@@ -184,7 +192,17 @@ export default function QualityLog({ userRole }: QualityLogProps) {
                         </span>
                       </td>
                       <td className="px-8 py-6 text-sm font-bold text-slate-500 italic">
-                        {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        <div className="flex items-center justify-between gap-2">
+                          {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {isMonitorMode && (
+                            <button 
+                              onClick={() => handleDeleteLog(log.id)}
+                              className="p-1.5 text-slate-200 hover:text-rose-500 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
