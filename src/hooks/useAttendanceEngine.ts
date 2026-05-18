@@ -44,7 +44,7 @@ export function useAttendanceEngine() {
         throw error;
       }
 
-      // 2. Disparar Broadcast para Admin en tiempo real
+      // 2. Insertar en log de notificaciones para el Admin
       const labelMap: Record<AttendanceAction, string> = {
         check_in: 'Llegada',
         break_start: 'Salida a Comer',
@@ -52,6 +52,15 @@ export function useAttendanceEngine() {
         check_out: 'Salida Final'
       };
 
+      await supabase.from('notifications_log').insert([{
+        title: 'Registro de Asistencia',
+        message: `${session.user_name} ha marcado: ${labelMap[action]}`,
+        type: 'attendance',
+        user_role: 'admin',
+        is_read: false
+      }]);
+
+      // 3. Disparar Broadcast para Admin en tiempo real (Staff Monitor)
       const channel = supabase.channel('asistencias_en_vivo');
       await channel.send({
         type: 'broadcast',

@@ -5,6 +5,7 @@ import { Clock, MapPin, CheckCircle2, AlertCircle, Loader2, ArrowRight, LogOut, 
 import { useAttendanceEngine, AttendanceAction } from '../hooks/useAttendanceEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 import { exportToPDF } from '../utils/pdfExport';
+import { supabase } from '../lib/supabaseClient';
 
 interface AttendanceProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
@@ -25,6 +26,18 @@ export default function Attendance({ userRole }: AttendanceProps) {
   useEffect(() => {
     if (isMonitorMode) {
       loadHistory();
+
+      // Suscripción Realtime para actualizar la tabla histórica automáticamente
+      const channel = supabase
+        .channel('attendance_table_sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_attendance' }, () => {
+          loadHistory();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [isMonitorMode]);
 

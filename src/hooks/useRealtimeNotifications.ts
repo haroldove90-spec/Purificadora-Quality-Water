@@ -114,6 +114,19 @@ export function useRealtimeNotifications(userRole: string | null) {
           type: formatted.type
         });
       })
+      // 2. Escuchar Broadcast de Asistencia (Staff Monitor)
+      .on('broadcast', { event: 'attendance_event' }, (payload) => {
+        const { usuario_id, nombre_empleado, rol_empleado, tipo_evento, timestamp } = payload.payload;
+        setStaffStatus(prev => ({
+          ...prev,
+          [usuario_id]: {
+            name: nombre_empleado,
+            role: rol_empleado,
+            last_event: tipo_evento,
+            time: timestamp
+          }
+        }));
+      })
       .subscribe();
 
     return () => {
