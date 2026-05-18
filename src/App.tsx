@@ -6,6 +6,7 @@ import {
   MessageSquare, 
   Bell, 
   Search,
+  Clock,
   Menu,
   X,
   LogOut,
@@ -21,6 +22,7 @@ import {
   ShoppingBag,
   History,
   Store,
+  ShieldCheck,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
@@ -28,10 +30,13 @@ import WhatsAppChat from './components/WhatsAppChat';
 import Finances from './components/Finances';
 import DeliveryRoute from './components/DeliveryRoute';
 import Profile from './components/Profile';
+import Attendance from './components/Attendance';
+import NotificationHub from './components/NotificationHub';
+import QualityLog from './components/QualityLog';
 
 import Lobby from './components/Lobby';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality';
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>('metrics');
@@ -68,6 +73,8 @@ export default function App() {
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'driver_sales', label: 'Choferes', icon: Truck },
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
+        { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'quality', label: 'Calidad', icon: ShieldCheck },
       ];
     }
 
@@ -154,6 +161,7 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-6">
+            <NotificationHub userRole={userRole} />
             <button 
               onClick={() => setDarkMode(!darkMode)}
               className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-500'}`}
@@ -187,6 +195,8 @@ export default function App() {
                  activeView === 'customers' ? <Finances initialTab="customers" /> :
                  activeView === 'driver_sales' ? <Finances initialTab="driver_sales" /> :
                  activeView === 'plant_cut' ? <Finances initialTab="plant_cut" /> :
+                 activeView === 'attendance' ? <Attendance /> :
+                 activeView === 'quality' ? <QualityLog /> :
                  activeView === 'route' ? <DeliveryRoute /> :
                  <Profile />}
               </motion.div>

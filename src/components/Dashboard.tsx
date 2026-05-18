@@ -16,6 +16,8 @@ import {
 import { MOCK_ORDERS } from '../constants';
 import { Order } from '../types';
 
+import WhatsAppSimulator from './WhatsAppSimulator';
+
 export default function Dashboard() {
   const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,7 +25,7 @@ export default function Dashboard() {
   const stats = [
     { label: 'Garrafones en Calle', value: '842', subValue: '/ 1200', color: 'text-slate-900' },
     { label: 'Venta del Día', value: '$14,580.00', subValue: '+12%', color: 'text-slate-900', trendColor: 'text-emerald-600' },
-    { label: 'Alertas Mantenimiento', value: '2', subValue: 'Críticas', color: 'text-rose-600' },
+    { label: 'Personal Activo', value: '8', subValue: 'Clocked-In', color: 'text-sky-600' },
   ];
 
   const handleStatusToggle = (orderId: string) => {
@@ -60,27 +62,32 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {stats.map((stat, idx) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"
-          >
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">{stat.label}</p>
-            <div className="flex items-baseline gap-2">
-              <p className={`text-2xl font-black ${stat.color}`}>{stat.value}</p>
-              {stat.subValue && (
-                <span className={`text-xs font-bold ${stat.trendColor || 'text-slate-400'}`}>
-                  {stat.subValue}
-                </span>
-              )}
-            </div>
-          </motion.div>
-        ))}
+      {/* KPI Cards & Simulator */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {stats.map((stat, idx) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"
+            >
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">{stat.label}</p>
+              <div className="flex items-baseline gap-2">
+                <p className={`text-2xl font-black ${stat.color}`}>{stat.value}</p>
+                {stat.subValue && (
+                  <span className={`text-xs font-bold ${stat.trendColor || 'text-slate-400'}`}>
+                    {stat.subValue}
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          ))}
+        </div>
+        <div className="lg:col-span-1">
+          <WhatsAppSimulator />
+        </div>
       </div>
 
       {/* Table Area - Desktop Table / Mobile Cards */}
