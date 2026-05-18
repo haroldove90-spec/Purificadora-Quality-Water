@@ -1,11 +1,15 @@
 
--- ==========================================
--- SCRIPT FINAL DE BASE DE DATOS QUALITYWATER
--- ==========================================
--- Instrucciones: Copia y pega TODO este script en el SQL EDITOR de Supabase
--- y presiona "RUN". Esto reseteará las tablas y aplicará los permisos correctos.
+-- ======================================================
+-- SCRIPT DEFINITIVO DE BASE DE DATOS QUALITYWATER (ULTRA-FIXED)
+-- ======================================================
+-- Instrucciones: 
+-- 1. Copia TODO este código (desde la línea 1 hasta el final).
+-- 2. Ve al SQL Editor en Supabase.
+-- 3. Crea un "New Query" (Botón + New Query).
+-- 4. Borra cualquier código que aparezca y pega este.
+-- 5. Presiona el botón "RUN" (o Ctrl+Enter).
 
--- 1. LIMPIEZA
+-- 1. LIMPIEZA TOTAL
 DROP TABLE IF EXISTS public.employees CASCADE;
 DROP TABLE IF EXISTS public.customers CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
@@ -13,19 +17,17 @@ DROP TABLE IF EXISTS public.daily_attendance CASCADE;
 DROP TABLE IF EXISTS public.quality_logs CASCADE;
 DROP TABLE IF EXISTS public.notifications_log CASCADE;
 
--- 2. TABLAS
+-- 2. CREACIÓN DE TABLAS
 
--- Empleados (Capital Humano)
 CREATE TABLE public.employees (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
-  role TEXT NOT NULL, -- 'admin', 'operator', 'driver'
+  role TEXT NOT NULL, 
   phone TEXT,
   status TEXT DEFAULT 'active',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Clientes
 CREATE TABLE public.customers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
@@ -36,7 +38,6 @@ CREATE TABLE public.customers (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Pedidos (Ventas)
 CREATE TABLE public.orders (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   customer_name TEXT NOT NULL,
@@ -47,10 +48,9 @@ CREATE TABLE public.orders (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Asistencia (Historial Completo)
 CREATE TABLE public.daily_attendance (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID, 
+  user_id TEXT, 
   user_name TEXT NOT NULL,
   user_role TEXT,
   work_date DATE DEFAULT CURRENT_DATE,
@@ -63,7 +63,6 @@ CREATE TABLE public.daily_attendance (
   UNIQUE(user_name, work_date) 
 );
 
--- Calidad
 CREATE TABLE public.quality_logs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   supervisor_name TEXT NOT NULL,
@@ -74,7 +73,6 @@ CREATE TABLE public.quality_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Registro de Sistema
 CREATE TABLE public.notifications_log (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
@@ -84,8 +82,8 @@ CREATE TABLE public.notifications_log (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- 3. PERMISOS TOTALES (Bypass RLS y Grant All)
--- Deshabilitamos RLS en todas las tablas
+-- 3. PERMISOS Y RLS (Bypass completo para desarrollo)
+-- Deshabilitar RLS es lo más importante para evitar el error "violates row-level security"
 ALTER TABLE public.employees DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
@@ -93,28 +91,26 @@ ALTER TABLE public.daily_attendance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quality_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications_log DISABLE ROW LEVEL SECURITY;
 
--- Otorgamos todos los permisos a todos los roles posibles
+-- Otorgar permisos masivos
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 
--- 4. REALTIME (Configuración Robusta)
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
-        CREATE PUBLICATION supabase_realtime;
-    END IF;
-END $$;
+-- 4. CONFIGURACIÓN DE REALTIME (Versión Simplificada)
+-- Borrar y recrear la publicación para asegurar que incluya todas las tablas
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime FOR TABLE 
+    public.employees, 
+    public.customers, 
+    public.orders, 
+    public.daily_attendance, 
+    public.quality_logs, 
+    public.notifications_log;
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.employees;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.customers;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.daily_attendance;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.quality_logs;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications_log;
-
--- 5. REFRESCAR SISTEMA
+-- 5. RECARGAR SCHEMA CACHE (Para que PostgREST reconozca los cambios)
 NOTIFY pgrst, 'reload schema';
