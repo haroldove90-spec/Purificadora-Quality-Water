@@ -124,13 +124,16 @@ export default function Profile() {
     }
 
     setSaving(true);
+    setMessage(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const currentAuthId = session?.user?.id || user?.auth_id;
 
       if (!currentAuthId) {
-        throw new Error('No se pudo identificar tu ID de usuario. Intenta cerrar sesión y volver a entrar.');
+        throw new Error('Sesión no encontrada. Por favor, vuelve a iniciar sesión.');
       }
+
+      console.log('Iniciando subida de foto para:', currentAuthId);
 
       const fileExt = file.name.split('.').pop();
       const fileName = `${currentAuthId}-${Date.now()}.${fileExt}`;
@@ -139,21 +142,24 @@ export default function Profile() {
       // 1. Subida al Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, file, { 
+          upsert: true,
+          cacheControl: '3600'
+        });
 
       if (uploadError) {
-        if (uploadError.message.includes('bucket not found')) {
-          throw new Error('El bucket "avatars" no existe. Créalo en el Storage de tu panel de Supabase.');
+        console.error('Error detallado Storage:', uploadError);
+        if (uploadError.message.includes('row-level security') || uploadError.message.includes('policy')) {
+          throw new Error('ERROR DE SEGURIDAD (Storage): No tienes permiso para subir archivos al bucket "avatars". Activa las políticas RLS en Supabase Storage.');
         }
-        if (uploadError.message.includes('Row-level security')) {
-          throw new Error('Error RLS en Storage: No tienes permiso para subir archivos. Revisa las políticas del bucket "avatars".');
-        }
-        throw uploadError;
+        throw new Error('Error al subir a Storage: ' + uploadError.message);
       }
 
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
+
+      console.log('Foto subida con éxito, actualizando tabla con URL:', publicUrl);
 
       // 2. Actualización en la tabla
       const { error: updateError } = await supabase
@@ -162,14 +168,18 @@ export default function Profile() {
         .eq('auth_id', currentAuthId);
 
       if (updateError) {
-        throw new Error(`Error RLS en Tabla: No puedes actualizar tu perfil. Verifica que la política de UPDATE en "employees" permita el acceso a tu ID: ${currentAuthId}`);
+        console.error('Error detallado Tabla:', updateError);
+        if (updateError.message.includes('row-level security') || updateError.message.includes('policy')) {
+          throw new Error('ERROR DE SEGURIDAD (Tabla): No tienes permiso para actualizar tu perfil en la tabla "employees". Revisa las políticas RLS de la tabla.');
+        }
+        throw new Error('Error al actualizar registro: ' + updateError.message);
       }
 
-      setMessage({ type: 'success', text: '¡Foto actualizada correctamente!' });
-      fetchProfile();
+      setMessage({ type: 'success', text: '¡Foto de perfil actualizada!' });
+      await fetchProfile();
     } catch (err: any) {
-      console.error('Photo upload error:', err);
-      setMessage({ type: 'error', text: err.message || 'Error desconocido al subir la foto' });
+      console.error('Error crítico en perfil:', err);
+      setMessage({ type: 'error', text: err.message || 'Error inesperado al procesar la foto' });
     } finally {
       setSaving(false);
     }
