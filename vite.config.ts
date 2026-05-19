@@ -11,29 +11,17 @@ export default defineConfig(({mode}) => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+        registerType: 'prompt',
         manifest: {
           name: 'Purificadora Quality Water',
-          short_name: 'PurificadoraQW',
-          description: 'Sistema integral de gestión para la purificadora Quality Water',
+          short_name: 'QualityWater',
+          description: 'Sistema de Gestión Quality Water',
           theme_color: '#0ea5e9',
           icons: [
             {
               src: 'https://cossma.com.mx/purificadoraicono.png',
               sizes: '192x192',
               type: 'image/png'
-            },
-            {
-              src: 'https://cossma.com.mx/purificadoraicono.png',
-              sizes: '512x512',
-              type: 'image/png'
-            },
-            {
-              src: 'https://cossma.com.mx/purificadoraicono.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable'
             }
           ]
         }

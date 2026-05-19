@@ -83,11 +83,16 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
 
     try {
       if (authMode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password
         });
-        if (error) throw error;
+        if (signInError) {
+          if (signInError.message.toLowerCase().includes('rate limit')) {
+            throw new Error('Exceso de intentos. Por favor, espera unos minutos o contacta al administrador.');
+          }
+          throw signInError;
+        }
       } else {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
@@ -101,11 +106,15 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
           }
         });
 
-        if (signUpError) throw signUpError;
+        if (signUpError) {
+          if (signUpError.message.toLowerCase().includes('rate limit')) {
+            throw new Error('Límite de registros alcanzado en Supabase. Intenta entrar con una cuenta existente o consulta al soporte.');
+          }
+          throw signUpError;
+        }
 
         if (data.user) {
           setMessage({ type: 'success', text: '¡Cuenta creada con éxito! Iniciando sesión...' });
-          // El trigger de SQL se encargará de crear el registro en employees automáticamente
         }
       }
     } catch (err: any) {

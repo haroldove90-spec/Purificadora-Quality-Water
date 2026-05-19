@@ -51,52 +51,75 @@ export default function App() {
   const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
     // Escuchar cambios de autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       if (session?.user) {
-        fetchUserRole(session.user.id);
+        await fetchUserRole(session.user.id);
       } else {
         setUserRole(null);
         setActiveView('lobby');
       }
+      setLoading(false);
     });
 
     // Cargar sesión inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        fetchUserRole(session.user.id);
+    const init = async () => {
+      const timeoutId = setTimeout(() => {
+        setLoading(false);
+        console.warn('Carga inicial de Supabase tardó demasiado. Forzando entrada...');
+      }, 5000); // 5 segundos máximo para intentar conectar
+
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        setSession(session);
+        if (session?.user) {
+          await fetchUserRole(session.user.id);
+        }
+      } catch (err) {
+        console.error('Error al iniciar sesión:', err);
+      } finally {
+        clearTimeout(timeoutId);
+        setLoading(false);
       }
-    });
+    };
+    init();
 
     return () => subscription.unsubscribe();
   }, []);
 
   const fetchUserRole = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('employees')
-      .select('role, name')
-      .eq('auth_id', userId)
-      .maybeSingle(); 
-    
-    if (data && !error) {
-      setUserRole(data.role);
-      setUserName(data.name);
-    } else {
-      setUserRole('client');
-      // Intentar sacar el nombre del auth metadata si no está en employees
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user?.user_metadata?.full_name) {
-          setUserName(user.user_metadata.full_name);
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('role, name')
+        .eq('auth_id', userId)
+        .maybeSingle(); 
+      
+      if (data && !error) {
+        setUserRole(data.role);
+        setUserName(data.name);
+      } else {
+        setUserRole('client');
+        // Intentar sacar el nombre del auth metadata si no está en employees
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user?.user_metadata?.full_name) {
+          setUserName(userData.user.user_metadata.full_name);
         } else {
           setUserName('Cliente');
         }
-      });
+      }
+    } catch (err) {
+      console.error('Error fetching role:', err);
+      setUserRole('client');
+      setUserName('Usuario');
     }
   };
 
@@ -168,8 +191,25 @@ export default function App() {
       ];
     }
 
-    return [];
+    return [] as any;
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+        <div className="relative mb-8">
+          <div className="w-20 h-20 border-4 border-sky-500/10 border-t-sky-500 rounded-full animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Droplets size={32} className="text-sky-500 animate-bounce" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-black text-white uppercase tracking-tight italic">Quality<span className="text-sky-500">Water</span></h1>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] animate-pulse">Iniciando Centro de Control...</p>
+        </div>
+      </div>
+    );
+  }
 
   const navItems = getNavItems();
 

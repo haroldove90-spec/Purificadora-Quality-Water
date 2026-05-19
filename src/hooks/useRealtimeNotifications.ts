@@ -15,7 +15,7 @@ export function useRealtimeNotifications(userRole: string | null) {
   };
 
   const addToast = (toast: any) => {
-    const id = crypto.randomUUID();
+    const id = Math.random().toString(36).slice(2, 11);
     setToasts(prev => [...prev, { ...toast, id }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
@@ -85,7 +85,7 @@ export function useRealtimeNotifications(userRole: string | null) {
 
     fetchNotificationLogs();
 
-    const psqlChannel = supabase.channel(`notifs_psql_${crypto.randomUUID().slice(0, 8)}`);
+    const psqlChannel = supabase.channel(`notifs_psql_${Math.random().toString(36).slice(2, 10)}`);
 
     psqlChannel
       // 1. Escuchar Historial de Notificaciones (Tablas directas)
@@ -157,7 +157,7 @@ export function useRealtimeNotifications(userRole: string | null) {
       .subscribe();
 
     // 2. Escuchar Broadcast de Asistencia en un canal separado (Staff Monitor)
-    const broadcastChannel = supabase.channel(`staff_bcast_${crypto.randomUUID().slice(0, 8)}`);
+    const broadcastChannel = supabase.channel(`staff_bcast_${Math.random().toString(36).slice(2, 10)}`);
     // Note: To receive broadcasts sent by others, we must listen to the same channel name.
     // Wait, if I use a unique name, I won't hear them if they send to a specific name.
     // But broadcast is sent to WHATEVER channel name the sender specified.
