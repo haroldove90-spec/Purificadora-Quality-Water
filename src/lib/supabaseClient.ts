@@ -1,12 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const rawUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
+const rawUrl = (import.meta as any).env.VITE_SUPABASE_URL || 'https://zzsbqrwmppvpvtajkuva.supabase.co';
 const supabaseUrl = rawUrl
   .trim()
-  .replace(/\/+$/, '') // Quita diagonales finales
-  .split('/rest/v1')[0]; // Se asegura de que no lleve el sufijo de la API
+  .replace(/\/+$/, '')
+  .split('/rest/v1')[0];
 
-const supabaseAnonKey = ((import.meta as any).env.VITE_SUPABASE_ANON_KEY || '').trim();
+const supabaseAnonKey = ((import.meta as any).env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6c2JxcndtcHB2cHZ0YWprdXZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNTQ2NjQsImV4cCI6MjA5NDczMDY2NH0.VQyx8HLHn8kjVX9rgY2xoPejBKGffWTQaTolXiToAjE').trim();
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('CRITICAL: Supabase credentials missing!');
