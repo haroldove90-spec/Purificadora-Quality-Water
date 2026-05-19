@@ -41,29 +41,58 @@ import Notifications from './components/Notifications';
 import Lobby from './components/Lobby';
 import { usePWA } from './hooks/usePWA';
 
+import { supabase } from './lib/supabaseClient';
+
 type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
-  const [activeView, setActiveView] = useState<View>(() => {
-    const saved = localStorage.getItem('qw_activeView');
-    return (saved as View) || 'lobby';
-  });
-  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(() => {
-    const saved = localStorage.getItem('qw_userRole');
-    return (saved as any) || null;
-  });
+  const [activeView, setActiveView] = useState<View>('lobby');
+  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
+  const [session, setSession] = useState<any>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
-    localStorage.setItem('qw_activeView', activeView);
-  }, [activeView]);
+    // Escuchar cambios de autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      if (session?.user) {
+        fetchUserRole(session.user.id);
+      } else {
+        setUserRole(null);
+        setActiveView('lobby');
+      }
+    });
+
+    // Cargar sesión inicial
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        fetchUserRole(session.user.id);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchUserRole = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('employees')
+      .select('role')
+      .eq('auth_id', userId)
+      .maybeSingle(); // Usamos maybeSingle para evitar errores si el registro aún no existe
+    
+    if (data && !error) {
+      setUserRole(data.role);
+    } else {
+      // Si no existe en la tabla de empleados, lo tratamos como cliente por defecto
+      setUserRole('client');
+    }
+  };
 
   useEffect(() => {
     if (userRole) {
-      localStorage.setItem('qw_userRole', userRole);
-      // If we are at lobby but have a role, move to the role's default dashboard
       if (activeView === 'lobby') {
         switch(userRole) {
           case 'admin': setActiveView('metrics'); break;
@@ -72,43 +101,19 @@ export default function App() {
           case 'client': setActiveView('client_status'); break;
         }
       }
-    } else {
-      localStorage.removeItem('qw_userRole');
-      localStorage.removeItem('qw_session');
-      setActiveView('lobby');
     }
   }, [userRole]);
 
   const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
-    setUserRole(role);
+    // This is now purely for visual priority if needed, but real role comes from DB
     requestPermissions();
-    
-    // Simulación de Sesión por Rol (Mock Auth Context)
-    const mockUserData = {
-      user_id: role === 'driver' ? 'driver_uid_1' : role === 'operator' ? 'operator_uid_1' : role === 'admin' ? 'admin_uid_1' : 'client_uid_1',
-      user_name: role === 'driver' ? 'Luis Moreno' : role === 'operator' ? 'Carlos Ruiz' : role === 'admin' ? 'Admin Sistema' : 'Cliente Particular',
-      user_role: role
-    };
-    localStorage.setItem('qw_session', JSON.stringify(mockUserData));
-
-    switch(role) {
-      case 'admin': setActiveView('metrics'); break;
-      case 'operator': setActiveView('dashboard'); break;
-      case 'driver': setActiveView('route'); break;
-      case 'client': setActiveView('client_status'); break;
-    }
   };
 
-  // Cargar sesión guardada al inicio (Opcional, pero ayuda a la persistencia)
-  useEffect(() => {
-    const savedSession = localStorage.getItem('qw_session');
-    if (savedSession) {
-      try {
-        const session = JSON.parse(savedSession);
-        // Podríamos auto-autenticar aquí, pero por ahora respetamos el Lobby inicial
-      } catch (e) {}
-    }
-  }, []);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUserRole(null);
+    setActiveView('lobby');
+  };
 
   const getNavItems = () => {
     if (userRole === 'admin') {
@@ -157,7 +162,7 @@ export default function App() {
 
   const navItems = getNavItems();
 
-  if (activeView === 'lobby') {
+  if (!session) {
     return <Lobby onSelectRole={handleRoleSelection} />;
   }
 
@@ -212,7 +217,7 @@ export default function App() {
           ))}
           
           <button
-            onClick={() => setUserRole(null)}
+            onClick={handleLogout}
             className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 mt-8"
           >
             <LogOut size={22} />
@@ -240,19 +245,6 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-6">
-            <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
-              {(['admin', 'operator', 'driver'] as const).map(role => (
-                <button
-                  key={role}
-                  onClick={() => handleRoleSelection(role)}
-                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                    userRole === role ? 'bg-sky-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  {role === 'operator' ? 'Planta' : role === 'driver' ? 'Chofer' : 'Admin'}
-                </button>
-              ))}
-            </div>
             <NotificationHub userRole={userRole} onViewAll={() => setActiveView('notifications')} />
             {isInstallable && (
               <button
@@ -326,7 +318,7 @@ export default function App() {
           </button>
         ))}
         <button
-          onClick={() => setUserRole(null)}
+          onClick={handleLogout}
           className="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl text-slate-400 shrink-0"
         >
           <LogOut size={20} strokeWidth={2.5} />
