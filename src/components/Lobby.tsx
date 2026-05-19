@@ -26,7 +26,7 @@ interface LobbyProps {
 export default function Lobby({ onSelectRole }: LobbyProps) {
   const [showAuth, setShowAuth] = useState(true);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [selectedRole, setSelectedRole] = useState<'admin' | 'operator' | 'driver' | 'client'>('client');
+  const [selectedRole, setSelectedRole] = useState<'admin' | 'operator' | 'driver'>('driver');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,15 +63,6 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
       icon: Truck,
       color: 'bg-emerald-500',
       shadow: 'shadow-emerald-500/20',
-      disabled: false
-    },
-    {
-      id: 'client',
-      title: 'Cliente / WhatsApp',
-      desc: 'Seguimiento de pedidos en tiempo real y asistencia directa.',
-      icon: MessageCircle,
-      color: 'bg-rose-500',
-      shadow: 'shadow-rose-500/20',
       disabled: false
     }
   ];
