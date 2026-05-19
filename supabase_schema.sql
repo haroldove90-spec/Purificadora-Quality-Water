@@ -146,8 +146,32 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Comentar o borrar si el trigger ya existe
+-- Trigger para creación automática de perfil
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 9. CONFIGURACIÓN DE STORAGE (AVATARS)
+-- Nota: Asegúrate de crear el bucket 'avatars' manualmente en el panel de Supabase y ponerlo como PUBLIC
+-- Estas políticas permiten que cualquier usuario logueado suba su propia foto
+
+BEGIN;
+  -- Política para permitir subir archivos
+  CREATE POLICY "Permitir subida de avatars a usuarios autenticados" 
+  ON storage.objects FOR INSERT 
+  TO authenticated 
+  WITH CHECK (bucket_id = 'avatars');
+
+  -- Política para permitir actualizar su propio avatar
+  CREATE POLICY "Permitir actualización de propios avatars" 
+  ON storage.objects FOR UPDATE 
+  TO authenticated 
+  USING (bucket_id = 'avatars');
+
+  -- Política para lectura pública (si el bucket no es ya público por defecto)
+  CREATE POLICY "Avatars públicos para lectura" 
+  ON storage.objects FOR SELECT 
+  TO public 
+  USING (bucket_id = 'avatars');
+COMMIT;
