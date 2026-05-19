@@ -183,6 +183,16 @@ export default function Manual({ role }: ManualProps) {
               ]}
             />
             <StepList 
+              title="Registro de Clientes"
+              steps={[
+                "Accede a la pestaña 'Clientes' en el menú de navegación.",
+                "Presiona el botón '+ Alta de Cliente' en la esquina superior.",
+                "Captura el Nombre Completo, Dirección/Colonia y Teléfono del prospecto.",
+                "Opcionalmente, pega un link de Google Maps para registrar la ubicación exacta del domicilio.",
+                "Presiona 'Guardar Cliente'. Ya estará registrado y disponible para recibir pedidos."
+              ]}
+            />
+            <StepList 
               title="Liquidación Final"
               steps={[
                 "Al terminar tu jornada, ve a 'Perfil' -> 'Auto-Liquidación'.",

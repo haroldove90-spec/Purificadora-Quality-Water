@@ -60,6 +60,56 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
+    // Función auxiliar para auto-limpieza en caso de tokens corruptos
+    const cleanCorruptTokens = () => {
+      console.warn('Detectado token o sesión corrupta de Supabase. Limpiando almacenamiento local...');
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('sb-') || key.includes('supabase.auth.token'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => {
+          try {
+            localStorage.removeItem(k);
+          } catch (e) {}
+        });
+      } catch (e) {
+        console.error('No se pudo limpiar localStorage:', e);
+      }
+    };
+
+    // Control global de rechazos asíncronos para evitar alertas molestas y auto-recuperar la app
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (!mounted) return;
+      const reason = event.reason;
+      const message = reason?.message || String(reason || '');
+      
+      if (
+        message.includes('Refresh Token') || 
+        message.includes('refresh_token') || 
+        message.includes('Invalid Refresh Token') || 
+        message.includes('grant') || 
+        message.includes('AuthApiError')
+      ) {
+        console.warn('Capturado y mitigado error de Auth del servidor:', message);
+        event.preventDefault(); // Evita el banner rojo en la UI para errores ignorables
+
+        cleanCorruptTokens();
+        supabase.auth.signOut().catch(() => {});
+        
+        setSession(null);
+        setUserRole(null);
+        setUserName(null);
+        setActiveView('lobby');
+        setLoading(false);
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
     // 1. Escuchar cambios de autenticación
     console.log('Iniciando suscripción a cambios de Auth...');
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
@@ -89,17 +139,41 @@ export default function App() {
 
       try {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
         if (error) {
-          console.error('Error inicializando sesión:', error);
+          console.error('Error al recuperar sesión inicial:', error);
+          if (
+            error.message?.includes('Refresh Token') || 
+            error.message?.includes('refresh_token') || 
+            error.message?.includes('grant')
+          ) {
+            cleanCorruptTokens();
+            await supabase.auth.signOut().catch(() => {});
+            setSession(null);
+            setUserRole(null);
+            setActiveView('lobby');
+          }
         } else if (initialSession) {
-          console.log('Sesión inicial recuperada');
+          console.log('Sesión inicial recuperada con éxito');
           setSession(initialSession);
           await fetchUserRole(initialSession.user.id);
         } else {
-          console.log('No hay sesión activa');
+          console.log('No hay sesión de usuario guardada');
         }
-      } catch (err) {
-        console.error('Fallo en init:', err);
+      } catch (err: any) {
+        console.error('Fallo de inicialización crítica en init:', err);
+        const errMsg = err?.message || String(err || '');
+        if (
+          errMsg.includes('Refresh Token') || 
+          errMsg.includes('refresh_token') || 
+          errMsg.includes('grant')
+        ) {
+          cleanCorruptTokens();
+          await supabase.auth.signOut().catch(() => {});
+          setSession(null);
+          setUserRole(null);
+          setActiveView('lobby');
+        }
       } finally {
         if (mounted) {
           clearTimeout(timeoutId);
@@ -112,6 +186,7 @@ export default function App() {
 
     return () => {
       mounted = false;
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       subscription.unsubscribe();
     };
   }, []);
@@ -220,6 +295,7 @@ export default function App() {
       return [
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
+        { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
