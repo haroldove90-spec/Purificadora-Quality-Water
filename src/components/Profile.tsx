@@ -125,22 +125,28 @@ export default function Profile() {
 
     setSaving(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.auth_id}-${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`; // Subir directamente al bucket base
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentAuthId = session?.user?.id || user?.auth_id;
 
-      // Primero verificar si el bucket existe por error 
-      // (Supabase client no permite verificar buckets fácilmente con anon key)
-      
+      if (!currentAuthId) {
+        throw new Error('No se pudo identificar tu ID de usuario. Intenta cerrar sesión y volver a entrar.');
+      }
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${currentAuthId}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // 1. Subida al Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { 
-          upsert: true 
-        });
+        .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
         if (uploadError.message.includes('bucket not found')) {
-          throw new Error('El bucket "avatars" no existe en Supabase. Créalo en el panel de Storage.');
+          throw new Error('El bucket "avatars" no existe. Créalo en el Storage de tu panel de Supabase.');
+        }
+        if (uploadError.message.includes('Row-level security')) {
+          throw new Error('Error RLS en Storage: No tienes permiso para subir archivos. Revisa las políticas del bucket "avatars".');
         }
         throw uploadError;
       }
@@ -149,19 +155,21 @@ export default function Profile() {
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // Update employee record
+      // 2. Actualización en la tabla
       const { error: updateError } = await supabase
         .from('employees')
         .update({ avatar_url: publicUrl })
-        .eq('auth_id', user.auth_id);
+        .eq('auth_id', currentAuthId);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        throw new Error(`Error RLS en Tabla: No puedes actualizar tu perfil. Verifica que la política de UPDATE en "employees" permita el acceso a tu ID: ${currentAuthId}`);
+      }
 
-      setMessage({ type: 'success', text: 'Foto actualizada' });
+      setMessage({ type: 'success', text: '¡Foto actualizada correctamente!' });
       fetchProfile();
     } catch (err: any) {
       console.error('Photo upload error:', err);
-      setMessage({ type: 'error', text: err.message || 'Error al subir foto' });
+      setMessage({ type: 'error', text: err.message || 'Error desconocido al subir la foto' });
     } finally {
       setSaving(false);
     }

@@ -56,11 +56,14 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
-    // Escuchar cambios de autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
-      if (session?.user) {
-        await fetchUserRole(session.user.id);
+    // 1. Escuchar cambios de autenticación
+    console.log('Iniciando suscripción a cambios de Auth...');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      console.log(`Evento de Auth detectado: ${event}`);
+      setSession(currentSession);
+      
+      if (currentSession?.user) {
+        await fetchUserRole(currentSession.user.id);
       } else {
         setUserRole(null);
         setActiveView('lobby');
@@ -68,7 +71,7 @@ export default function App() {
       setLoading(false);
     });
 
-    // Cargar sesión inicial
+    // 2. Intento de carga inicial forzada si onAuthStateChange tarda
     const init = async () => {
       console.log('--- DEBUG SUPABASE ---');
       console.log('Project URL:', SUPABASE_URL);
@@ -76,49 +79,61 @@ export default function App() {
       console.log('----------------------');
       
       const timeoutId = setTimeout(() => {
-        setLoading(false);
-        console.warn('La conexión con Supabase está tardando más de lo esperado. Verifica tu conexión a internet o las credenciales.');
-      }, 10000); // 10 segundos máximo
+        if (loading) {
+          setLoading(false);
+          console.warn('Timeout de inicialización alcanzado. Continuando...');
+        }
+      }, 5000);
 
       try {
-        console.log('Intentando obtener sesión de Supabase...');
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         if (error) {
-          console.error('Error de Supabase al obtener sesión:', error);
-          throw error;
+          console.error('Error inicializando sesión:', error);
+        } else if (initialSession) {
+          console.log('Sesión inicial recuperada con éxito');
+          setSession(initialSession);
+          await fetchUserRole(initialSession.user.id);
+        } else {
+          console.log('No se encontró sesión inicial activa');
         }
-        
-        console.log('Sesión obtenida:', session ? 'Usuario autenticado' : 'Sin sesión activa');
-        setSession(session);
-        if (session?.user) {
-          await fetchUserRole(session.user.id);
-        }
-      } catch (err: any) {
-        console.error('Error crítico en inicialización:', err);
+      } catch (err) {
+        console.error('Excepción crítica en init:', err);
       } finally {
         clearTimeout(timeoutId);
         setLoading(false);
       }
     };
+
     init();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      console.log('Limpiando suscripción a Auth...');
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchUserRole = async (userId: string) => {
     try {
+      console.log('Buscando rol para usuario:', userId);
       const { data, error } = await supabase
         .from('employees')
         .select('role, name')
         .eq('auth_id', userId)
         .maybeSingle(); 
       
-      if (data && !error) {
+      if (error) {
+        console.error('Error buscando rol:', error);
+        setUserRole('client');
+        return;
+      }
+
+      if (data) {
+        console.log('Rol encontrado:', data.role);
         setUserRole(data.role);
         setUserName(data.name);
       } else {
+        console.log('Usuario no encontrado en tabla employees, asignando rol cliente');
         setUserRole('client');
-        // Intentar sacar el nombre del auth metadata si no está en employees
         const { data: userData } = await supabase.auth.getUser();
         if (userData?.user?.user_metadata?.full_name) {
           setUserName(userData.user.user_metadata.full_name);
@@ -127,7 +142,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error('Error fetching role:', err);
+      console.error('Error crítico buscando rol:', err);
       setUserRole('client');
       setUserName('Usuario');
     }
@@ -213,9 +228,17 @@ export default function App() {
             <Droplets size={32} className="text-sky-500 animate-bounce" />
           </div>
         </div>
-        <div className="space-y-2">
-          <h1 className="text-2xl font-black text-white uppercase tracking-tight italic">Quality<span className="text-sky-500">Water</span></h1>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] animate-pulse">Iniciando Centro de Control...</p>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-black text-white uppercase tracking-tight italic">Quality<span className="text-sky-500">Water</span></h1>
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] animate-pulse">Iniciando Centro de Control...</p>
+          </div>
+          <button 
+            onClick={() => setLoading(false)}
+            className="text-[10px] font-black text-slate-600 uppercase tracking-widest hover:text-sky-500 transition-colors border border-slate-800 px-4 py-2 rounded-full"
+          >
+            ¿Tarda mucho? Cargar Manualmente
+          </button>
         </div>
       </div>
     );
