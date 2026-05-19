@@ -135,8 +135,14 @@ export default function App() {
       if (error) throw error;
 
       if (data) {
-        const role = String(data.role || 'client').toLowerCase() as any;
-        setUserRole(role);
+        let role = String(data.role || 'client').toLowerCase();
+        
+        // Normalización de roles (Español -> English Interno)
+        if (role === 'planta' || role === 'operador') role = 'operator';
+        if (role === 'repartidor' || role === 'chofer') role = 'driver';
+        if (role === 'administrador') role = 'admin';
+        
+        setUserRole(role as any);
         setUserName(data.name);
         
         // Cambio de vista inmediato
@@ -197,6 +203,7 @@ export default function App() {
       return [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
+        { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'sales', label: 'Ventas Globales', icon: History },
@@ -223,7 +230,7 @@ export default function App() {
       return [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
-        { id: 'inventory', label: 'Productos', icon: Package },
+        { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'sales', label: 'Ventas Globales', icon: History },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
