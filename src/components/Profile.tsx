@@ -303,7 +303,13 @@ export default function Profile() {
           </div>
 
           <div className="pt-8">
-            <button className="w-full bg-rose-50 text-rose-600 p-6 rounded-[32px] font-black uppercase tracking-widest flex items-center justify-center gap-3 border border-rose-100 hover:bg-rose-100 transition-colors active:scale-95 text-xs">
+            <button 
+              onClick={async () => {
+                await supabase.auth.signOut();
+                window.location.reload();
+              }}
+              className="w-full bg-rose-50 text-rose-600 p-6 rounded-[32px] font-black uppercase tracking-widest flex items-center justify-center gap-3 border border-rose-100 hover:bg-rose-100 transition-colors active:scale-95 text-xs"
+            >
               <LogOut size={18} />
               Cerrar Sesión Global en todos los dispositivos
             </button>

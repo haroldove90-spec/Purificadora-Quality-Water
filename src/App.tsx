@@ -49,6 +49,7 @@ export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
   const [activeView, setActiveView] = useState<View>('lobby');
   const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -79,15 +80,23 @@ export default function App() {
   const fetchUserRole = async (userId: string) => {
     const { data, error } = await supabase
       .from('employees')
-      .select('role')
+      .select('role, name')
       .eq('auth_id', userId)
-      .maybeSingle(); // Usamos maybeSingle para evitar errores si el registro aún no existe
+      .maybeSingle(); 
     
     if (data && !error) {
       setUserRole(data.role);
+      setUserName(data.name);
     } else {
-      // Si no existe en la tabla de empleados, lo tratamos como cliente por defecto
       setUserRole('client');
+      // Si es un cliente potencial no registrado en employees, intentar sacar el nombre del auth metadata
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user?.user_metadata?.full_name) {
+          setUserName(user.user_metadata.full_name);
+        } else {
+          setUserName('Cliente');
+        }
+      });
     }
   };
 
@@ -178,7 +187,7 @@ export default function App() {
         className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-50 border-r transition-colors ${darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-900 text-white border-slate-800'}`}
       >
         <div 
-          className="p-6 flex items-center gap-3 group"
+          className="p-6 flex items-center gap-3 group border-b border-slate-800/50"
         >
           <img 
             src="https://cossma.com.mx/purificadora.jpg" 
@@ -186,7 +195,10 @@ export default function App() {
             className="w-10 h-10 object-contain rounded-lg group-hover:scale-110 transition-transform"
           />
           {isSidebarOpen && (
-            <span className="font-display font-bold text-lg tracking-tight whitespace-nowrap">Quality<span className="text-sky-400">Water</span></span>
+            <div className="flex flex-col">
+              <span className="font-display font-bold text-lg tracking-tight whitespace-nowrap leading-none">Quality<span className="text-sky-400">Water</span></span>
+              <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 mt-1">{userName || 'Usuario'}</span>
+            </div>
           )}
         </div>
 
@@ -263,7 +275,10 @@ export default function App() {
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <div className="flex items-center gap-4">
-              <span className="text-[11px] text-slate-500 font-black uppercase tracking-wider">Planta Iztapalapa</span>
+              <div className="text-right hidden sm:block">
+                <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest leading-none mb-1">{userRole === 'admin' ? 'Administrador' : userRole === 'operator' ? 'Planta' : userRole === 'driver' ? 'Repartidor' : 'Cliente'}</p>
+                <p className="text-xs font-bold text-slate-700 uppercase italic">{userName || 'Usuario'}</p>
+              </div>
               <div className="bg-emerald-500 w-2 h-2 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" title="Sistema Online" />
             </div>
           </div>
