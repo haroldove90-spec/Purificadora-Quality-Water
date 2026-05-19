@@ -82,10 +82,9 @@ export default function App() {
       
       const timeoutId = setTimeout(() => {
         if (loading) {
-          setLoading(false);
-          console.warn('Timeout de inicialización alcanzado. Continuando...');
+          console.warn('La conexión con Supabase está tardando más de lo esperado. Iniciando modo de espera...');
         }
-      }, 5000);
+      }, 10000);
 
       try {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
@@ -168,18 +167,27 @@ export default function App() {
     requestPermissions();
   };
 
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    
+    console.log('Cierre de sesión iniciado...');
+    
     try {
-      console.log('Iniciando cierre de sesión...');
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Error al cerrar sesión en Supabase:', error);
+      // Intentamos cerrar sesión en segundo plano, no bloqueamos la UI
+      supabase.auth.signOut().catch(err => console.warn('Supabase signOut error (ignorable):', err));
+    } catch (e) {
+      console.error('Excepción en logout:', e);
     } finally {
-      // Limpieza forzada de estado local para asegurar que el usuario vea el Lobby
+      // Limpieza inmediata y forzada
       setSession(null);
       setUserRole(null);
+      setUserName(null);
       setActiveView('lobby');
-      console.log('Sesión cerrada localmente');
+      setLoggingOut(false);
+      console.log('Sesión cerrada exitosamente en local');
     }
   };
 
@@ -187,6 +195,7 @@ export default function App() {
     if (userRole === 'admin') {
       return [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
+        { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'sales', label: 'Ventas Globales', icon: History },
@@ -195,17 +204,16 @@ export default function App() {
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
-        { id: 'manual', label: 'Manual', icon: BookOpen },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
 
     if (userRole === 'driver') {
       return [
+        { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
-        { id: 'manual', label: 'Manual', icon: BookOpen },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
@@ -213,12 +221,12 @@ export default function App() {
     if (userRole === 'operator') {
       return [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
+        { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Productos', icon: Package },
         { id: 'sales', label: 'Ventas Globales', icon: History },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
-        { id: 'manual', label: 'Manual', icon: BookOpen },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
