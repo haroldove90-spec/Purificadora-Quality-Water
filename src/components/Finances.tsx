@@ -317,6 +317,32 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
     else fetchEmployees();
   };
 
+  const handleUpdateEmployeeRole = async (id: string, newRole: string) => {
+    const { error } = await supabase
+      .from('employees')
+      .update({ role: newRole })
+      .eq('id', id);
+    
+    if (error) {
+      alert('Error al actualizar rol: ' + error.message);
+    } else {
+      fetchEmployees();
+    }
+  };
+
+  const handleUpdateEmployeeStatus = async (id: string, newStatus: string) => {
+    const { error } = await supabase
+      .from('employees')
+      .update({ status: newStatus })
+      .eq('id', id);
+    
+    if (error) {
+      alert('Error al actualizar estatus: ' + error.message);
+    } else {
+      fetchEmployees();
+    }
+  };
+
   const liquidations = [
     { driver: 'Carlos Ruiz', route: 'Ruta 1', out: 120, delivered: 115, inTruck: 5, expectedCash: 5175, actualCash: 5175, status: 'ok', orders: 18 },
     { driver: 'Mario Santos', route: 'Ruta 2', out: 95, delivered: 88, inTruck: 4, expectedCash: 3960, actualCash: 3915, status: 'faltante', orders: 15 },
@@ -672,19 +698,37 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                               {emp.status === 'active' ? 'Activo' : 'Inactivo'}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
+                          <td className="px-6 py-4 text-right text-[10px]">
+                            <div className="flex items-center justify-end gap-3 font-black uppercase tracking-widest">
+                              <select 
+                                onChange={(e) => handleUpdateEmployeeRole(emp.id, e.target.value)}
+                                value={emp.role}
+                                className="bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 outline-none text-sky-600 cursor-pointer"
+                              >
+                                <option value="admin">Admin</option>
+                                <option value="operator">Operador</option>
+                                <option value="driver">Repartidor</option>
+                                <option value="client">Cliente</option>
+                              </select>
+                              
+                              <button 
+                                onClick={() => handleUpdateEmployeeStatus(emp.id, emp.status === 'active' ? 'inactive' : 'active')}
+                                className={`px-2 py-1 rounded-lg border transition-all ${
+                                  emp.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-200'
+                                }`}
+                              >
+                                {emp.status === 'active' ? 'Desactivar' : 'Activar'}
+                              </button>
+
                               {userRole === 'admin' && (
                                 <button 
                                   onClick={() => handleDeleteEmployee(emp.id, emp.name)}
                                   className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                  title="Eliminar registro"
                                 >
                                   <Trash2 size={16} />
                                 </button>
                               )}
-                              <button className="p-2 text-slate-300 hover:text-sky-500 transition-colors">
-                                <MoreVertical size={18} />
-                              </button>
                             </div>
                           </td>
                         </tr>

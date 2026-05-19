@@ -34,6 +34,7 @@ export default function Profile() {
   // Form fields
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,18 +46,41 @@ export default function Profile() {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
+      // 1. Intentar obtener el registro
       const { data, error } = await supabase
         .from('employees')
         .select('*')
         .eq('auth_id', session.user.id)
-        .maybeSingle(); // Usamos maybeSingle para no lanzar error si no existe aún
+        .maybeSingle();
       
-      if (data && !error) {
+      if (data) {
         setUser(data);
         setName(data.name || '');
         setPhone(data.phone || '');
+        setEmail(data.email || session.user.email || '');
       } else {
-        setMessage({ type: 'error', text: 'No se encontró tu registro en la tabla de empleados. Por favor, asegúrate de haber completado tu registro correctamente.' });
+        // 2. Si no existe, intentar crearlo automáticamente (para usuarios antiguos)
+        const newRecord = {
+          auth_id: session.user.id,
+          name: session.user.user_metadata?.full_name || 'Nuevo Usuario',
+          email: session.user.email,
+          role: session.user.user_metadata?.role || 'client'
+        };
+        
+        const { data: created, error: createError } = await supabase
+          .from('employees')
+          .insert([newRecord])
+          .select()
+          .single();
+          
+        if (created) {
+          setUser(created);
+          setName(created.name);
+          setPhone(created.phone || '');
+          setEmail(created.email || '');
+        } else {
+          setMessage({ type: 'error', text: 'No se pudo crear/encontrar tu perfil. Contacta al administrador.' });
+        }
       }
     }
     setLoading(false);
@@ -64,7 +88,7 @@ export default function Profile() {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id) return;
+    if (!user?.auth_id) return;
     
     setSaving(true);
     setMessage(null);
@@ -72,7 +96,7 @@ export default function Profile() {
     try {
       const { error } = await supabase
         .from('employees')
-        .update({ name, phone })
+        .update({ name, phone, email })
         .eq('auth_id', user.auth_id);
 
       if (error) {
@@ -94,18 +118,32 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!user?.auth_id) {
+      setMessage({ type: 'error', text: 'Error: Perfil no identificado.' });
+      return;
+    }
+
     setSaving(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.auth_id}-${Math.random()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      const fileName = `${user.auth_id}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`; // Subir directamente al bucket base
 
-      // Upload to Supabase Storage
+      // Primero verificar si el bucket existe por error 
+      // (Supabase client no permite verificar buckets fácilmente con anon key)
+      
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file);
+        .upload(filePath, file, { 
+          upsert: true 
+        });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        if (uploadError.message.includes('bucket not found')) {
+          throw new Error('El bucket "avatars" no existe en Supabase. Créalo en el panel de Storage.');
+        }
+        throw uploadError;
+      }
 
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
@@ -122,8 +160,8 @@ export default function Profile() {
       setMessage({ type: 'success', text: 'Foto actualizada' });
       fetchProfile();
     } catch (err: any) {
-      console.error(err);
-      setMessage({ type: 'error', text: 'Error al subir foto. Asegúrate que exista el bucket "avatars".' });
+      console.error('Photo upload error:', err);
+      setMessage({ type: 'error', text: err.message || 'Error al subir foto' });
     } finally {
       setSaving(false);
     }
@@ -256,14 +294,16 @@ export default function Profile() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Correo Electrónico (Solo Lectura)</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Correo Electrónico (Contacto)</label>
                   <div className="relative">
                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                     <input 
                       type="email"
-                      disabled
-                      value={user?.email || ''}
-                      className="w-full pl-12 pr-4 py-4 bg-slate-100/50 border border-slate-100 rounded-3xl text-sm font-black text-slate-400 outline-none"
+                      disabled={!editMode}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="email@ejemplo.com"
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-3xl text-sm font-black text-slate-700 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all disabled:opacity-70"
                     />
                   </div>
                 </div>
