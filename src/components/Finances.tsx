@@ -229,20 +229,22 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
     };
 
     try {
+      console.log('Intentando guardar cliente:', newCustomer);
       const { error } = await supabase
         .from('customers')
         .insert([newCustomer]);
 
       if (error) {
-        console.error('RLS Error details:', error.message, error.details);
+        console.error('Error detallado de Supabase (clientes):', error);
         throw error;
       }
       
+      console.log('Cliente guardado con éxito');
       await fetchCustomers();
       setShowNewCustomerModal(false);
     } catch (error: any) {
-      console.error('Error saving customer:', error);
-      alert('Error al guardar cliente (RLS Check): ' + error.message);
+      console.error('Error al guardar cliente:', error);
+      alert('ERROR AL GUARDAR CLIENTE: ' + (error.message || 'Error desconocido') + '\n\nVerifica si la tabla "customers" existe y tiene políticas RLS habilitadas para inserción.');
     } finally {
       setIsSavingCustomer(false);
     }
@@ -261,29 +263,35 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
     };
 
     try {
+      console.log('Intentando guardar empleado:', newEmployee);
       const { error } = await supabase
         .from('employees')
         .insert([newEmployee]);
 
       if (error) {
-        console.error('RLS Error details (employees):', error.message, error.details);
+        console.error('Error detallado de Supabase (empleados):', error);
         throw error;
       }
       
+      console.log('Empleado guardado con éxito');
       await fetchEmployees();
       setShowNewEmployeeModal(false);
       
-      // Notify via Realtime (Optional)
-      await supabase.from('notifications_log').insert({
-        title: 'Nuevo Empleado',
-        message: `${newEmployee.name} se ha unido como ${newEmployee.role}`,
-        type: 'system',
-        user_role: 'admin'
-      });
+      // Notificación opcional (la envolvemos en try/catch para que no bloquee el flujo principal)
+      try {
+        await supabase.from('notifications_log').insert({
+          title: 'Nuevo Empleado',
+          message: `${newEmployee.name} se ha unido como ${newEmployee.role}`,
+          type: 'system',
+          user_role: 'admin'
+        });
+      } catch (notifErr) {
+        console.warn('No se pudo crear la notificación:', notifErr);
+      }
 
     } catch (error: any) {
-      console.error('Error saving employee:', error);
-      alert('Error al guardar empleado (RLS Check): ' + error.message);
+      console.error('Error al guardar empleado:', error);
+      alert('ERROR AL GUARDAR EMPLEADO: ' + (error.message || 'Error desconocido') + '\n\nVerifica si la tabla "employees" existe y tiene políticas RLS habilitadas para inserción.');
     } finally {
       setIsSavingEmployee(false);
     }
