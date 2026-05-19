@@ -46,17 +46,17 @@ export default function Profile() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const { data, error } = await supabase
-        .from('profiles')
+        .from('employees')
         .select('*')
-        .eq('id', session.user.id)
-        .single();
+        .eq('auth_id', session.user.id)
+        .maybeSingle(); // Usamos maybeSingle para no lanzar error si no existe aún
       
       if (data && !error) {
         setUser(data);
         setName(data.name || '');
         setPhone(data.phone || '');
       } else {
-        setMessage({ type: 'error', text: 'No se encontró tu registro en la tabla de perfiles. Por favor, contacta al administrador.' });
+        setMessage({ type: 'error', text: 'No se encontró tu registro en la tabla de empleados. Por favor, asegúrate de haber completado tu registro correctamente.' });
       }
     }
     setLoading(false);
@@ -71,9 +71,9 @@ export default function Profile() {
 
     try {
       const { error } = await supabase
-        .from('profiles')
+        .from('employees')
         .update({ name, phone })
-        .eq('id', user.id);
+        .eq('auth_id', user.auth_id);
 
       if (error) {
         setMessage({ type: 'error', text: 'Error al actualizar: ' + error.message });
@@ -97,10 +97,10 @@ export default function Profile() {
     setSaving(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const fileName = `${user.auth_id}-${Math.random()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
-      // Upload to Supabase Storage (assuming 'avatars' bucket exists and is public)
+      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
@@ -111,11 +111,11 @@ export default function Profile() {
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // Update profile record
+      // Update employee record
       const { error: updateError } = await supabase
-        .from('profiles')
+        .from('employees')
         .update({ avatar_url: publicUrl })
-        .eq('id', user.id);
+        .eq('auth_id', user.auth_id);
 
       if (updateError) throw updateError;
 

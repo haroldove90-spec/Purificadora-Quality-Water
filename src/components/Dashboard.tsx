@@ -84,7 +84,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
 
   const fetchDrivers = async () => {
     const { data } = await supabase
-      .from('profiles')
+      .from('employees')
       .select('id, name, role')
       .eq('role', 'driver')
       .eq('status', 'active');

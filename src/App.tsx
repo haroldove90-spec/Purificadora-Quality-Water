@@ -79,9 +79,9 @@ export default function App() {
 
   const fetchUserRole = async (userId: string) => {
     const { data, error } = await supabase
-      .from('profiles')
+      .from('employees')
       .select('role, name')
-      .eq('id', userId)
+      .eq('auth_id', userId)
       .maybeSingle(); 
     
     if (data && !error) {
@@ -89,7 +89,7 @@ export default function App() {
       setUserName(data.name);
     } else {
       setUserRole('client');
-      // Si es un cliente potencial no registrado en employees, intentar sacar el nombre del auth metadata
+      // Intentar sacar el nombre del auth metadata si no está en employees
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (user?.user_metadata?.full_name) {
           setUserName(user.user_metadata.full_name);
@@ -136,6 +136,7 @@ export default function App() {
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
+        { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
 
@@ -144,7 +145,7 @@ export default function App() {
         { id: 'route', label: 'Mi Ruta', icon: Truck },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
-        { id: 'profile', label: 'Ajustes', icon: User },
+        { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
 
@@ -156,13 +157,14 @@ export default function App() {
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
+        { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
 
     if (userRole === 'client') {
       return [
         { id: 'client_status', label: 'Mi Pedido', icon: MessageSquare },
-        { id: 'profile', label: 'Configuración', icon: User },
+        { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
 

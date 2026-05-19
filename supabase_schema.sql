@@ -20,15 +20,17 @@ DROP TABLE IF EXISTS public.notifications_log CASCADE;
 
 -- 2. CREACIÓN DE TABLAS
 
-CREATE TABLE public.profiles (
-  id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+CREATE TABLE public.employees (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  auth_id UUID REFERENCES auth.users ON DELETE CASCADE,
   name TEXT NOT NULL,
   email TEXT,
   role TEXT NOT NULL DEFAULT 'client', 
   phone TEXT,
   avatar_url TEXT,
   status TEXT DEFAULT 'active',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  UNIQUE(auth_id)
 );
 
 CREATE TABLE public.customers (
@@ -100,7 +102,7 @@ CREATE TABLE public.notifications_log (
 
 -- 3. DESACTIVAR RLS COMPLETAMENTE PARA DESARROLLO
 -- Esto es lo que soluciona el error "violates row-level security policy"
-ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employees DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products DISABLE ROW LEVEL SECURITY;
@@ -130,11 +132,11 @@ INSERT INTO public.products (name, description, price) VALUES
 -- 7. REFRESCAR SISTEMA
 NOTIFY pgrst, 'reload schema';
 
--- 8. AUTOMATIZACIÓN DE PERFILES
+-- 8. AUTOMATIZACIÓN DE PERFILES (EMPLEADOS/CLIENTES)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, name, email, role, phone)
+  INSERT INTO public.employees (auth_id, name, email, role, phone)
   VALUES (
     new.id,
     COALESCE(new.raw_user_meta_data->>'full_name', 'Nuevo Usuario'),

@@ -105,7 +105,7 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
 
         if (data.user) {
           setMessage({ type: 'success', text: '¡Cuenta creada con éxito! Iniciando sesión...' });
-          // El trigger de SQL se encargará de crear el registro en profiles automáticamente
+          // El trigger de SQL se encargará de crear el registro en employees automáticamente
         }
       }
     } catch (err: any) {
