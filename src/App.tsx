@@ -41,7 +41,7 @@ import Notifications from './components/Notifications';
 import Lobby from './components/Lobby';
 import { usePWA } from './hooks/usePWA';
 
-import { supabase } from './lib/supabaseClient';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
 type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications';
 
@@ -70,21 +70,31 @@ export default function App() {
 
     // Cargar sesión inicial
     const init = async () => {
+      console.log('--- DEBUG SUPABASE ---');
+      console.log('Project URL:', SUPABASE_URL);
+      console.log('Key length:', SUPABASE_ANON_KEY.length);
+      console.log('----------------------');
+      
       const timeoutId = setTimeout(() => {
         setLoading(false);
-        console.warn('Carga inicial de Supabase tardó demasiado. Forzando entrada...');
-      }, 5000); // 5 segundos máximo para intentar conectar
+        console.warn('La conexión con Supabase está tardando más de lo esperado. Verifica tu conexión a internet o las credenciales.');
+      }, 10000); // 10 segundos máximo
 
       try {
+        console.log('Intentando obtener sesión de Supabase...');
         const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+        if (error) {
+          console.error('Error de Supabase al obtener sesión:', error);
+          throw error;
+        }
         
+        console.log('Sesión obtenida:', session ? 'Usuario autenticado' : 'Sin sesión activa');
         setSession(session);
         if (session?.user) {
           await fetchUserRole(session.user.id);
         }
-      } catch (err) {
-        console.error('Error al iniciar sesión:', err);
+      } catch (err: any) {
+        console.error('Error crítico en inicialización:', err);
       } finally {
         clearTimeout(timeoutId);
         setLoading(false);
