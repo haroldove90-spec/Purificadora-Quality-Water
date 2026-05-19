@@ -16,7 +16,9 @@ import {
   Save,
   Lock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -27,6 +29,7 @@ export default function Profile() {
   const [user, setUser] = useState<any>(null);
   const [editMode, setEditMode] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   
   // Form fields
   const [name, setName] = useState('');
@@ -52,6 +55,8 @@ export default function Profile() {
         setUser(data);
         setName(data.name || '');
         setPhone(data.phone || '');
+      } else {
+        setMessage({ type: 'error', text: 'No se encontró tu registro en la tabla de empleados. Por favor, contacta al administrador.' });
       }
     }
     setLoading(false);
@@ -59,22 +64,30 @@ export default function Profile() {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user?.id) return;
+    
     setSaving(true);
     setMessage(null);
 
-    const { error } = await supabase
-      .from('employees')
-      .update({ name, phone })
-      .eq('id', user.id);
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({ name, phone })
+        .eq('id', user.id);
 
-    if (error) {
-      setMessage({ type: 'error', text: 'Error al actualizar: ' + error.message });
-    } else {
-      setMessage({ type: 'success', text: 'Perfil actualizado correctamente' });
-      setEditMode(false);
-      fetchProfile();
+      if (error) {
+        setMessage({ type: 'error', text: 'Error al actualizar: ' + error.message });
+      } else {
+        setMessage({ type: 'success', text: 'Perfil actualizado correctamente' });
+        setEditMode(false);
+        await fetchProfile();
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Ocurrió un error inesperado' });
+      console.error(err);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -338,14 +351,23 @@ export default function Profile() {
               <form onSubmit={handleChangePassword} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Contraseña Nueva</label>
-                  <input 
-                    type="password"
-                    required
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-3xl text-sm font-black text-slate-700 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
-                  />
+                  <div className="relative">
+                    <input 
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-3xl text-sm font-black text-slate-700 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-sky-500 transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="flex gap-4">
