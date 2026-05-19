@@ -44,46 +44,62 @@ export default function Profile() {
 
   const fetchProfile = async () => {
     setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      // 1. Intentar obtener el registro
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('auth_id', session.user.id)
-        .maybeSingle();
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (data) {
-        setUser(data);
-        setName(data.name || '');
-        setPhone(data.phone || '');
-        setEmail(data.email || session.user.email || '');
-      } else {
-        // 2. Si no existe, intentar crearlo automáticamente (para usuarios antiguos)
-        const newRecord = {
-          auth_id: session.user.id,
-          name: session.user.user_metadata?.full_name || 'Nuevo Usuario',
-          email: session.user.email,
-          role: session.user.user_metadata?.role || 'client'
-        };
-        
-        const { data: created, error: createError } = await supabase
+      if (sessionError) throw sessionError;
+
+      if (session?.user) {
+        // Timeout para la consulta de perfil
+        const profilePromise = supabase
           .from('employees')
-          .insert([newRecord])
-          .select()
-          .single();
-          
-        if (created) {
-          setUser(created);
-          setName(created.name);
-          setPhone(created.phone || '');
-          setEmail(created.email || '');
+          .select('*')
+          .eq('auth_id', session.user.id)
+          .maybeSingle();
+
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('La conexión con la base de datos ha expirado.')), 6000)
+        );
+
+        const { data, error }: any = await Promise.race([profilePromise, timeoutPromise]);
+        
+        if (error) {
+          console.error('Error buscando perfil:', error);
+          setMessage({ type: 'error', text: 'Error al cargar datos: ' + error.message });
+        } else if (data) {
+          setUser(data);
+          setName(data.name || '');
+          setPhone(data.phone || '');
+          setEmail(data.email || session.user.email || '');
         } else {
-          setMessage({ type: 'error', text: 'No se pudo crear/encontrar tu perfil. Contacta al administrador.' });
+          // Autocreate logic for missing records
+          const newRecord = {
+            auth_id: session.user.id,
+            name: session.user.user_metadata?.full_name || 'Nuevo Usuario',
+            email: session.user.email,
+            role: session.user.user_metadata?.role || 'client'
+          };
+          
+          const { data: created } = await supabase
+            .from('employees')
+            .insert([newRecord])
+            .select()
+            .single();
+            
+          if (created) {
+            setUser(created);
+            setName(created.name);
+            setPhone(created.phone || '');
+            setEmail(created.email || '');
+          }
         }
       }
+    } catch (err: any) {
+      console.error('Excepción en Profile:', err);
+      setMessage({ type: 'error', text: 'No se pudo conectar con el servidor: ' + (err.message || 'Error desconocido') });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {

@@ -58,109 +58,110 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     // 1. Escuchar cambios de autenticación
     console.log('Iniciando suscripción a cambios de Auth...');
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      if (!mounted) return;
       console.log(`Evento de Auth detectado: ${event}`);
       setSession(currentSession);
       
       if (currentSession?.user) {
-        await fetchUserRole(currentSession.user.id);
+        fetchUserRole(currentSession.user.id);
       } else {
         setUserRole(null);
         setActiveView('lobby');
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    // 2. Intento de carga inicial forzada si onAuthStateChange tarda
+    // 2. Intento de carga inicial forzada
     const init = async () => {
-      console.log('--- DEBUG SUPABASE ---');
-      console.log('Project URL:', SUPABASE_URL);
-      console.log('Key length:', SUPABASE_ANON_KEY.length);
-      console.log('----------------------');
+      console.log('Iniciando carga inicial de sesión...');
       
       const timeoutId = setTimeout(() => {
-        if (loading) {
-          console.warn('La conexión con Supabase está tardando más de lo esperado. Iniciando modo de espera...');
+        if (mounted && loading) {
+          console.warn('La conexión con Supabase está tardando demasiado. Forzando cierre de carga.');
+          setLoading(false);
         }
-      }, 10000);
+      }, 8000);
 
       try {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         if (error) {
           console.error('Error inicializando sesión:', error);
         } else if (initialSession) {
-          console.log('Sesión inicial recuperada con éxito');
+          console.log('Sesión inicial recuperada');
           setSession(initialSession);
           await fetchUserRole(initialSession.user.id);
         } else {
-          console.log('No se encontró sesión inicial activa');
+          console.log('No hay sesión activa');
         }
       } catch (err) {
-        console.error('Excepción crítica en init:', err);
+        console.error('Fallo en init:', err);
       } finally {
-        clearTimeout(timeoutId);
-        setLoading(false);
+        if (mounted) {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
       }
     };
 
     init();
 
     return () => {
-      console.log('Limpiando suscripción a Auth...');
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const fetchUserRole = async (userId: string) => {
     try {
-      console.log('Buscando rol para usuario:', userId);
-      const { data, error } = await supabase
+      console.log('Cargando rol para:', userId);
+      // Timeout para la consulta a la base de datos
+      const rolePromise = supabase
         .from('employees')
         .select('role, name')
         .eq('auth_id', userId)
-        .maybeSingle(); 
+        .maybeSingle();
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout en DB')), 5000)
+      );
+
+      const { data, error }: any = await Promise.race([rolePromise, timeoutPromise]);
       
-      if (error) {
-        console.error('Error buscando rol:', error);
-        setUserRole('client');
-        return;
-      }
+      if (error) throw error;
 
       if (data) {
-        console.log('Rol encontrado:', data.role);
-        setUserRole(data.role);
+        const role = String(data.role || 'client').toLowerCase() as any;
+        setUserRole(role);
         setUserName(data.name);
+        
+        // Cambio de vista inmediato
+        if (activeView === 'lobby') {
+          switch(role) {
+            case 'admin': setActiveView('metrics'); break;
+            case 'operator': setActiveView('dashboard'); break;
+            case 'driver': setActiveView('route'); break;
+            default: setActiveView('client_status');
+          }
+        }
       } else {
-        console.log('Usuario no encontrado en tabla employees, asignando rol cliente');
         setUserRole('client');
         const { data: userData } = await supabase.auth.getUser();
-        if (userData?.user?.user_metadata?.full_name) {
-          setUserName(userData.user.user_metadata.full_name);
-        } else {
-          setUserName('Cliente');
-        }
+        setUserName(userData?.user?.user_metadata?.full_name || 'Cliente');
+        if (activeView === 'lobby') setActiveView('client_status');
       }
     } catch (err) {
-      console.error('Error crítico buscando rol:', err);
+      console.error('Error obteniendo rol:', err);
       setUserRole('client');
       setUserName('Usuario');
+    } finally {
+      setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (userRole) {
-      if (activeView === 'lobby') {
-        switch(userRole) {
-          case 'admin': setActiveView('metrics'); break;
-          case 'operator': setActiveView('dashboard'); break;
-          case 'driver': setActiveView('route'); break;
-          case 'client': setActiveView('client_status'); break;
-        }
-      }
-    }
-  }, [userRole]);
 
   const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
     // This is now purely for visual priority if needed, but real role comes from DB
