@@ -24,6 +24,7 @@ import {
   Store,
   ShieldCheck,
   Download,
+  BookOpen,
   Settings,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
@@ -32,6 +33,7 @@ import WhatsAppChat from './components/WhatsAppChat';
 import Finances from './components/Finances';
 import DeliveryRoute from './components/DeliveryRoute';
 import Profile from './components/Profile';
+import Manual from './components/Manual';
 import Attendance from './components/Attendance';
 import NotificationHub from './components/NotificationHub';
 import QualityLog from './components/QualityLog';
@@ -43,7 +45,7 @@ import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
@@ -193,6 +195,7 @@ export default function App() {
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
+        { id: 'manual', label: 'Manual', icon: BookOpen },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
@@ -202,6 +205,7 @@ export default function App() {
         { id: 'route', label: 'Mi Ruta', icon: Truck },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
+        { id: 'manual', label: 'Manual', icon: BookOpen },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
@@ -214,6 +218,7 @@ export default function App() {
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
+        { id: 'manual', label: 'Manual', icon: BookOpen },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
@@ -393,6 +398,7 @@ export default function App() {
                  activeView === 'route' ? <DeliveryRoute userRole={userRole} /> :
                  activeView === 'client_status' ? <ClientStatus userRole={userRole} /> :
                  activeView === 'notifications' ? <Notifications userRole={userRole} /> :
+                 activeView === 'manual' ? <Manual role={userRole} /> :
                  <Profile />}
               </motion.div>
             </AnimatePresence>
