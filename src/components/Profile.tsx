@@ -46,9 +46,9 @@ export default function Profile() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const { data, error } = await supabase
-        .from('employees')
+        .from('profiles')
         .select('*')
-        .eq('auth_id', session.user.id)
+        .eq('id', session.user.id)
         .single();
       
       if (data && !error) {
@@ -56,7 +56,7 @@ export default function Profile() {
         setName(data.name || '');
         setPhone(data.phone || '');
       } else {
-        setMessage({ type: 'error', text: 'No se encontró tu registro en la tabla de empleados. Por favor, contacta al administrador.' });
+        setMessage({ type: 'error', text: 'No se encontró tu registro en la tabla de perfiles. Por favor, contacta al administrador.' });
       }
     }
     setLoading(false);
@@ -71,7 +71,7 @@ export default function Profile() {
 
     try {
       const { error } = await supabase
-        .from('employees')
+        .from('profiles')
         .update({ name, phone })
         .eq('id', user.id);
 
@@ -97,7 +97,7 @@ export default function Profile() {
     setSaving(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.auth_id}-${Math.random()}.${fileExt}`;
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
       // Upload to Supabase Storage (assuming 'avatars' bucket exists and is public)
@@ -111,9 +111,9 @@ export default function Profile() {
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // Update employee record
+      // Update profile record
       const { error: updateError } = await supabase
-        .from('employees')
+        .from('profiles')
         .update({ avatar_url: publicUrl })
         .eq('id', user.id);
 

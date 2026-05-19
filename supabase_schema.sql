@@ -9,6 +9,7 @@
 -- ======================================================
 
 -- 1. LIMPIEZA TOTAL
+DROP TABLE IF EXISTS public.profiles CASCADE;
 DROP TABLE IF EXISTS public.employees CASCADE;
 DROP TABLE IF EXISTS public.customers CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
@@ -19,11 +20,13 @@ DROP TABLE IF EXISTS public.notifications_log CASCADE;
 
 -- 2. CREACIÓN DE TABLAS
 
-CREATE TABLE public.employees (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+CREATE TABLE public.profiles (
+  id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   name TEXT NOT NULL,
-  role TEXT NOT NULL, 
+  email TEXT,
+  role TEXT NOT NULL DEFAULT 'client', 
   phone TEXT,
+  avatar_url TEXT,
   status TEXT DEFAULT 'active',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
@@ -97,7 +100,7 @@ CREATE TABLE public.notifications_log (
 
 -- 3. DESACTIVAR RLS COMPLETAMENTE PARA DESARROLLO
 -- Esto es lo que soluciona el error "violates row-level security policy"
-ALTER TABLE public.employees DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products DISABLE ROW LEVEL SECURITY;
@@ -126,3 +129,25 @@ INSERT INTO public.products (name, description, price) VALUES
 
 -- 7. REFRESCAR SISTEMA
 NOTIFY pgrst, 'reload schema';
+
+-- 8. AUTOMATIZACIÓN DE PERFILES
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, name, email, role, phone)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'full_name', 'Nuevo Usuario'),
+    new.email,
+    COALESCE(new.raw_user_meta_data->>'role', 'client'),
+    COALESCE(new.raw_user_meta_data->>'phone', '')
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Comentar o borrar si el trigger ya existe
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

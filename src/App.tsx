@@ -79,9 +79,9 @@ export default function App() {
 
   const fetchUserRole = async (userId: string) => {
     const { data, error } = await supabase
-      .from('employees')
+      .from('profiles')
       .select('role, name')
-      .eq('auth_id', userId)
+      .eq('id', userId)
       .maybeSingle(); 
     
     if (data && !error) {

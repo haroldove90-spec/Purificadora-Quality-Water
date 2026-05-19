@@ -116,8 +116,8 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
       fetchEmployees();
       
       const channel = supabase
-        .channel('employees_sync')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+        .channel('profiles_sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
           fetchEmployees();
         })
         .subscribe();
@@ -152,7 +152,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
 
   const fetchEmployees = async () => {
     const { data, error } = await supabase
-      .from('employees')
+      .from('profiles')
       .select('*')
       .order('created_at', { ascending: false });
     
@@ -262,11 +262,11 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
 
     try {
       const { error } = await supabase
-        .from('employees')
+        .from('profiles')
         .insert([newEmployee]);
 
       if (error) {
-        console.error('RLS Error details (employees):', error.message, error.details);
+        console.error('RLS Error details (profiles):', error.message, error.details);
         throw error;
       }
       
@@ -312,7 +312,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
 
   const handleDeleteEmployee = async (id: string, name: string) => {
     if (!confirm(`¿Eliminar empleado ${name}?`)) return;
-    const { error } = await supabase.from('employees').delete().eq('id', id);
+    const { error } = await supabase.from('profiles').delete().eq('id', id);
     if (error) alert('Error: ' + error.message);
     else fetchEmployees();
   };
