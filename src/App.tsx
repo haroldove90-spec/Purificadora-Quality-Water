@@ -167,9 +167,18 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUserRole(null);
-    setActiveView('lobby');
+    try {
+      console.log('Iniciando cierre de sesión...');
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error al cerrar sesión en Supabase:', error);
+    } finally {
+      // Limpieza forzada de estado local para asegurar que el usuario vea el Lobby
+      setSession(null);
+      setUserRole(null);
+      setActiveView('lobby');
+      console.log('Sesión cerrada localmente');
+    }
   };
 
   const getNavItems = () => {
@@ -277,7 +286,7 @@ export default function App() {
           )}
         </div>
 
-          <nav className="flex-1 px-4 mt-4 space-y-2">
+          <nav className="flex-1 px-4 mt-4 space-y-2 overflow-y-auto custom-scrollbar-sidebar">
             {isInstallable && (
               <button
                 onClick={installApp}

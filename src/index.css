@@ -38,4 +38,22 @@
   .dark .custom-scrollbar::-webkit-scrollbar-thumb {
     @apply bg-slate-800;
   }
+
+  .custom-scrollbar-sidebar::-webkit-scrollbar {
+    width: 3px;
+  }
+  .custom-scrollbar-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar-sidebar::-webkit-scrollbar-thumb {
+    @apply bg-slate-700/30 rounded-full;
+  }
+  
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

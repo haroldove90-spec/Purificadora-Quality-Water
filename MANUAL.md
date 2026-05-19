@@ -1,52 +1,93 @@
-# Manual del Usuario - Quality Water Management System
+# Guía de Uso Detallada - Quality Water System
 
-Este manual detalla las funciones disponibles para cada rol dentro de la plataforma.
-
----
-
-## 1. 🛡️ Administrador Maestro
-*El Administrador tiene acceso total a la gestión estratégica y financiera de la purificadora.*
-
-- **Dashboard Principal**: Análisis visual de ventas diarias, semanales y mensuales.
-- **Gestión Financiera**: 
-  - Registro de Ingresos y Egresos.
-  - Control de Caja Chica y flujo de efectivo.
-- **Métricas de Rendimiento**: Gráficas detalladas sobre los productos más vendidos y eficiencia de rutas.
-- **Gestión de Clientes**: 
-  - Base de datos centralizada de clientes.
-  - Consulta de saldos y pedidos frecuentes.
-- **Gestión de Empleados**:
-  - Dar de alta a nuevos trabajadores.
-  - Supervisión de asistencias y roles.
-- **Liquidación de Rutas**: Validación de las ventas reportadas por los choferes contra el efectivo entregado.
+Esta guía proporciona instrucciones paso a paso para operar cada módulo del sistema según el rol asignado.
 
 ---
 
-## 2. 🧪 Personal de Planta (Operador)
-*Encargado de asegurar la producción y la calidad del agua.*
+## 🛡️ ROL: ADMINISTRADOR MAESTRO
 
-- **Control de Inventarios**: Registro de entradas y salidas de insumos (garrafones, tapas, sellos, etiquetas).
-- **Corte de Planta**: Reporte diario de la producción total de agua purificada.
-- **Bitácora de Calidad**:
-  - Registro de análisis físico-químicos (pH, Cloro, TDS).
-  - Control de limpieza de tanques y filtros.
-- **Asistencia**: Marcaje de inicio y fin de jornada laboral con geolocalización.
+### 1. Módulo: Dashboard (Métricas)
+*   **Propósito:** Visualizar la salud del negocio en tiempo real.
+*   **Cómo usarlo:**
+    1.  Al entrar, verás las tarjetas superiores con: **Ventas del Día**, **Gastos**, **Balance Neto** y **Pedidos Pendientes**.
+    2.  Observa la gráfica de **Ventas vs Gastos** para identificar tendencias semanales.
+    3.  Consulta la sección de **Productos Más Vendidos** para planificar la producción.
+    4.  Utiliza el botón de **"Exportar Reporte"** (si está disponible) para auditorías mensuales.
+
+### 2. Módulo: Finanzas (Caja y Personal)
+*   **Propósito:** Control total del dinero y alta de recursos.
+*   **Operaciones de Dinero:**
+    1.  Haz clic en **"Nuevo Movimiento"**.
+    2.  Selecciona el tipo (Ingreso o Egreso).
+    3.  Ingresa el monto, categoría (ej. Luz, Nómina, Venta Rápida) y una nota descriptiva.
+*   **Gestión de Personal/Clientes:**
+    1.  En las pestañas correspondientes, usa el botón **"Añadir Nuevo"**.
+    2.  Completa los datos fiscales o de contacto. 
+    3.  *Nota:* Aquí es donde creas las cuentas para tus empleados (Choferes y Operadores).
+
+### 3. Módulo: Inventario
+*   **Propósito:** Evitar desabasto de insumos.
+*   **Cómo usarlo:**
+    1.  Verás la lista de productos con su nivel actual de stock.
+    2.  Si recibes mercancía (ej. tapas o sellos), pulsa **"Ajustar Stock"**.
+    3.  Ingresa la cantidad recibida y guarda cambios. El sistema alertará si el stock cae por debajo del mínimo.
 
 ---
 
-## 3. 🚚 Repartidor / Chofer
-*Personal en campo encargado de la distribución y venta directa.*
+## 🧪 ROL: PERSONAL DE PLANTA (OPERADOR)
 
-- **Hoja de Ruta**: Lista de pedidos programados con integración a Google Maps para navegación.
-- **Registro de Ventas**: Captura instantánea de ventas realizadas en ruta (efectivo o crédito).
-- **Control de Envases**: Seguimiento de garrafones prestados o intercambiados con el cliente.
-- **Auto-Liquidación**: Resumen al final del día sobre el total vendido para facilitar el cierre en caja.
-- **Perfil de Usuario**: Gestión de datos personales y fotografía de identificación.
+### 1. Módulo: Control de Calidad
+*   **Propósito:** Cumplir con las normas de salud y garantizar pureza.
+*   **Cómo usarlo:**
+    1.  Haz clic en **"Nuevo Registro de Calidad"**.
+    2.  Ingresa los valores obtenidos de tus pruebas: **pH**, **Cloro**, **TDS** (Sólidos Disueltos) y **Dureza**.
+    3.  Confirma la limpieza de filtros y tanques marcando las casillas de verificación.
+    4.  Guarda el registro. Esto crea una bitácora histórica inmutable para sanidad.
+
+### 2. Módulo: Corte de Planta (Producción)
+*   **Propósito:** Reportar cuántos garrafones se llenaron.
+*   **Cómo usarlo:**
+    1.  Al final del turno, registra el total de garrafones de 20L y botellas pequeñas producidas.
+    2.  Asegúrate de descontar los insumos utilizados (tapas y sellos) automáticamente o manualmente según la configuración.
 
 ---
 
-## 4. 📲 Notificaciones del Sistema
-*Todos los roles reciben alertas relevantes según su cargo.*
-- **Admin**: Avisos de stock bajo, gastos inusuales o fallos de calidad.
-- **Operador**: Recordatorios de mantenimiento o nuevos pedidos de producción.
-- **Chofer**: Nuevos servicios asignados o cambios en la ruta.
+## 🚚 ROL: REPARTIDOR / CHOFER
+
+### 1. Módulo: Ruta de Entrega
+*   **Propósito:** Entregar pedidos y cobrar en campo.
+*   **Cómo usarlo:**
+    1.  En la pantalla principal, verás tu **Lista de Pedidos** del día.
+    2.  Pulsa en un pedido para ver la dirección. Usa el icono de **Google Maps** para iniciar la navegación.
+    3.  Al entregar, pulsa **"Completar Venta"**.
+    4.  Selecciona el método de pago (Efectivo/Transferencia) y confirma si el cliente entregó garrafones vacíos a cambio.
+
+### 2. Módulo: Liquidación Diaria
+*   **Propósito:** Rendir cuentas al administrador.
+*   **Cómo usarlo:**
+    1.  Antes de irte, revisa tu resumen de **"Auto-Liquidación"**.
+    2.  Verifica que el efectivo en tu poder coincida con lo registrado en la app.
+    3.  Presenta este resumen al Administrador para cerrar tu caja del día.
+
+---
+
+## 🕒 MÓDULO COMÚN: ASISTENCIA (TODOS)
+
+1.  Al llegar a la purificadora, abre el módulo de **Asistencia**.
+2.  Pulsa el botón verde **"Check-In"**. El sistema registrará tu hora exacta y ubicación GPS.
+3.  Al terminar tu turno, pulsa el botón rojo **"Check-Out"**.
+4.  Puedes consultar tus horas acumuladas en la misma pantalla para verificar tus días laborados.
+
+---
+
+## 👤 MÓDULO COMÚN: PERFIL
+
+1.  Accede a **Perfil** para subir tu fotografía de identificación.
+2.  Mantén actualizado tu teléfono móvil, ya que es el canal principal para notificaciones de emergencia.
+3.  Puedes cambiar tu contraseña en la sección de **Seguridad**.
+
+---
+
+## 💡 Consejos Generales
+*   **Modo Offline:** Si pierdes señal en ruta, intenta no cerrar la aplicación; los datos se sincronizarán cuando recuperes conexión.
+*   **Soporte:** Si ves un banner rojo de "Error RLS", notifícalo de inmediato al Administrador, ya que significa un problema de permisos en tu cuenta.
