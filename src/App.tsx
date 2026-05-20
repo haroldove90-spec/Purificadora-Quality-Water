@@ -39,18 +39,20 @@ import NotificationHub from './components/NotificationHub';
 import QualityLog from './components/QualityLog';
 import ClientStatus from './components/ClientStatus';
 import Notifications from './components/Notifications';
+import POS from './components/POS';
 
 import Lobby from './components/Lobby';
 import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
   const [activeView, setActiveView] = useState<View>('lobby');
   const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
+  const [currentRoleView, setCurrentRoleView] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -102,6 +104,7 @@ export default function App() {
         
         setSession(null);
         setUserRole(null);
+        setCurrentRoleView(null);
         setUserName(null);
         setActiveView('lobby');
         setLoading(false);
@@ -109,6 +112,15 @@ export default function App() {
     };
 
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    // Timeout de seguridad definitivo: si en 4 segundos la app sigue cargando por temas de red, forzamos el cierre de la pantalla de carga.
+    // Esto asegura que la app siempre cargue el Lobby o la pantalla principal de forma inmediata.
+    const safetyTimeoutId = setTimeout(() => {
+      if (mounted) {
+        console.warn('Freno de seguridad de carga activado (Timeout).');
+        setLoading(false);
+      }
+    }, 4000);
 
     // 1. Escuchar cambios de autenticación
     console.log('Iniciando suscripción a cambios de Auth...');
@@ -118,28 +130,23 @@ export default function App() {
       setSession(currentSession);
       
       if (currentSession?.user) {
-        fetchUserRole(currentSession.user.id);
+        fetchUserRole(currentSession.user.id, currentSession.user.user_metadata?.full_name);
       } else {
         setUserRole(null);
+        setCurrentRoleView(null);
         setActiveView('lobby');
         setLoading(false);
       }
     });
 
-    // 2. Intento de carga inicial forzada
+    // 2. Intento de carga inicial de sesión
     const init = async () => {
       console.log('Iniciando carga inicial de sesión...');
-      
-      const timeoutId = setTimeout(() => {
-        if (mounted && loading) {
-          console.warn('La conexión con Supabase está tardando demasiado. Forzando cierre de carga.');
-          setLoading(false);
-        }
-      }, 8000);
-
       try {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
+        if (!mounted) return;
+
         if (error) {
           console.error('Error al recuperar sesión inicial:', error);
           if (
@@ -151,12 +158,13 @@ export default function App() {
             await supabase.auth.signOut().catch(() => {});
             setSession(null);
             setUserRole(null);
+            setCurrentRoleView(null);
             setActiveView('lobby');
           }
         } else if (initialSession) {
           console.log('Sesión inicial recuperada con éxito');
           setSession(initialSession);
-          await fetchUserRole(initialSession.user.id);
+          await fetchUserRole(initialSession.user.id, initialSession.user.user_metadata?.full_name);
         } else {
           console.log('No hay sesión de usuario guardada');
         }
@@ -172,11 +180,12 @@ export default function App() {
           await supabase.auth.signOut().catch(() => {});
           setSession(null);
           setUserRole(null);
+          setCurrentRoleView(null);
           setActiveView('lobby');
         }
       } finally {
         if (mounted) {
-          clearTimeout(timeoutId);
+          clearTimeout(safetyTimeoutId);
           setLoading(false);
         }
       }
@@ -186,15 +195,16 @@ export default function App() {
 
     return () => {
       mounted = false;
+      clearTimeout(safetyTimeoutId);
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       subscription.unsubscribe();
     };
   }, []);
 
-  const fetchUserRole = async (userId: string) => {
+  const fetchUserRole = async (userId: string, defaultName?: string) => {
     try {
       console.log('Cargando rol para:', userId);
-      // Timeout para la consulta a la base de datos
+      // Timeout para la consulta a la base de datos (4 segundos máximo)
       const rolePromise = supabase
         .from('employees')
         .select('role, name')
@@ -202,7 +212,7 @@ export default function App() {
         .maybeSingle();
 
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout en DB')), 5000)
+        setTimeout(() => reject(new Error('Timeout en DB')), 4000)
       );
 
       const { data, error }: any = await Promise.race([rolePromise, timeoutPromise]);
@@ -218,6 +228,7 @@ export default function App() {
         if (role === 'administrador') role = 'admin';
         
         setUserRole(role as any);
+        setCurrentRoleView(role as any);
         setUserName(data.name);
         
         // Cambio de vista inmediato
@@ -231,14 +242,15 @@ export default function App() {
         }
       } else {
         setUserRole('client');
-        const { data: userData } = await supabase.auth.getUser();
-        setUserName(userData?.user?.user_metadata?.full_name || 'Cliente');
+        setCurrentRoleView('client');
+        setUserName(defaultName || 'Cliente');
         if (activeView === 'lobby') setActiveView('client_status');
       }
     } catch (err) {
       console.error('Error obteniendo rol:', err);
       setUserRole('client');
-      setUserName('Usuario');
+      setCurrentRoleView('client');
+      setUserName(defaultName || 'Usuario');
     } finally {
       setLoading(false);
     }
@@ -266,6 +278,7 @@ export default function App() {
       // Limpieza inmediata y forzada
       setSession(null);
       setUserRole(null);
+      setCurrentRoleView(null);
       setUserName(null);
       setActiveView('lobby');
       setLoggingOut(false);
@@ -274,8 +287,10 @@ export default function App() {
   };
 
   const getNavItems = () => {
-    if (userRole === 'admin') {
-      return [
+    let items: any[] = [];
+    
+    if (currentRoleView === 'admin') {
+      items = [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
@@ -289,40 +304,64 @@ export default function App() {
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
-    }
-
-    if (userRole === 'driver') {
-      return [
+    } else if (currentRoleView === 'driver') {
+      items = [
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
+        { id: 'pos', label: 'Venta POS', icon: CreditCard },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
-    }
-
-    if (userRole === 'operator') {
-      return [
+    } else if (currentRoleView === 'operator') {
+      items = [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
+        { id: 'pos', label: 'Rol Ventas (POS)', icon: CreditCard },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'sales', label: 'Ventas Globales', icon: History },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
-        { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
-    }
-
-    if (userRole === 'client') {
-      return [
+    } else if (currentRoleView === 'client') {
+      items = [
         { id: 'client_status', label: 'Mi Pedido', icon: MessageSquare },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
 
-    return [] as any;
+    // Agregar accesos directos de cambio de rol para el administrador real
+    if (userRole === 'admin') {
+      if (currentRoleView === 'admin') {
+        items.push(
+          { id: 'switch_to_operator', label: 'Vista Planta', icon: Store, isShortcut: true },
+          { id: 'switch_to_driver', label: 'Vista Repartidor', icon: Truck, isShortcut: true }
+        );
+      } else {
+        items.push(
+          { id: 'switch_to_admin', label: 'Ver Admin', icon: ShieldCheck, isShortcut: true }
+        );
+      }
+    }
+
+    return items;
+  };
+
+  const handleNavClick = (itemId: string) => {
+    if (itemId === 'switch_to_operator') {
+      setCurrentRoleView('operator');
+      setActiveView('dashboard');
+    } else if (itemId === 'switch_to_driver') {
+      setCurrentRoleView('driver');
+      setActiveView('route');
+    } else if (itemId === 'switch_to_admin') {
+      setCurrentRoleView('admin');
+      setActiveView('metrics');
+    } else {
+      setActiveView(itemId as View);
+    }
   };
 
   if (loading) {
@@ -394,17 +433,19 @@ export default function App() {
               </button>
             )}
 
-            {navItems.map((item) => (
+            {navItems.map((item: any) => (
             <button
               key={item.id}
-              onClick={() => setActiveView(item.id as View)}
+              onClick={() => handleNavClick(item.id)}
               className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
-                activeView === item.id 
-                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20 font-bold' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                item.isShortcut 
+                  ? 'border border-dashed border-amber-500/30 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300'
+                  : activeView === item.id 
+                    ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20 font-bold' 
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <item.icon size={22} />
+              <item.icon size={22} className={item.isShortcut ? 'text-amber-400 animate-pulse shrink-0' : 'shrink-0'} />
               {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">{item.label}</span>}
             </button>
           ))}
@@ -433,12 +474,12 @@ export default function App() {
         <header className={`h-16 hidden md:flex border-b items-center justify-between px-6 shrink-0 sticky top-0 z-50 transition-colors ${darkMode ? 'bg-slate-900/80 backdrop-blur-md border-slate-800' : 'bg-white/80 backdrop-blur-md border-slate-200'}`}>
           <div className="flex items-center gap-4">
             <h2 className="text-sm font-black uppercase tracking-widest text-slate-400">
-              {navItems.find(i => i.id === activeView)?.label || 'Panel'}
+              {navItems.find((i: any) => i.id === activeView)?.label || 'Panel'}
             </h2>
           </div>
           
           <div className="flex items-center gap-6">
-            <NotificationHub userRole={userRole} onViewAll={() => setActiveView('notifications')} />
+            <NotificationHub userRole={currentRoleView} onViewAll={() => setActiveView('notifications')} />
             {isInstallable && (
               <button
                 onClick={installApp}
@@ -457,7 +498,12 @@ export default function App() {
             </button>
             <div className="flex items-center gap-4">
               <div className="text-right hidden sm:block">
-                <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest leading-none mb-1">{userRole === 'admin' ? 'Administrador' : userRole === 'operator' ? 'Planta' : userRole === 'driver' ? 'Repartidor' : 'Cliente'}</p>
+                <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest leading-none mb-1">
+                  {currentRoleView === 'admin' ? 'Administrador' : currentRoleView === 'operator' ? 'Planta' : currentRoleView === 'driver' ? 'Repartidor' : 'Cliente'}
+                  {currentRoleView !== userRole && (
+                    <span className="text-amber-500 ml-1 text-[8px] tracking-normal lowercase italic">(vista)</span>
+                  )}
+                </p>
                 <p className="text-xs font-bold text-slate-700 uppercase italic">{userName || 'Usuario'}</p>
               </div>
               <div className="bg-emerald-500 w-2 h-2 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" title="Sistema Online" />
@@ -477,20 +523,21 @@ export default function App() {
                 transition={{ duration: 0.2 }}
                 className="flex-1"
               >
-                {activeView === 'dashboard' ? <Dashboard userRole={userRole} /> : 
-                 activeView === 'inventory' ? <Inventory userRole={userRole} /> :
-                 activeView === 'finances' ? <Finances userRole={userRole} /> :
-                 activeView === 'metrics' ? <Finances initialTab="metrics" userRole={userRole} /> :
-                 activeView === 'sales' ? <Finances initialTab="sales" userRole={userRole} /> :
-                 activeView === 'customers' ? <Finances initialTab="customers" userRole={userRole} /> :
-                 activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={userRole} /> :
-                 activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={userRole} /> :
-                 activeView === 'attendance' ? <Attendance userRole={userRole} /> :
-                 activeView === 'quality' ? <QualityLog userRole={userRole} /> :
-                 activeView === 'route' ? <DeliveryRoute userRole={userRole} /> :
-                 activeView === 'client_status' ? <ClientStatus userRole={userRole} /> :
-                 activeView === 'notifications' ? <Notifications userRole={userRole} /> :
-                 activeView === 'manual' ? <Manual role={userRole} /> :
+                {activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
+                 activeView === 'inventory' ? <Inventory userRole={currentRoleView} /> :
+                 activeView === 'pos' ? <POS userRole={currentRoleView} /> :
+                 activeView === 'finances' ? <Finances userRole={currentRoleView} /> :
+                 activeView === 'metrics' ? <Finances initialTab="metrics" userRole={currentRoleView} /> :
+                 activeView === 'sales' ? <Finances initialTab="sales" userRole={currentRoleView} /> :
+                 activeView === 'customers' ? <Finances initialTab="customers" userRole={currentRoleView} /> :
+                 activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={currentRoleView} /> :
+                 activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={currentRoleView} /> :
+                 activeView === 'attendance' ? <Attendance userRole={currentRoleView} /> :
+                 activeView === 'quality' ? <QualityLog userRole={currentRoleView} /> :
+                 activeView === 'route' ? <DeliveryRoute userRole={currentRoleView} /> :
+                 activeView === 'client_status' ? <ClientStatus userRole={currentRoleView} /> :
+                 activeView === 'notifications' ? <Notifications userRole={currentRoleView} /> :
+                 activeView === 'manual' ? <Manual role={currentRoleView} /> :
                  <Profile />}
               </motion.div>
             </AnimatePresence>
@@ -500,17 +547,23 @@ export default function App() {
 
       {/* Mobile Bottom Navigation */}
       <nav className={`md:hidden fixed bottom-1 left-4 right-4 h-20 border-t flex items-center justify-start gap-2 px-4 z-[60] pb-safe transition-colors shadow-2xl rounded-3xl overflow-x-auto no-scrollbar ${darkMode ? 'bg-slate-900/90 backdrop-blur-xl border-slate-800' : 'bg-white/90 backdrop-blur-xl border-slate-200'}`}>
-        {navItems.map((item) => (
+        {navItems.map((item: any) => (
           <button
             key={item.id}
-            onClick={() => setActiveView(item.id as View)}
+            onClick={() => handleNavClick(item.id)}
             className={`flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl transition-all shrink-0 ${
-              activeView === item.id 
-                ? 'text-sky-500 font-bold' 
-                : 'text-slate-400'
+              item.isShortcut
+                ? 'text-amber-400 bg-amber-500/5 px-2 border border-dashed border-amber-500/20 animate-none'
+                : activeView === item.id 
+                  ? 'text-sky-500 font-bold' 
+                  : 'text-slate-400'
             }`}
           >
-            <item.icon size={activeView === item.id ? 22 : 20} strokeWidth={activeView === item.id ? 2.5 : 2} />
+            <item.icon 
+              size={item.isShortcut ? 20 : activeView === item.id ? 22 : 20} 
+              strokeWidth={activeView === item.id ? 2.5 : 2} 
+              className={item.isShortcut ? 'text-amber-400 animate-pulse shrink-0' : 'shrink-0'}
+            />
             <span className="text-[9px] font-bold uppercase tracking-widest leading-none text-center h-4 flex items-center">{item.label}</span>
           </button>
         ))}
@@ -533,7 +586,7 @@ export default function App() {
             <Download size={20} />
           </button>
         )}
-        <NotificationHub userRole={userRole} onViewAll={() => setActiveView('notifications')} />
+        <NotificationHub userRole={currentRoleView} onViewAll={() => setActiveView('notifications')} />
         <button 
           onClick={() => setDarkMode(!darkMode)}
           className="p-3 rounded-full shadow-lg bg-white dark:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700"
