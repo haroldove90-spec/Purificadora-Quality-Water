@@ -297,6 +297,13 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    // Si la pantalla es móvil, cerrar el sidebar por defecto para que no obstaculice
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  }, []);
+
   const fetchUserRole = async (userId: string, defaultName?: string) => {
     try {
       console.log('Cargando rol para:', userId);
@@ -464,6 +471,11 @@ export default function App() {
     } else {
       setActiveView(itemId as View);
     }
+
+    // Auto-close sidebar on mobile after clicking a navigation item
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
   };
 
   if (loading) {
@@ -500,20 +512,44 @@ export default function App() {
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'text-slate-800 bg-[#f1f5f9]'}`}>
       
+      {/* Background overlay for mobile when sidebar is open */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          className="md:hidden fixed inset-0 bg-black/60 z-[45] backdrop-blur-xs transition-opacity duration-300 animate-fade-in"
+        />
+      )}
+
       {/* Header - Mobile Only */}
       <header className={`md:hidden shrink-0 sticky top-0 z-[50] border-b transition-colors duration-300 ${darkMode ? 'bg-slate-900/95 backdrop-blur-md border-slate-800' : 'bg-white/95 backdrop-blur-md border-slate-250'}`}>
         <div className="flex items-center justify-between p-3.5">
-          <div className="flex items-center gap-2">
-            <img 
-              src="https://cossma.com.mx/purificadora.jpg" 
-              alt="Logo" 
-              className="w-8 h-8 object-contain rounded"
-            />
-            <div className="flex flex-col">
-              <span className="font-display font-black text-sm tracking-tight leading-none text-slate-800 dark:text-white">
-                Quality<span className="text-sky-500">Water</span>
-              </span>
-              <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">{userName || 'Usuario'}</span>
+          <div className="flex items-center gap-3">
+            {/* Hamburger / Close Toggle Button */}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className={`p-2.5 rounded-xl transition-all ${
+                darkMode 
+                  ? 'bg-slate-800 text-white hover:bg-slate-700 active:scale-95' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-95'
+              }`}
+              title={isSidebarOpen ? "Cerrar menú" : "Abrir menú"}
+              aria-label="Toggle menú"
+            >
+              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+
+            <div className="flex items-center gap-2">
+              <img 
+                src="https://cossma.com.mx/purificadora.jpg" 
+                alt="Logo" 
+                className="w-8 h-8 object-contain rounded"
+              />
+              <div className="flex flex-col">
+                <span className="font-display font-black text-sm tracking-tight leading-none text-slate-800 dark:text-white">
+                  Quality<span className="text-sky-500">Water</span>
+                </span>
+                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">{userName || 'Usuario'}</span>
+              </div>
             </div>
           </div>
           
@@ -586,11 +622,15 @@ export default function App() {
 
       {/* Toast Notification Container Removed */}
 
-      {/* Sidebar - Desktop Only */}
+      {/* Sidebar - Desktop and Mobile responsive navigation */}
       <motion.aside
         initial={false}
-        animate={{ width: isSidebarOpen ? 280 : 80 }}
-        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-50 border-r transition-colors ${darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-900 text-white border-slate-800'}`}
+        animate={{ width: isSidebarOpen ? 280 : (typeof window !== 'undefined' && window.innerWidth < 768 ? 280 : 80) }}
+        className={`flex flex-col fixed inset-y-0 left-0 z-50 border-r transition-transform duration-300 ease-in-out ${
+          isSidebarOpen 
+            ? 'translate-x-0' 
+            : '-translate-x-full md:translate-x-0'
+        } ${darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-900 text-white border-slate-800'}`}
       >
         <div 
           className="p-6 flex items-center gap-3 group border-b border-slate-800/50"
@@ -730,38 +770,6 @@ export default function App() {
           </div>
         </div>
       </main>
-
-      {/* Mobile Bottom Navigation */}
-      <nav className={`md:hidden fixed bottom-1 left-4 right-4 h-20 border-t flex items-center justify-start gap-2 px-4 z-[60] pb-safe transition-colors shadow-2xl rounded-3xl overflow-x-auto no-scrollbar ${darkMode ? 'bg-slate-900/90 backdrop-blur-xl border-slate-800' : 'bg-white/90 backdrop-blur-xl border-slate-200'}`}>
-        {navItems.filter((item: any) => !item.isShortcut).map((item: any) => (
-          <button
-            key={item.id}
-            onClick={() => handleNavClick(item.id)}
-            className={`flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl transition-all shrink-0 ${
-              activeView === item.id 
-                ? 'text-sky-500 font-bold' 
-                : 'text-slate-400'
-            }`}
-          >
-            <item.icon 
-              size={activeView === item.id ? 22 : 20} 
-              strokeWidth={activeView === item.id ? 2.5 : 2} 
-              className="shrink-0"
-            />
-            <span className="text-[9px] font-bold uppercase tracking-widest leading-none text-center h-4 flex items-center">{item.label}</span>
-          </button>
-        ))}
-        <button
-          onClick={handleLogout}
-          className="flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl text-slate-400 shrink-0"
-        >
-          <LogOut size={20} strokeWidth={2.5} />
-          <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Cerrar</span>
-        </button>
-      </nav>
-
-      {/* Bottom Spacer for Mobile Nav */}
-      <div className="h-20 md:hidden flex-shrink-0" />
     </div>
   );
 }
