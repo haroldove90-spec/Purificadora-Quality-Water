@@ -57,19 +57,69 @@ export default function App() {
     } catch (_) {}
     return 'lobby';
   });
-  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
+  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(() => {
+    try {
+      const backupStr = localStorage.getItem('quality_water_session_backup');
+      if (backupStr) {
+        const backup = JSON.parse(backupStr);
+        if (backup?.userRole) return backup.userRole;
+      }
+    } catch (_) {}
+    return null;
+  });
   const [currentRoleView, setCurrentRoleView] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(() => {
     try {
+      const backupStr = localStorage.getItem('quality_water_session_backup');
+      if (backupStr) {
+        const backup = JSON.parse(backupStr);
+        if (backup?.currentRoleView) return backup.currentRoleView;
+      }
       const saved = localStorage.getItem('currentRoleView');
       if (saved) return saved as any;
     } catch (_) {}
     return null;
   });
-  const [userName, setUserName] = useState<string | null>(null);
-  const [session, setSession] = useState<any>(null);
+  const [userName, setUserName] = useState<string | null>(() => {
+    try {
+      const backupStr = localStorage.getItem('quality_water_session_backup');
+      if (backupStr) {
+        const backup = JSON.parse(backupStr);
+        if (backup?.userName) return backup.userName;
+      }
+    } catch (_) {}
+    return null;
+  });
+  const [session, setSession] = useState<any>(() => {
+    try {
+      const backupStr = localStorage.getItem('quality_water_session_backup');
+      if (backupStr) {
+        const backup = JSON.parse(backupStr);
+        if (backup?.session) return backup.session;
+      }
+    } catch (_) {}
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Backup sync effect
+  useEffect(() => {
+    if (session) {
+      try {
+        localStorage.setItem('quality_water_session_backup', JSON.stringify({
+          session,
+          userRole,
+          currentRoleView,
+          userName
+        }));
+      } catch (_) {}
+    } else if (session === null) {
+      try {
+        localStorage.removeItem('quality_water_session_backup');
+      } catch (_) {}
+    }
+  }, [session, userRole, currentRoleView, userName]);
 
   useEffect(() => {
     if (activeView && activeView !== 'lobby') {
@@ -159,7 +209,7 @@ export default function App() {
       
       if (currentSession?.user) {
         fetchUserRole(currentSession.user.id, currentSession.user.user_metadata?.full_name);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setUserRole(null);
         setCurrentRoleView(null);
         setActiveView('lobby');
@@ -195,6 +245,9 @@ export default function App() {
           await fetchUserRole(initialSession.user.id, initialSession.user.user_metadata?.full_name);
         } else {
           console.log('No hay sesión de usuario guardada');
+          setUserRole(null);
+          setCurrentRoleView(null);
+          setActiveView('lobby');
         }
       } catch (err: any) {
         console.error('Fallo de inicialización crítica en init:', err);
@@ -248,11 +301,11 @@ export default function App() {
       if (error) throw error;
 
       if (data) {
-        let role = String(data.role || 'client').toLowerCase();
+        let role = String(data.role || 'driver').toLowerCase();
         
         // Normalización de roles (Español -> English Interno)
         if (role === 'planta' || role === 'operador') role = 'operator';
-        if (role === 'repartidor' || role === 'chofer') role = 'driver';
+        if (role === 'repartidor' || role === 'chofer' || role === 'client') role = 'driver';
         if (role === 'administrador') role = 'admin';
         
         setUserRole(role as any);
@@ -265,20 +318,21 @@ export default function App() {
             case 'admin': setActiveView('metrics'); break;
             case 'operator': setActiveView('pos'); break;
             case 'driver': setActiveView('pos'); break;
-            default: setActiveView('client_status');
+            default: setActiveView('pos');
           }
         }
       } else {
-        setUserRole('client');
-        setCurrentRoleView('client');
-        setUserName(defaultName || 'Cliente');
-        if (activeView === 'lobby') setActiveView('client_status');
+        setUserRole('driver');
+        setCurrentRoleView('driver');
+        setUserName(defaultName || 'Repartidor');
+        if (activeView === 'lobby') setActiveView('pos');
       }
     } catch (err) {
       console.error('Error obteniendo rol:', err);
-      setUserRole('client');
-      setCurrentRoleView('client');
+      setUserRole('driver');
+      setCurrentRoleView('driver');
       setUserName(defaultName || 'Usuario');
+      if (activeView === 'lobby') setActiveView('pos');
     } finally {
       setLoading(false);
     }
@@ -307,6 +361,7 @@ export default function App() {
       try {
         localStorage.removeItem('activeView');
         localStorage.removeItem('currentRoleView');
+        localStorage.removeItem('quality_water_session_backup');
       } catch (_) {}
       setSession(null);
       setUserRole(null);

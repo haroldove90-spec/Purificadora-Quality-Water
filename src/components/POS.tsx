@@ -56,6 +56,16 @@ export default function POS({ userRole }: { userRole: string | null }) {
   const [manualCustomerAddress, setManualCustomerAddress] = useState('Mostrador');
 
   // Transaction States
+  const [offlineSalesCount, setOfflineSalesCount] = useState<number>(() => {
+    try {
+      const pendingStr = localStorage.getItem('pending_offline_sales');
+      if (pendingStr) {
+        const parsed = JSON.parse(pendingStr);
+        return Array.isArray(parsed) ? parsed.length : 0;
+      }
+    } catch (_) {}
+    return 0;
+  });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer'>('cash');
   const [loading, setLoading] = useState(true);
@@ -74,9 +84,59 @@ export default function POS({ userRole }: { userRole: string | null }) {
     phone?: string;
   } | null>(null);
 
+  // Background Auto Sychronization for Offline Sales
+  const syncOfflineSales = async () => {
+    try {
+      const pendingStr = localStorage.getItem('pending_offline_sales');
+      if (!pendingStr) return;
+      const pendingList = JSON.parse(pendingStr);
+      if (!Array.isArray(pendingList) || pendingList.length === 0) return;
+
+      console.log(`📶 Intentando sincronizar ${pendingList.length} ventas locales pendientes con Supabase...`);
+      
+      const successfulIndexes: number[] = [];
+      
+      for (let i = 0; i < pendingList.length; i++) {
+        const payload = pendingList[i];
+        try {
+          const { error } = await supabase.from('orders').insert([payload]);
+          if (!error) {
+            successfulIndexes.push(i);
+          } else {
+            console.error('Error insertando venta offline:', error);
+          }
+        } catch (err) {
+          console.error('Fallo de red en sincronización individual:', err);
+        }
+      }
+
+      if (successfulIndexes.length > 0) {
+        const remainingList = pendingList.filter((_, idx) => !successfulIndexes.includes(idx));
+        if (remainingList.length > 0) {
+          localStorage.setItem('pending_offline_sales', JSON.stringify(remainingList));
+        } else {
+          localStorage.removeItem('pending_offline_sales');
+        }
+        setOfflineSalesCount(remainingList.length);
+        
+        setNotification({
+          type: 'success',
+          message: `📶 ¡Sincronización Exitosa! Se subieron ${successfulIndexes.length} ventas pendientes de ruta.`
+        });
+      }
+    } catch (err) {
+      console.error('Error en proceso global de sincronización:', err);
+    }
+  };
+
   // Load Data
   const fetchData = async () => {
-    setLoading(true);
+    // Si ya cargamos del cache, no mostramos la pantalla de carga agresiva
+    const hasCachedData = products.length > 0 && customers.length > 0;
+    if (!hasCachedData) {
+      setLoading(true);
+    }
+    
     try {
       // Fetch Products
       const { data: prodData, error: prodError } = await supabase
@@ -85,7 +145,12 @@ export default function POS({ userRole }: { userRole: string | null }) {
         .order('name');
       
       if (prodError) throw prodError;
-      if (prodData) setProducts(prodData);
+      if (prodData) {
+        setProducts(prodData);
+        try {
+          localStorage.setItem('pos_cache_products', JSON.stringify(prodData));
+        } catch (_) {}
+      }
 
       // Fetch Customers
       const { data: custData, error: custError } = await supabase
@@ -94,7 +159,12 @@ export default function POS({ userRole }: { userRole: string | null }) {
         .order('name');
       
       if (custError) throw custError;
-      if (custData) setCustomers(custData);
+      if (custData) {
+        setCustomers(custData);
+        try {
+          localStorage.setItem('pos_cache_customers', JSON.stringify(custData));
+        } catch (_) {}
+      }
     } catch (e: any) {
       console.error('Error cargando catálogo POS:', e);
     } finally {
@@ -103,7 +173,43 @@ export default function POS({ userRole }: { userRole: string | null }) {
   };
 
   useEffect(() => {
+    // 1. Cargar caché súper rápido para respuesta instantánea de UI
+    try {
+      const cachedProducts = localStorage.getItem('pos_cache_products');
+      const cachedCustomers = localStorage.getItem('pos_cache_customers');
+      if (cachedProducts) {
+        setProducts(JSON.parse(cachedProducts));
+      }
+      if (cachedCustomers) {
+        setCustomers(JSON.parse(cachedCustomers));
+      }
+    } catch (_) {}
+
+    // 2. Traer catálogo fresco en segundo plano
     fetchData();
+
+    // 3. Sincronizar cola offline inmediatamente
+    syncOfflineSales();
+
+    // 4. Temporizador de autosincronización cada 20 segundos
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        syncOfflineSales();
+      }
+    }, 20000);
+
+    // 5. Escuchar evento de red recuperada
+    const handleOnline = () => {
+      console.log('📶 Conexión recuperada. Sincronizando ventas...');
+      syncOfflineSales();
+    };
+
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
 
   // Filter products based on search
@@ -217,7 +323,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
     setShowTicketModal(true);
   };
 
-  // Actually Save the generated transaction in Supabase
+  // Actually Save the generated transaction in Supabase with Offline Support
   const handleSaveTransaction = async () => {
     if (!generatedTicket) return;
 
@@ -228,21 +334,61 @@ export default function POS({ userRole }: { userRole: string | null }) {
       return `${item.quantity}x ${item.name}`;
     }).join(', ');
 
-    try {
-      const payload = {
-        customer_name: generatedTicket.customer_name || 'Venta Mostrador',
-        address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
-        items: itemsDescription,
-        total_price: generatedTicket.total,
-        status: 'delivered', // Immediate delivery
-        source: 'pos', // Source tracking
-        assigned_to_name: userRole === 'driver' ? 'Repartidor' : 'Operador Planta',
-        created_at: new Date().toISOString()
-      };
+    const payload = {
+      customer_name: generatedTicket.customer_name || 'Venta Mostrador',
+      address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
+      items: itemsDescription,
+      total_price: generatedTicket.total,
+      status: 'delivered', // Immediate delivery
+      source: 'pos', // Source tracking
+      assigned_to_name: userRole === 'driver' ? 'Repartidor' : 'Operador Planta',
+      created_at: new Date().toISOString()
+    };
 
-      const { error } = await supabase
+    const saveOffline = () => {
+      try {
+        const pendingStr = localStorage.getItem('pending_offline_sales');
+        const pendingList = pendingStr ? JSON.parse(pendingStr) : [];
+        pendingList.push(payload);
+        localStorage.setItem('pending_offline_sales', JSON.stringify(pendingList));
+        setOfflineSalesCount(pendingList.length);
+        
+        // Simular éxito para liberar la interfaz del chofer inmediatamente
+        clearCart();
+        setShowTicketModal(false);
+        setNotification({ 
+          type: 'success', 
+          message: '📶 Venta guardada en tu dispositivo (Modo Offline). Se subirá a la nube automáticamente cuando recuperes señal.' 
+        });
+        
+        if (!selectedCustomer) {
+          handleClearCustomer();
+        }
+      } catch (err) {
+        console.error('Error guardando venta local offline:', err);
+        alert('Error al guardar registro localmente: ' + err);
+      }
+    };
+
+    // Si detectamos explícitamente sin internet, guardar directo sin esperar a Supabase
+    if (!navigator.onLine) {
+      console.log('Dispositivo desconectado (Offline). Guardando localmente...');
+      saveOffline();
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      // Timeout seguro de 3 segundos para que si la red del repartidor está defectuosa, guarde offline sin congelarle la pantalla
+      const savePromise = supabase
         .from('orders')
         .insert([payload]);
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TIMEOUT_CONEXION_DEBIL')), 3000)
+      );
+
+      const { error }: any = await Promise.race([savePromise, timeoutPromise]);
 
       if (error) throw error;
 
@@ -251,14 +397,12 @@ export default function POS({ userRole }: { userRole: string | null }) {
       setShowTicketModal(false);
       setNotification({ type: 'success', message: '¡Venta registrada con éxito en la base de datos!' });
 
-      // If no customer details are cached or kept, reset customer
       if (!selectedCustomer) {
         handleClearCustomer();
       }
     } catch (e: any) {
-      console.error('Error al registrar venta:', e);
-      setNotification({ type: 'error', message: 'Error de base de datos: ' + (e.message || e) });
-      alert('Error de base de datos al registrar venta: ' + (e.message || e));
+      console.warn('Conexión inestable o error de base de datos. Guardando venta offline para posterior sincronización:', e);
+      saveOffline();
     } finally {
       setIsSubmitting(false);
     }
@@ -309,14 +453,22 @@ export default function POS({ userRole }: { userRole: string | null }) {
       {/* LEFT SECTION: Large Product Buttons Catalog */}
       <div className="flex-1 space-y-6 flex flex-col min-w-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+          <div className="space-y-1">
             <h1 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight uppercase italic flex items-center gap-2">
               <ShoppingBag className="text-sky-500 animate-bounce shrink-0" size={32} />
               Registro de <span className="text-sky-500">Ventas (POS)</span>
             </h1>
-            <p className="text-slate-500 dark:text-slate-400 mt-2 font-bold italic uppercase text-[10px] tracking-wider">
-              {userRole === 'driver' ? 'PUNTO DE VENTA EN RUTA' : 'PUNTO DE VENTA EN MOSTRADOR'}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-slate-500 dark:text-slate-400 font-bold italic uppercase text-[10px] tracking-wider">
+                {userRole === 'driver' ? 'PUNTO DE VENTA EN RUTA' : 'PUNTO DE VENTA EN MOSTRADOR'}
+              </p>
+              {offlineSalesCount > 0 && (
+                <div className="px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 animate-pulse">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                  {offlineSalesCount} por sincronizar offline
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Search bar inside Catalog */}
@@ -652,24 +804,27 @@ export default function POS({ userRole }: { userRole: string | null }) {
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { id: 'cash', label: 'Efectivo', icon: DollarSign },
-                  { id: 'card', label: 'Tarjeta', icon: CreditCard },
-                  { id: 'transfer', label: 'Transf.', icon: Share2 }
+                  { id: 'cash', label: 'Efectivo', icon: DollarSign, disabled: false },
+                  { id: 'card', label: 'Tarjeta (No)', icon: CreditCard, disabled: true },
+                  { id: 'transfer', label: 'Transf (No)', icon: Share2, disabled: true }
                 ].map((meth) => {
                   const Icon = meth.icon;
                   const active = paymentMethod === meth.id;
                   return (
                     <button
                       key={meth.id}
-                      onClick={() => setPaymentMethod(meth.id as any)}
+                      disabled={meth.disabled}
+                      onClick={() => !meth.disabled && setPaymentMethod(meth.id as any)}
                       className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 border-2 transition-all ${
-                        active 
-                          ? 'bg-sky-500 border-sky-500 text-white font-black' 
-                          : 'bg-slate-50 dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-800 hover:border-sky-300 hover:text-slate-700'
+                        meth.disabled
+                          ? 'opacity-35 cursor-not-allowed bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 text-[9px]'
+                          : active 
+                            ? 'bg-sky-500 border-sky-500 text-white font-black' 
+                            : 'bg-slate-50 dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-800 hover:border-sky-300 hover:text-slate-700'
                       }`}
                     >
                       <Icon size={16} />
-                      <span className="text-[10px] uppercase font-bold tracking-tight">{meth.label}</span>
+                      <span className="text-[9px] uppercase font-bold tracking-tight text-center">{meth.label}</span>
                     </button>
                   );
                 })}

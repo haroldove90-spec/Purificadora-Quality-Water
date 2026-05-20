@@ -141,7 +141,7 @@ BEGIN
     new.id,
     COALESCE(new.raw_user_meta_data->>'full_name', 'Nuevo Usuario'),
     new.email,
-    COALESCE(new.raw_user_meta_data->>'role', 'client'),
+    CASE WHEN COALESCE(new.raw_user_meta_data->>'role', 'driver') = 'client' THEN 'driver' ELSE COALESCE(new.raw_user_meta_data->>'role', 'driver') END,
     COALESCE(new.raw_user_meta_data->>'phone', '')
   );
   RETURN NEW;

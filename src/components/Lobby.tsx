@@ -92,7 +92,7 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
             data: {
               full_name: fullName,
               phone: phoneNumber,
-              role: selectedRole
+              role: 'driver'
             }
           }
         });
@@ -146,25 +146,14 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
               <>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Tipo de Perfil</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {roles.map(role => (
-                      <button
-                        key={role.id}
-                        type="button"
-                        onClick={() => setSelectedRole(role.id as any)}
-                        className={`flex items-center gap-2 p-3 rounded-2xl border transition-all ${
-                          selectedRole === role.id 
-                            ? 'bg-sky-500 text-white border-sky-500 shadow-md' 
-                            : 'bg-slate-50 text-slate-500 border-slate-100 hover:border-sky-500/50'
-                        }`}
-                      >
-                        <role.icon size={16} />
-                        <span className="text-[10px] font-black uppercase tracking-tight">{role.title.split(' ')[0]}</span>
-                      </button>
-                    ))}
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-2xl space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Truck size={16} className="text-emerald-500 animate-pulse" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">Perfil Autocreado</span>
                   </div>
+                  <p className="text-[10px] text-slate-500 font-bold leading-normal">
+                    La plataforma registrará tu cuenta automáticamente con el perfil de <strong className="text-emerald-600 font-black">REPARTIDOR / CHOFER</strong> para facilitar el inicio de ventas y rutas.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
