@@ -51,7 +51,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
   
   // Selected Customer or Free Text Customer
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [manualCustomerName, setManualCustomerName] = useState('Venta Mostrador');
+  const [manualCustomerName, setManualCustomerName] = useState('Público General');
   const [manualCustomerPhone, setManualCustomerPhone] = useState('');
   const [manualCustomerAddress, setManualCustomerAddress] = useState('Mostrador');
 
@@ -174,7 +174,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
 
   const handleClearCustomer = () => {
     setSelectedCustomer(null);
-    setManualCustomerName('Venta Mostrador');
+    setManualCustomerName('Público General');
     setManualCustomerPhone('');
     setManualCustomerAddress('Mostrador');
     setCustomerSearch('');
@@ -207,7 +207,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
 
     try {
       const payload = {
-        customer_name: manualCustomerName.trim() || 'Venta Mostrador',
+        customer_name: manualCustomerName.trim() || 'Público General',
         address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
         items: itemsDescription,
         total_price: total,
@@ -461,14 +461,14 @@ export default function POS({ userRole }: { userRole: string | null }) {
             {/* Customer Lookup and Assignment */}
             <div className="space-y-2 relative">
               <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider block">
-                Asignación de Cliente
+                Cliente <span className="text-sky-500 font-bold normal-case italic">(Opcional - Público General)</span>
               </label>
 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                 <input
                   type="text"
-                  placeholder="Buscar o digitar cliente..."
+                  placeholder="Buscar cliente registrado o escribir nombre libre..."
                   value={customerSearch}
                   onFocus={() => setShowCustomerDropdown(true)}
                   onChange={(e) => {
@@ -726,80 +726,76 @@ export default function POS({ userRole }: { userRole: string | null }) {
               initial={{ scale: 0.9, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 15 }}
-              className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 max-w-sm w-full rounded-3xl overflow-hidden shadow-2xl flex flex-col z-50 text-slate-800"
+              className="relative bg-white border border-slate-200 max-w-sm w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col z-50 text-slate-800"
             >
-              {/* Top Banner */}
-              <div className="p-6 bg-slate-950 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-sky-500 rounded-xl flex items-center justify-center">
-                    <CheckCircle2 size={18} className="text-white" />
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase text-slate-400">Venta Exitosa</p>
-                    <p className="text-xs font-black uppercase tracking-wider">¡Se registró en Supabase!</p>
-                  </div>
-                </div>
+              {/* Header */}
+              <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-sky-500 tracking-wider">COMPROBANTE DE VENTA (SISTEMA)</span>
                 <button 
                   onClick={() => setShowTicketModal(false)}
-                  className="bg-white/10 hover:bg-white/20 text-white p-1.5 rounded-lg transition-colors"
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors"
                 >
-                  <X size={16} />
+                  <X size={18} />
                 </button>
               </div>
 
-              {/* Printable Thermal Receipt styling */}
-              <div className="p-6 space-y-6 bg-amber-50/10 dark:bg-slate-900 select-all font-mono text-xs text-slate-700 dark:text-slate-300 border-b border-dashed border-slate-200 dark:border-slate-800">
-                <div className="text-center space-y-1">
-                  <h3 className="font-black text-base text-slate-900 dark:text-white uppercase tracking-tight">QUALITY WATER</h3>
-                  <p className="text-[9px] text-slate-500 uppercase">Purificación de Agua de Calidad 💧</p>
-                  <p className="text-[9px] text-slate-400 uppercase">Santa Fe, Poniente, CDMX</p>
-                  <p className="text-[10px] text-sky-500 font-extrabold uppercase mt-1">VENTA COMPLEMENTADA</p>
+              {/* Pure White Background Plain Ticket */}
+              <div className="p-6 space-y-6 bg-white select-all font-sans text-xs text-slate-800 border-b border-dashed border-slate-200">
+                <div className="text-center space-y-1 pb-4 border-b border-slate-100">
+                  <div className="w-12 h-12 bg-sky-500/10 text-sky-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <ShoppingBag size={24} />
+                  </div>
+                  <h3 className="font-extrabold text-lg text-slate-950 uppercase tracking-tight">QUALITY WATER</h3>
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Purificación de Agua de Calidad 💧</p>
+                  <p className="text-[10px] text-emerald-600 font-bold uppercase">¡Venta Registrada con Éxito!</p>
                 </div>
 
-                <div className="border-t border-b border-dashed border-slate-200 dark:border-slate-800 py-3 space-y-1 text-[10px]">
-                  <p className="flex justify-between"><span>No. Ticket:</span> <span className="font-bold text-slate-900 dark:text-white">#{generatedTicket.id}</span></p>
-                  <p className="flex justify-between"><span>Fecha/Hora:</span> <span className="text-slate-900 dark:text-white">{generatedTicket.date}</span></p>
-                  <p className="flex justify-between"><span>Cliente:</span> <span className="font-extrabold text-slate-900 dark:text-white uppercase truncate max-w-[150px]">{generatedTicket.customer_name}</span></p>
+                <div className="space-y-1.5 text-xs text-slate-700">
+                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">No. Ticket:</span> <span className="font-bold text-slate-900">#{generatedTicket.id}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Fecha:</span> <span className="text-slate-800 font-semibold">{generatedTicket.date}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Cliente:</span> <span className="font-bold text-slate-900 uppercase truncate max-w-[150px]">{generatedTicket.customer_name}</span></div>
                   {generatedTicket.phone && (
-                    <p className="flex justify-between"><span>WhatsApp:</span> <span className="text-slate-900 dark:text-white font-bold">{generatedTicket.phone}</span></p>
+                    <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">WhatsApp:</span> <span className="text-slate-800 font-bold font-mono">{generatedTicket.phone}</span></div>
                   )}
-                  <p className="flex justify-between"><span>Atendió:</span> <span className="font-bold text-slate-900 dark:text-white">{userRole === 'driver' ? 'Reparto' : 'Planta'}</span></p>
+                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Atendido por:</span> <span className="font-bold text-slate-800">{userRole === 'driver' ? 'Repartidor (Ruta)' : 'Operador (Planta Mostrador)'}</span></div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between font-black text-slate-900 dark:text-white text-[10px] border-b pb-1">
+                <div className="space-y-2 pt-3 border-t border-slate-100">
+                  <div className="flex justify-between font-bold text-slate-900 text-xs pb-1 border-b border-slate-100">
                     <span>CONCEPTO / CANT.</span>
                     <span>IMPORTE</span>
                   </div>
-                  <div className="space-y-1.5 text-[10px]">
+                  <div className="space-y-2 text-xs">
                     {generatedTicket.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-start">
-                        <div className="truncate max-w-[200px] leading-tight">
-                          <p className="font-black text-slate-900 dark:text-slate-200 truncate">{item.name}</p>
-                          <p className="text-slate-400">{item.quantity} x ${item.price.toFixed(2)}</p>
+                      <div key={idx} className="flex justify-between items-center">
+                        <div className="truncate max-w-[200px]">
+                          <p className="font-bold text-slate-800 truncate">{item.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{item.quantity} x ${item.price.toFixed(2)}</p>
                         </div>
-                        <span className="font-black text-slate-900 dark:text-white shrink-0">${(item.quantity * item.price).toFixed(2)}</span>
+                        <span className="font-bold text-slate-950 shrink-0">${(item.quantity * item.price).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="border-t border-dashed border-slate-200 dark:border-slate-800 pt-3 space-y-1 text-xs">
-                  <div className="flex justify-between font-black text-slate-900 dark:text-white text-sm">
+                <div className="border-t border-slate-100 pt-3 space-y-1">
+                  <div className="flex justify-between font-black text-slate-950 text-sm">
                     <span>TOTAL:</span>
                     <span>${generatedTicket.total.toFixed(2)} MXN</span>
                   </div>
-                  <p className="flex justify-between text-[10px]"><span>Pago:</span> <span className="font-extrabold uppercase">{generatedTicket.payment_method}</span></p>
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>Método de Pago:</span>
+                    <span className="font-bold uppercase text-slate-800">{generatedTicket.payment_method}</span>
+                  </div>
                 </div>
 
-                <div className="text-center font-bold text-[9px] text-slate-400 uppercase pt-4">
-                  --- ¡GRACIAS POR SU PREFERENCIA! ---
-                  <p className="text-[8px] italic mt-1">Mantente hidratado, vive saludable</p>
+                <div className="text-center font-bold text-[9px] text-slate-400 uppercase pt-4 border-t border-dashed border-slate-100">
+                  --- ¡Gracias por su preferencia! ---
                 </div>
               </div>
 
               {/* Action utilities */}
-              <div className="p-6 bg-slate-50 dark:bg-slate-950 flex flex-col gap-3">
+              <div className="p-4 bg-slate-50 flex flex-col gap-2">
                 <button
                   onClick={handleShareWhatsApp}
                   className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase text-xs tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-center"
@@ -810,24 +806,75 @@ export default function POS({ userRole }: { userRole: string | null }) {
                 
                 <button
                   onClick={() => {
-                    alert('Impresora no configurada. El ticket virtual se ha guardado en la base de datos y se puede compartir por WhatsApp.');
+                    alert('Impresora no configurada en este dispositivo. El ticket se guardó en la base de datos y se puede compartir por WhatsApp.');
                   }}
-                  className="w-full py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold uppercase text-xs tracking-tight rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-center"
+                  className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold uppercase text-[10px] tracking-tight rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-center"
                 >
                   <Printer size={14} />
-                  Imprimir Comprobante (Físico)
+                  Imprimir Comprobante
                 </button>
 
                 <button
                   onClick={() => setShowTicketModal(false)}
-                  className="w-full py-2 text-slate-400 hover:text-slate-600 text-xs text-center uppercase tracking-widest font-black"
+                  className="w-full py-2 text-slate-400 hover:text-slate-600 text-[10px] text-center uppercase tracking-widest font-black"
                 >
-                  Regresar al Punto de Venta
+                  Cerrar
                 </button>
               </div>
 
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* FLOATING ACTION OVERLAY FOR IMMEDIATE COBROS AND CHECKOUT */}
+      <AnimatePresence>
+        {cart.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 55 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 55 }}
+            className="fixed bottom-24 lg:bottom-12 left-4 right-4 lg:left-1/2 lg:-translate-x-1/2 lg:max-w-2xl z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 rounded-3xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] dark:shadow-[0_-12px_40px_rgba(0,0,0,0.5)] border border-sky-500/40 flex items-center justify-between gap-4 select-none"
+          >
+            <div className="flex flex-col min-w-0">
+              <p className="text-[10px] font-black uppercase text-sky-500 tracking-wider">Total del Ticket</p>
+              <div className="text-2xl font-black text-slate-800 dark:text-white flex items-center leading-none mt-1">
+                <span className="text-sm font-black text-sky-500 mr-0.5">$</span>
+                {getCartTotal().toFixed(2)}
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-bold uppercase ml-2.5 truncate max-w-[120px]">
+                  ({cart.reduce((acc, x) => acc + x.quantity, 0)} {cart.reduce((acc, x) => acc + x.quantity, 0) === 1 ? 'prod.' : 'prods.'})
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={clearCart}
+                className="w-12 h-12 bg-slate-100 dark:bg-slate-800 hover:bg-rose-500 hover:text-white rounded-2xl flex items-center justify-center text-slate-500 transition-all active:scale-95"
+                title="Vaciar ticket"
+              >
+                <Trash2 size={20} />
+              </button>
+
+              <button
+                onClick={handleCheckout}
+                disabled={isSubmitting}
+                className="px-6 h-12 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-600 hover:to-indigo-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 active:scale-95 transition-all text-center"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="animate-spin text-white" size={16} />
+                    <span>PROCESANDO...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={16} strokeWidth={3} />
+                    <span>REGISTRAR VENTA & COBRAR</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

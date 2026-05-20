@@ -50,14 +50,42 @@ type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profil
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
-  const [activeView, setActiveView] = useState<View>('lobby');
+  const [activeView, setActiveView] = useState<View>(() => {
+    try {
+      const saved = localStorage.getItem('activeView');
+      if (saved && saved !== 'lobby') return saved as View;
+    } catch (_) {}
+    return 'lobby';
+  });
   const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
-  const [currentRoleView, setCurrentRoleView] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(null);
+  const [currentRoleView, setCurrentRoleView] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(() => {
+    try {
+      const saved = localStorage.getItem('currentRoleView');
+      if (saved) return saved as any;
+    } catch (_) {}
+    return null;
+  });
   const [userName, setUserName] = useState<string | null>(null);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    if (activeView && activeView !== 'lobby') {
+      try {
+        localStorage.setItem('activeView', activeView);
+      } catch (_) {}
+    }
+  }, [activeView]);
+
+  useEffect(() => {
+    if (currentRoleView) {
+      try {
+        localStorage.setItem('currentRoleView', currentRoleView);
+      } catch (_) {}
+    }
+  }, [currentRoleView]);
 
   useEffect(() => {
     let mounted = true;
@@ -235,8 +263,8 @@ export default function App() {
         if (activeView === 'lobby') {
           switch(role) {
             case 'admin': setActiveView('metrics'); break;
-            case 'operator': setActiveView('dashboard'); break;
-            case 'driver': setActiveView('route'); break;
+            case 'operator': setActiveView('pos'); break;
+            case 'driver': setActiveView('pos'); break;
             default: setActiveView('client_status');
           }
         }
@@ -276,6 +304,10 @@ export default function App() {
       console.error('Excepción en logout:', e);
     } finally {
       // Limpieza inmediata y forzada
+      try {
+        localStorage.removeItem('activeView');
+        localStorage.removeItem('currentRoleView');
+      } catch (_) {}
       setSession(null);
       setUserRole(null);
       setCurrentRoleView(null);
@@ -352,10 +384,10 @@ export default function App() {
   const handleNavClick = (itemId: string) => {
     if (itemId === 'switch_to_operator') {
       setCurrentRoleView('operator');
-      setActiveView('dashboard');
+      setActiveView('pos');
     } else if (itemId === 'switch_to_driver') {
       setCurrentRoleView('driver');
-      setActiveView('route');
+      setActiveView('pos');
     } else if (itemId === 'switch_to_admin') {
       setCurrentRoleView('admin');
       setActiveView('metrics');
