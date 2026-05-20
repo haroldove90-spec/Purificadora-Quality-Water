@@ -138,37 +138,50 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
 
   const fetchSales = async () => {
     setLoadingSales(true);
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('status', 'delivered')
-      .order('created_at', { ascending: false });
-    
-    if (!error && data) {
-      setSalesList(data);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('status', 'delivered')
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        setSalesList(data);
+      }
+    } catch (err) {
+      console.warn('Error fetching sales:', err);
+    } finally {
+      setLoadingSales(false);
     }
-    setLoadingSales(false);
   };
 
   const fetchEmployees = async () => {
-    const { data, error } = await supabase
-      .from('employees')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (!error && data) {
-      setEmployeesList(data);
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        setEmployeesList(data);
+      }
+    } catch (err) {
+      console.warn('Error fetching employees:', err);
     }
   };
 
   const fetchCustomers = async () => {
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (!error && data) {
-      setCustomersList(data);
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        setCustomersList(data);
+      }
+    } catch (err) {
+      console.warn('Error fetching customers:', err);
     }
   };
 

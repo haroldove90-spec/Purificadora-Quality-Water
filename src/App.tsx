@@ -167,6 +167,21 @@ export default function App() {
       const reason = event.reason;
       const message = reason?.message || String(reason || '');
       
+      const lowerMsg = message.toLowerCase();
+      if (
+        lowerMsg.includes('failed to fetch') ||
+        lowerMsg.includes('fetch') ||
+        lowerMsg.includes('networkerror') ||
+        lowerMsg.includes('network error')
+      ) {
+        console.warn('Capturado y mitigado error de red offline en background:', message);
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+        } catch (_) {}
+        return;
+      }
+      
       if (
         message.includes('Refresh Token') || 
         message.includes('refresh_token') || 
@@ -485,6 +500,90 @@ export default function App() {
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'text-slate-800 bg-[#f1f5f9]'}`}>
       
+      {/* Header - Mobile Only */}
+      <header className={`md:hidden shrink-0 sticky top-0 z-[50] border-b transition-colors duration-300 ${darkMode ? 'bg-slate-900/95 backdrop-blur-md border-slate-800' : 'bg-white/95 backdrop-blur-md border-slate-250'}`}>
+        <div className="flex items-center justify-between p-3.5">
+          <div className="flex items-center gap-2">
+            <img 
+              src="https://cossma.com.mx/purificadora.jpg" 
+              alt="Logo" 
+              className="w-8 h-8 object-contain rounded"
+            />
+            <div className="flex flex-col">
+              <span className="font-display font-black text-sm tracking-tight leading-none text-slate-800 dark:text-white">
+                Quality<span className="text-sky-500">Water</span>
+              </span>
+              <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">{userName || 'Usuario'}</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {isInstallable && (
+              <button
+                onClick={installApp}
+                title="Instalar App"
+                className="p-2 rounded-xl bg-sky-500/10 text-sky-500 hover:bg-sky-500 hover:text-white transition-all flex items-center gap-1"
+              >
+                <Download size={14} />
+                <span className="text-[8px] font-black uppercase tracking-tight">Instalar</span>
+              </button>
+            )}
+            <NotificationHub userRole={currentRoleView} onViewAll={() => setActiveView('notifications')} />
+            <button 
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-2 rounded-xl transition-colors ${darkMode ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-slate-500'}`}
+            >
+              {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Prominent Role view switcher on mobile for Administrator profile */}
+        {userRole === 'admin' && (
+          <div className="px-3 pb-3">
+            <div className="flex flex-col gap-1.5 p-2 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck size={12} className="text-sky-500" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">MODO VISTA ACTIVA:</span>
+                </div>
+                <span className="text-[9px] font-black uppercase text-sky-500 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-full">
+                  {currentRoleView === 'admin' ? 'Ver Admin' : currentRoleView === 'operator' ? 'Ver Planta' : 'Ver Reparto'}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { id: 'admin', label: 'Admin', icon: ShieldCheck, view: 'metrics' },
+                  { id: 'operator', label: 'Planta', icon: Store, view: 'pos' },
+                  { id: 'driver', label: 'Reparto', icon: Truck, view: 'pos' }
+                ].map((role) => {
+                  const active = currentRoleView === role.id;
+                  const Icon = role.icon;
+                  return (
+                    <button
+                      key={role.id}
+                      onClick={() => {
+                        setCurrentRoleView(role.id as any);
+                        setActiveView(role.view as any);
+                      }}
+                      className={`flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-xl transition-all ${
+                        active 
+                          ? 'bg-sky-500 text-white font-extrabold shadow-md shadow-sky-500/15' 
+                          : 'bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold'
+                      }`}
+                    >
+                      <Icon size={12} className={active ? 'animate-bounce' : 'opacity-70'} />
+                      <span className="text-[9px] uppercase tracking-wider">{role.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </header>
+
       {/* Toast Notification Container Removed */}
 
       {/* Sidebar - Desktop Only */}
@@ -634,22 +733,20 @@ export default function App() {
 
       {/* Mobile Bottom Navigation */}
       <nav className={`md:hidden fixed bottom-1 left-4 right-4 h-20 border-t flex items-center justify-start gap-2 px-4 z-[60] pb-safe transition-colors shadow-2xl rounded-3xl overflow-x-auto no-scrollbar ${darkMode ? 'bg-slate-900/90 backdrop-blur-xl border-slate-800' : 'bg-white/90 backdrop-blur-xl border-slate-200'}`}>
-        {navItems.map((item: any) => (
+        {navItems.filter((item: any) => !item.isShortcut).map((item: any) => (
           <button
             key={item.id}
             onClick={() => handleNavClick(item.id)}
             className={`flex flex-col items-center justify-center gap-1 min-w-[64px] min-h-[44px] rounded-xl transition-all shrink-0 ${
-              item.isShortcut
-                ? 'text-amber-400 bg-amber-500/5 px-2 border border-dashed border-amber-500/20 animate-none'
-                : activeView === item.id 
-                  ? 'text-sky-500 font-bold' 
-                  : 'text-slate-400'
+              activeView === item.id 
+                ? 'text-sky-500 font-bold' 
+                : 'text-slate-400'
             }`}
           >
             <item.icon 
-              size={item.isShortcut ? 20 : activeView === item.id ? 22 : 20} 
+              size={activeView === item.id ? 22 : 20} 
               strokeWidth={activeView === item.id ? 2.5 : 2} 
-              className={item.isShortcut ? 'text-amber-400 animate-pulse shrink-0' : 'shrink-0'}
+              className="shrink-0"
             />
             <span className="text-[9px] font-bold uppercase tracking-widest leading-none text-center h-4 flex items-center">{item.label}</span>
           </button>
@@ -662,25 +759,6 @@ export default function App() {
           <span className="text-[9px] font-bold uppercase tracking-widest leading-none">Cerrar</span>
         </button>
       </nav>
-
-      {/* Mobile Top Actions Overlay */}
-      <div className="md:hidden fixed top-4 right-4 z-[70] flex items-center gap-3">
-        {isInstallable && (
-          <button
-            onClick={installApp}
-            className="p-3 rounded-full shadow-lg bg-sky-500 text-white transition-all border border-sky-400 animate-bounce"
-          >
-            <Download size={20} />
-          </button>
-        )}
-        <NotificationHub userRole={currentRoleView} onViewAll={() => setActiveView('notifications')} />
-        <button 
-          onClick={() => setDarkMode(!darkMode)}
-          className="p-3 rounded-full shadow-lg bg-white dark:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700"
-        >
-          {darkMode ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-slate-500" />}
-        </button>
-      </div>
 
       {/* Bottom Spacer for Mobile Nav */}
       <div className="h-20 md:hidden flex-shrink-0" />

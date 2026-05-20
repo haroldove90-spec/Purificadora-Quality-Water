@@ -75,28 +75,43 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
   });
 
   const fetchOrders = async () => {
-    const { data } = await supabase
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (data) setOrders(data);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) setOrders(data);
+    } catch (err) {
+      console.warn('Error fetching orders:', err);
+    }
   };
 
   const fetchDrivers = async () => {
-    const { data } = await supabase
-      .from('employees')
-      .select('id, name, role')
-      .eq('role', 'driver')
-      .eq('status', 'active');
-    if (data) setDrivers(data);
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('id, name, role')
+        .eq('role', 'driver')
+        .eq('status', 'active');
+      if (error) throw error;
+      if (data) setDrivers(data);
+    } catch (err) {
+      console.warn('Error fetching drivers:', err);
+    }
   };
 
   const fetchProducts = async () => {
-    const { data } = await supabase
-      .from('products')
-      .select('*')
-      .order('name');
-    if (data) setProducts(data);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      if (data) setProducts(data);
+    } catch (err) {
+      console.warn('Error fetching products:', err);
+    }
   };
 
   useEffect(() => {

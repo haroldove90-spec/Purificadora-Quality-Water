@@ -55,18 +55,44 @@ export default function DeliveryRoute() {
 
   const fetchDeliveries = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .in('status', ['assigned', 'pending', 'delivered']) 
-      .order('created_at', { ascending: false })
-      .limit(10);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .in('status', ['assigned', 'pending', 'delivered']) 
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-    if (data) setDeliveries(data as Order[]);
-    setLoading(false);
+      if (error) throw error;
+      if (data) {
+        setDeliveries(data as Order[]);
+        try {
+          localStorage.setItem('cached_delivery_route', JSON.stringify(data));
+        } catch (_) {}
+      }
+    } catch (err: any) {
+      console.warn('Fallo al obtener entregas de la base de datos:', err);
+      // Fallback a ruta guardada localmente
+      try {
+        const cached = localStorage.getItem('cached_delivery_route');
+        if (cached) {
+          setDeliveries(JSON.parse(cached));
+        }
+      } catch (_) {}
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    // Carga rápida inicial de caché si existe
+    try {
+      const cached = localStorage.getItem('cached_delivery_route');
+      if (cached) {
+        setDeliveries(JSON.parse(cached));
+      }
+    } catch (_) {}
+
     fetchDeliveries();
 
     // Listen for new assignments
