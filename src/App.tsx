@@ -165,7 +165,16 @@ export default function App() {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       if (!mounted) return;
       const reason = event.reason;
-      const message = reason?.message || String(reason || '');
+      
+      let message = '';
+      try {
+        message = reason?.message || reason?.error_description || String(reason || '');
+        if (reason && typeof reason === 'object') {
+          message += ' ' + JSON.stringify(reason);
+        }
+      } catch (_) {
+        message = String(reason || '');
+      }
       
       const lowerMsg = message.toLowerCase();
       if (
@@ -183,14 +192,18 @@ export default function App() {
       }
       
       if (
-        message.includes('Refresh Token') || 
-        message.includes('refresh_token') || 
-        message.includes('Invalid Refresh Token') || 
-        message.includes('grant') || 
-        message.includes('AuthApiError')
+        lowerMsg.includes('refresh token') || 
+        lowerMsg.includes('refresh_token') || 
+        lowerMsg.includes('invalid_grant') || 
+        lowerMsg.includes('grant') || 
+        lowerMsg.includes('authapierror') ||
+        lowerMsg.includes('not found')
       ) {
-        console.warn('Capturado y mitigado error de Auth del servidor:', message);
-        event.preventDefault(); // Evita el banner rojo en la UI para errores ignorables
+        console.warn('Capturado y mitigado error de Auth del servidor (unhandledrejection):', message);
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+        } catch (_) {}
 
         cleanCorruptTokens();
         supabase.auth.signOut().catch(() => {});
@@ -204,7 +217,45 @@ export default function App() {
       }
     };
 
+    const handleGlobalError = (event: ErrorEvent) => {
+      if (!mounted) return;
+      const message = event.message || '';
+      const errorObj = event.error;
+      let fullMessage = message;
+      try {
+        if (errorObj) {
+          fullMessage += ' ' + (errorObj.message || '') + ' ' + JSON.stringify(errorObj);
+        }
+      } catch (_) {}
+
+      const lowerMsg = fullMessage.toLowerCase();
+      if (
+        lowerMsg.includes('refresh token') || 
+        lowerMsg.includes('refresh_token') || 
+        lowerMsg.includes('invalid_grant') ||
+        lowerMsg.includes('grant') ||
+        lowerMsg.includes('authapierror')
+      ) {
+        console.warn('Capturado y mitigado error de Auth en error global (onerror):', fullMessage);
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+        } catch (_) {}
+
+        cleanCorruptTokens();
+        supabase.auth.signOut().catch(() => {});
+
+        setSession(null);
+        setUserRole(null);
+        setCurrentRoleView(null);
+        setUserName(null);
+        setActiveView('lobby');
+        setLoading(false);
+      }
+    };
+
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    window.addEventListener('error', handleGlobalError);
 
     // Timeout de seguridad definitivo: si en 4 segundos la app sigue cargando por temas de red, forzamos el cierre de la pantalla de carga.
     // Esto asegura que la app siempre cargue el Lobby o la pantalla principal de forma inmediata.
@@ -293,6 +344,7 @@ export default function App() {
       mounted = false;
       clearTimeout(safetyTimeoutId);
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener('error', handleGlobalError);
       subscription.unsubscribe();
     };
   }, []);
