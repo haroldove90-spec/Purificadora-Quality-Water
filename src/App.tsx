@@ -574,50 +574,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Prominent Role view switcher on mobile for Administrator profile */}
-        {userRole === 'admin' && (
-          <div className="px-3 pb-3">
-            <div className="flex flex-col gap-1.5 p-2 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200/60 dark:border-slate-800">
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck size={12} className="text-sky-500" />
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">MODO VISTA ACTIVA:</span>
-                </div>
-                <span className="text-[9px] font-black uppercase text-sky-500 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-full">
-                  {currentRoleView === 'admin' ? 'Ver Admin' : currentRoleView === 'operator' ? 'Ver Planta' : 'Ver Reparto'}
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-1">
-                {[
-                  { id: 'admin', label: 'Admin', icon: ShieldCheck, view: 'metrics' },
-                  { id: 'operator', label: 'Planta', icon: Store, view: 'pos' },
-                  { id: 'driver', label: 'Reparto', icon: Truck, view: 'pos' }
-                ].map((role) => {
-                  const active = currentRoleView === role.id;
-                  const Icon = role.icon;
-                  return (
-                    <button
-                      key={role.id}
-                      onClick={() => {
-                        setCurrentRoleView(role.id as any);
-                        setActiveView(role.view as any);
-                      }}
-                      className={`flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-xl transition-all ${
-                        active 
-                          ? 'bg-sky-500 text-white font-extrabold shadow-md shadow-sky-500/15' 
-                          : 'bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold'
-                      }`}
-                    >
-                      <Icon size={12} className={active ? 'animate-bounce' : 'opacity-70'} />
-                      <span className="text-[9px] uppercase tracking-wider">{role.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
+
       </header>
 
       {/* Toast Notification Container Removed */}
