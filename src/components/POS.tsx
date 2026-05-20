@@ -51,7 +51,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
   
   // Selected Customer or Free Text Customer
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [manualCustomerName, setManualCustomerName] = useState('Público General');
+  const [manualCustomerName, setManualCustomerName] = useState('Venta Mostrador');
   const [manualCustomerPhone, setManualCustomerPhone] = useState('');
   const [manualCustomerAddress, setManualCustomerAddress] = useState('Mostrador');
 
@@ -174,30 +174,22 @@ export default function POS({ userRole }: { userRole: string | null }) {
 
   const handleClearCustomer = () => {
     setSelectedCustomer(null);
-    setManualCustomerName('Público General');
+    setManualCustomerName('Venta Mostrador');
     setManualCustomerPhone('');
     setManualCustomerAddress('Mostrador');
     setCustomerSearch('');
   };
 
-  // Register Transaction in Supabase Database
-  const handleCheckout = async () => {
+  // Prepare Virtual Ticket Modal Details (local state only, no DB write yet)
+  const handleCheckout = () => {
     if (cart.length === 0) {
       setNotification({ type: 'error', message: 'Por favor, agrega al menos un producto al ticket.' });
       return;
     }
 
-    setIsSubmitting(true);
     setNotification(null);
-
     const total = getCartTotal();
     
-    // Format items list in a clean structure or readable string for database column
-    // E.g. "3x Garrafón 20L ($165.00), 1x Sello de Garantía ($10.00)"
-    const itemsDescription = cart.map(item => {
-      return `${item.quantity}x ${item.product.name}`;
-    }).join(', ');
-
     // Structure for generating virtual ticket
     const ticketItems = cart.map(item => ({
       name: item.product.name,
@@ -205,42 +197,58 @@ export default function POS({ userRole }: { userRole: string | null }) {
       price: item.product.price
     }));
 
+    // Ensure fallback is Venta Mostrador
+    let finalCustomerName = manualCustomerName.trim();
+    if (!finalCustomerName || finalCustomerName === 'Público General') {
+      finalCustomerName = 'Venta Mostrador';
+    }
+
+    // Setup Generated Ticket Details in local state
+    setGeneratedTicket({
+      id: `V-${Math.floor(1000 + Math.random() * 9000)}`,
+      customer_name: finalCustomerName,
+      items: ticketItems,
+      total: total,
+      payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
+      date: new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }),
+      phone: manualCustomerPhone
+    });
+
+    setShowTicketModal(true);
+  };
+
+  // Actually Save the generated transaction in Supabase
+  const handleSaveTransaction = async () => {
+    if (!generatedTicket) return;
+
+    setIsSubmitting(true);
+    setNotification(null);
+
+    const itemsDescription = generatedTicket.items.map(item => {
+      return `${item.quantity}x ${item.name}`;
+    }).join(', ');
+
     try {
       const payload = {
-        customer_name: manualCustomerName.trim() || 'Público General',
+        customer_name: generatedTicket.customer_name || 'Venta Mostrador',
         address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
         items: itemsDescription,
-        total_price: total,
+        total_price: generatedTicket.total,
         status: 'delivered', // Immediate delivery
         source: 'pos', // Source tracking
         assigned_to_name: userRole === 'driver' ? 'Repartidor' : 'Operador Planta',
         created_at: new Date().toISOString()
       };
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('orders')
-        .insert([payload])
-        .select();
+        .insert([payload]);
 
       if (error) throw error;
 
-      const createdOrder = data ? data[0] : null;
-      const orderId = createdOrder ? createdOrder.id.substring(0, 8).toUpperCase() : `V-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      // Setup Generated Ticket Details
-      setGeneratedTicket({
-        id: orderId,
-        customer_name: manualCustomerName,
-        items: ticketItems,
-        total: total,
-        payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
-        date: new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }),
-        phone: manualCustomerPhone
-      });
-
       // Clear operational states on success
       clearCart();
-      setShowTicketModal(true);
+      setShowTicketModal(false);
       setNotification({ type: 'success', message: '¡Venta registrada con éxito en la base de datos!' });
 
       // If no customer details are cached or kept, reset customer
@@ -250,6 +258,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
     } catch (e: any) {
       console.error('Error al registrar venta:', e);
       setNotification({ type: 'error', message: 'Error de base de datos: ' + (e.message || e) });
+      alert('Error de base de datos al registrar venta: ' + (e.message || e));
     } finally {
       setIsSubmitting(false);
     }
@@ -461,7 +470,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
             {/* Customer Lookup and Assignment */}
             <div className="space-y-2 relative">
               <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider block">
-                Cliente <span className="text-sky-500 font-bold normal-case italic">(Opcional - Público General)</span>
+                Cliente <span className="text-sky-500 font-bold normal-case italic">(Opcional - Venta Mostrador)</span>
               </label>
 
               <div className="relative">
@@ -797,25 +806,34 @@ export default function POS({ userRole }: { userRole: string | null }) {
               {/* Action utilities */}
               <div className="p-4 bg-slate-50 flex flex-col gap-2">
                 <button
-                  onClick={handleShareWhatsApp}
-                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase text-xs tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-center"
+                  onClick={handleSaveTransaction}
+                  disabled={isSubmitting}
+                  className="w-full py-3 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-600 hover:to-indigo-600 text-white font-black uppercase text-xs tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 active:scale-95 transition-all text-center disabled:opacity-50"
                 >
-                  <Share2 size={16} strokeWidth={2.5} />
-                  Compartir por WhatsApp
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="animate-spin text-white" size={16} />
+                      <span>REGISTRANDO VENTA...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>REGISTRAR VENTA</span>
+                    </>
+                  )}
                 </button>
-                
+
                 <button
-                  onClick={() => {
-                    alert('Impresora no configurada en este dispositivo. El ticket se guardó en la base de datos y se puede compartir por WhatsApp.');
-                  }}
-                  className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold uppercase text-[10px] tracking-tight rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all text-center"
+                  onClick={handleShareWhatsApp}
+                  className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase text-[10px] tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-95 transition-all text-center"
                 >
-                  <Printer size={14} />
-                  Imprimir Comprobante
+                  <Share2 size={14} strokeWidth={2.5} />
+                  Compartir por WhatsApp
                 </button>
 
                 <button
                   onClick={() => setShowTicketModal(false)}
+                  disabled={isSubmitting}
                   className="w-full py-2 text-slate-400 hover:text-slate-600 text-[10px] text-center uppercase tracking-widest font-black"
                 >
                   Cerrar
@@ -858,20 +876,10 @@ export default function POS({ userRole }: { userRole: string | null }) {
 
               <button
                 onClick={handleCheckout}
-                disabled={isSubmitting}
                 className="px-6 h-12 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-600 hover:to-indigo-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 active:scale-95 transition-all text-center"
               >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="animate-spin text-white" size={16} />
-                    <span>PROCESANDO...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check size={16} strokeWidth={3} />
-                    <span>REGISTRAR VENTA & COBRAR</span>
-                  </>
-                )}
+                <Check size={16} strokeWidth={3} />
+                <span>GENERAR TICKET</span>
               </button>
             </div>
           </motion.div>

@@ -469,7 +469,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
             <div className="space-y-6">
               <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Registro de Ventas Globales</h3>
+                  <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Métricas de Ventas</h3>
                   <div className="flex items-center gap-3">
                     {loadingSales && <Loader2 size={16} className="animate-spin text-sky-500" />}
                     <div className="relative">

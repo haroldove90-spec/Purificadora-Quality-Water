@@ -94,8 +94,8 @@ export default function Manual({ role }: ManualProps) {
             <StepList 
               title="Cierre de Finanzas"
               steps={[
-                "Entra a 'Ventas Globales' para supervisar los ingresos del día.",
-                "En 'Finanzas', registra cualquier 'Egreso' (pago a proveedores, luz, etc).",
+                "Entra a 'Métricas' para supervisar los ingresos del día y finanzas globales.",
+                "En el mismo módulo, registra cualquier 'Egreso' (pago a proveedores, luz, etc).",
                 "Compara el 'Balance Neto' contra el efectivo real en caja física."
               ]}
             />

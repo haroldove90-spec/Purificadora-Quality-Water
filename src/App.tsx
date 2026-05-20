@@ -328,7 +328,7 @@ export default function App() {
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
-        { id: 'sales', label: 'Ventas Globales', icon: History },
+        { id: 'sales', label: 'Métricas', icon: History },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'driver_sales', label: 'Empleados', icon: Truck },
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
@@ -338,9 +338,9 @@ export default function App() {
       ];
     } else if (currentRoleView === 'driver') {
       items = [
+        { id: 'pos', label: 'Venta POS', icon: CreditCard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
-        { id: 'pos', label: 'Venta POS', icon: CreditCard },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
@@ -348,11 +348,11 @@ export default function App() {
       ];
     } else if (currentRoleView === 'operator') {
       items = [
+        { id: 'pos', label: 'Rol Ventas (POS)', icon: CreditCard },
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
-        { id: 'pos', label: 'Rol Ventas (POS)', icon: CreditCard },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
-        { id: 'sales', label: 'Ventas Globales', icon: History },
+        { id: 'sales', label: 'Métricas', icon: History },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
