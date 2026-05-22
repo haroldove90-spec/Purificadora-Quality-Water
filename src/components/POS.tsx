@@ -40,6 +40,31 @@ interface CartItem {
 }
 
 export default function POS({ userRole }: { userRole: string | null }) {
+  // Active logged-in user session
+  const [userName, setUserName] = useState<string>('');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('qw_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.user_name) {
+          setUserName(parsed.user_name);
+        }
+      } else {
+        const backupStr = localStorage.getItem('quality_water_session_backup');
+        if (backupStr) {
+          const parsedBackup = JSON.parse(backupStr);
+          if (parsedBackup.userName) {
+            setUserName(parsedBackup.userName);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading session inside POS:', e);
+    }
+  }, []);
+
   // Products & Customers from DB
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -341,7 +366,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
       total_price: generatedTicket.total,
       status: 'delivered', // Immediate delivery
       source: 'pos', // Source tracking
-      assigned_to_name: userRole === 'driver' ? 'Repartidor' : 'Operador Planta',
+      assigned_to_name: userName || (userRole === 'driver' ? 'Repartidor' : 'Operador Planta'),
       created_at: new Date().toISOString()
     };
 

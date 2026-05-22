@@ -66,6 +66,47 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   // Toggle for admins and operators to view either the master list or personal drawer
   const [viewMode, setViewMode] = useState<'admin' | 'personal'>('personal');
 
+  // New assignment form state
+  const [formEmployeeName, setFormEmployeeName] = useState('');
+  const [formFloatAmount, setFormFloatAmount] = useState('600');
+  const [formDate, setFormDate] = useState('');
+  const [formTime, setFormTime] = useState('');
+
+  // Tick local date and time in real-time
+  useEffect(() => {
+    const updateDateTime = () => {
+      const now = new Date();
+      
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      setFormDate(`${yyyy}-${mm}-${dd}`);
+
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mins = String(now.getMinutes()).padStart(2, '0');
+      const secs = String(now.getSeconds()).padStart(2, '0');
+      setFormTime(`${hh}:${mins}:${secs}`);
+    };
+    updateDateTime();
+    const interval = setInterval(updateDateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleFormAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formEmployeeName) {
+      alert('Por favor selecciona un empleado del menú desplegable.');
+      return;
+    }
+    const val = Number(formFloatAmount);
+    if (isNaN(val) || val <= 0) {
+      alert('Por favor ingresa una cantidad en pesos válida mayor a cero.');
+      return;
+    }
+    await handleAssignFloat(formEmployeeName, val);
+    setFormEmployeeName(''); // Reset selection upon successful assignment
+  };
+
   // Modals and inputs
   const [selectedDriverForFloat, setSelectedDriverForFloat] = useState<Employee | null>(null);
   const [customFloatAmount, setCustomFloatAmount] = useState('600');
@@ -254,14 +295,23 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       if (error) throw error;
 
-      // Add audit notification
-      await supabase.from('notifications_log').insert([{
-        title: 'Fondo Asignado',
-        message: `Se asignó fondo de caja de $${amount} a ${employeeName}`,
-        type: 'finance',
-        user_role: 'admin',
-        is_read: false
-      }]);
+      // Add notifications for both the target employee role and the admin
+      await supabase.from('notifications_log').insert([
+        {
+          title: '💲 Fondo de Caja Recibido',
+          message: `Hola ${employeeName}, se te ha asignado un fondo de caja de $${amount} pesos para iniciar tu jornada de hoy.`,
+          type: 'finance',
+          user_role: targetUserRole,
+          is_read: false
+        },
+        {
+          title: '💲 Fondo de Caja Asignado',
+          message: `Fondo de caja de $${amount} pesos asignado a ${employeeName} (${targetUserRole === 'operator' ? 'Planta' : 'Repartidor'}).`,
+          type: 'finance',
+          user_role: 'admin',
+          is_read: false
+        }
+      ]);
 
       await loadData();
       setSelectedDriverForFloat(null);
@@ -320,14 +370,23 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       if (error) throw error;
 
-      // Log notification
-      await supabase.from('notifications_log').insert([{
-        title: 'Cierre de Caja Realizado',
-        message: `Cierre realizado para ${employeeName}. Total entregado: $${totalToDeliver}`,
-        type: 'finance',
-        user_role: 'admin',
-        is_read: false
-      }]);
+      // Log notifications for both target employee and admin
+      await supabase.from('notifications_log').insert([
+        {
+          title: '📌 Caja Cerrada y Liquidada',
+          message: `Tu caja ha sido cerrada con éxito. Total liquidado: $${totalToDeliver} pesos (Fondo: $${floatAmount} + Ventas: $${salesAmount}).`,
+          type: 'finance',
+          user_role: targetUserRole,
+          is_read: false
+        },
+        {
+          title: '🚨 Cierre de Caja Realizado',
+          message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${floatAmount} + Ventas: $${salesAmount}).`,
+          type: 'finance',
+          user_role: 'admin',
+          is_read: false
+        }
+      ]);
 
       await loadData();
       setSelectedDriverForClose(null);
@@ -542,6 +601,92 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                 </div>
               </div>
 
+              {/* FORMULARIO DE ASIGNACIÓN DIRECTA */}
+              <div className="bg-white rounded-[40px] border border-slate-100 p-8 shadow-sm space-y-6">
+                <div>
+                  <h3 className="font-black text-slate-800 uppercase text-sm tracking-tight flex items-center gap-2">
+                    <Plus size={18} className="text-sky-500" />
+                    Registrar y Asignar <span className="text-sky-500">Fondo de Caja</span>
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">
+                    Habilita el fondo de caja diario seleccionando a cualquier empleado, ingresando el monto y enviando el registro
+                  </p>
+                </div>
+
+                <form onSubmit={handleFormAssignSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 items-end">
+                  {/* Nombre del Empleado Dropdown */}
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block ml-1">Empleado</label>
+                    <select
+                      value={formEmployeeName}
+                      onChange={(e) => setFormEmployeeName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-xs font-black text-slate-700 outline-none focus:ring-2 focus:ring-sky-500/20 transition-all cursor-pointer"
+                    >
+                      <option value="">Selecciona un empleado...</option>
+                      {employees.map(e => (
+                        <option key={e.id} value={e.name}>
+                          {e.name} ({e.role === 'admin' ? 'Admin' : e.role === 'operator' ? 'Planta' : 'Repartidor'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Cantidad en pesos */}
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block ml-1">Fondo en Pesos ($)</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-extrabold text-xs">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={formFloatAmount}
+                        onChange={(e) => setFormFloatAmount(e.target.value)}
+                        placeholder="Ej. 600"
+                        className="w-full bg-slate-50 border border-slate-100 pl-8 pr-4 py-4 rounded-2xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-sky-500/20 transition-all placeholder:font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Campo fecha */}
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block ml-1">Fecha de Registro</label>
+                    <input
+                      type="date"
+                      value={formDate}
+                      disabled
+                      className="w-full bg-slate-100/60 border border-slate-100/50 p-4 rounded-2xl text-xs font-black text-slate-400 cursor-not-allowed outline-none"
+                    />
+                  </div>
+
+                  {/* Campo hora */}
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block ml-1">Hora de Registro</label>
+                    <input
+                      type="text"
+                      value={formTime}
+                      disabled
+                      className="w-full bg-slate-100/60 border border-slate-100/50 p-4 rounded-2xl text-xs font-black text-slate-400 cursor-not-allowed outline-none"
+                    />
+                  </div>
+
+                  {/* Botón de envío */}
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="w-full bg-sky-500 hover:bg-sky-600 text-white py-4 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-500/10 transition-all active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      {actionLoading ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Unlock size={14} />
+                      )}
+                      Asignar Fondo
+                    </button>
+                  </div>
+                </form>
+              </div>
+
               {/* Main Table for staff cash registers */}
               <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
                 <div className="p-8 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -695,13 +840,17 @@ export default function CashFloat({ userRole }: CashFloatProps) {
               {/* Shift status banner */}
               <div className="bg-slate-900 text-white p-8 rounded-[40px] shadow-2xl relative overflow-hidden">
                 <div className="relative z-10 space-y-4">
-                  <span className="text-[9px] font-black text-sky-400 uppercase tracking-[0.2em] block">SISTEMA DE LIQUIDACIÓN DE RUTA</span>
+                  <span className="text-[9px] font-black text-sky-400 uppercase tracking-[0.2em] block">
+                    {currentUser.role === 'operator' ? 'SISTEMA DE LIQUIDACIÓN DE PLANTA' : 'SISTEMA DE LIQUIDACIÓN DE RUTA'}
+                  </span>
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center font-black">
                       <User size={24} />
                     </div>
                     <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase leading-none">Repartidor activo</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase leading-none">
+                        {currentUser.role === 'operator' ? 'Operador de Planta activo' : 'Repartidor activo'}
+                      </p>
                       <p className="text-lg font-black italic text-white uppercase mt-1">{currentUser.name}</p>
                     </div>
                   </div>
@@ -864,11 +1013,15 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                   <div>
                     <h3 className="text-xl font-black text-slate-800 uppercase italic">Esperando Asignación de Fondo</h3>
                     <p className="text-xs text-slate-400 font-bold max-w-sm mx-auto uppercase mt-2 leading-relaxed">
-                      Para poder iniciar tu jornada y registrar tus ventas, el administrador o la planta de control debe asignarte un flotante de caja de inicio (ej. $600 pesos).
+                      Para poder iniciar tu jornada y registrar tus ventas, el administrador o encargado debe asignarte un fondo de caja de inicio (ej. $600 pesos).
                     </p>
                   </div>
                   <div className="p-4 bg-slate-50 rounded-2xl text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                    ⚠️ Por favor solicita tu fondo al encargado antes de salir a ruta.
+                    {currentUser.role === 'operator' ? (
+                      <span>⚠️ Por favor solicita tu fondo al encargado antes de iniciar operaciones en la planta.</span>
+                    ) : (
+                      <span>⚠️ Por favor solicita tu fondo al encargado antes de salir a ruta.</span>
+                    )}
                   </div>
                 </div>
               )}
