@@ -62,6 +62,25 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeDriverSession, setActiveDriverSession] = useState<any>(null);
+
+  // helper to fuzzy match names (like Harold Anguiano Morales vs Haroldo Anguiano)
+  const namesMatch = (name1?: string, name2?: string): boolean => {
+    if (!name1 || !name2) return false;
+    const n1 = name1.toLowerCase().trim();
+    const n2 = name2.toLowerCase().trim();
+    if (n1 === n2) return true;
+
+    const isHarold1 = n1.includes('harold') && n1.includes('anguiano');
+    const isHarold2 = n2.includes('harold') && n2.includes('anguiano');
+    if (isHarold1 && isHarold2) return true;
+
+    return false;
+  };
+
+  const getDriverSalesObj = (driverName: string) => {
+    const foundKey = Object.keys(todaySales).find(k => namesMatch(k, driverName));
+    return foundKey ? todaySales[foundKey] : { salesTotal: 0, ordersCount: 0 };
+  };
   
   // Toggle for admins and operators to view either the master list or personal drawer
   const [viewMode, setViewMode] = useState<'admin' | 'personal'>('personal');
@@ -227,7 +246,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       // 4. Find if there is a session for the currently logged-in driver employee
       const loggedInDriverName = currentUser.name;
-      const driverAttendance = attendancesList.find(a => a.user_name === loggedInDriverName);
+      const driverAttendance = attendancesList.find(a => namesMatch(a.user_name, loggedInDriverName));
       setActiveDriverSession(driverAttendance || null);
 
     } catch (e) {
@@ -522,8 +541,8 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   // Build the list of driver statuses with floats
   const getDriversStatuses = () => {
     return employees.map(emp => {
-      const att = attendances.find(a => a.user_name === emp.name);
-      const sales = todaySales[emp.name] || { salesTotal: 0, ordersCount: 0 };
+      const att = attendances.find(a => namesMatch(a.user_name, emp.name));
+      const sales = getDriverSalesObj(emp.name);
       
       const lastLoc = att?.last_location || {};
       const floatVal = lastLoc.cash_float !== undefined ? Number(lastLoc.cash_float) : null;
@@ -987,7 +1006,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                         name: currentUser.name,
                         cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
                         sales_total: Number(activeDriverSession.last_location?.cash_sales_total || 0),
-                        orders_count: todaySales[currentUser.name]?.ordersCount || 0,
+                        orders_count: getDriverSalesObj(currentUser.name).ordersCount,
                         total_to_deliver: Number(activeDriverSession.last_location?.cash_total_to_deliver || 0),
                         closed_at: activeDriverSession.last_location?.cash_closed_at,
                         closed_by_name: activeDriverSession.last_location?.closed_by_name
@@ -1014,10 +1033,10 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                     <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
                       <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Tus Ventas de Hoy</p>
                       <p className="text-2xl font-black text-slate-800 mt-2">
-                        ${Number(todaySales[currentUser.name]?.salesTotal || 0).toFixed(2)}
+                        ${Number(getDriverSalesObj(currentUser.name).salesTotal).toFixed(2)}
                       </p>
                       <span className="text-[8px] text-slate-400 block mt-1 uppercase">
-                        {todaySales[currentUser.name]?.ordersCount || 0} pedidos confirmados
+                        {getDriverSalesObj(currentUser.name).ordersCount} pedidos confirmados
                       </span>
                     </div>
                   </div>
@@ -1033,12 +1052,12 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                       </div>
                       <div className="flex justify-between border-b border-sky-100 pb-3">
                         <span>+ Ventas cobradas hoy:</span>
-                        <span className="text-slate-800">${Number(todaySales[currentUser.name]?.salesTotal || 0).toFixed(2)}</span>
+                        <span className="text-slate-800">${Number(getDriverSalesObj(currentUser.name).salesTotal).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-base font-black pt-2 text-slate-800">
                         <span className="uppercase">EFECTIVO A ENTREGAR:</span>
                         <span className="text-sky-600">
-                          ${(Number(activeDriverSession.last_location.cash_float) + Number(todaySales[currentUser.name]?.salesTotal || 0)).toFixed(2)}
+                          ${(Number(activeDriverSession.last_location.cash_float) + Number(getDriverSalesObj(currentUser.name).salesTotal)).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1050,7 +1069,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                       const dummyDrv = {
                         name: currentUser.name,
                         cash_float: Number(activeDriverSession.last_location.cash_float),
-                        sales_total: Number(todaySales[currentUser.name]?.salesTotal || 0)
+                        sales_total: Number(getDriverSalesObj(currentUser.name).salesTotal)
                       };
                       setSelectedDriverForClose(dummyDrv);
                     }}
