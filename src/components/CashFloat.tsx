@@ -42,7 +42,7 @@ interface Employee {
 interface AttendanceRecord {
   id: string;
   user_name: string;
-  user_role: string;
+  user_role?: string;
   work_date: string;
   check_in?: string;
   check_out?: string;
@@ -177,7 +177,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       // 2. Fetch daily attendance entries for today
       const { data: attData } = await supabase
         .from('daily_attendance')
-        .select('*')
+        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('work_date', today);
 
       const attendancesList = (attData || []) as AttendanceRecord[];
@@ -265,7 +265,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       // Find existing attendance
       const { data: existing } = await supabase
         .from('daily_attendance')
-        .select('*')
+        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('user_name', employeeName)
         .eq('work_date', today)
         .maybeSingle();
@@ -362,7 +362,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     try {
       const { data: existing } = await supabase
         .from('daily_attendance')
-        .select('*')
+        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('user_name', employeeName)
         .eq('work_date', today)
         .maybeSingle();
@@ -448,7 +448,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     try {
       const { data: existing } = await supabase
         .from('daily_attendance')
-        .select('*')
+        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('user_name', employeeName)
         .eq('work_date', today)
         .maybeSingle();

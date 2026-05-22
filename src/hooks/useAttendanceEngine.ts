@@ -35,7 +35,7 @@ export function useAttendanceEngine() {
       let result = await supabase
         .from('daily_attendance')
         .upsert(payload, { onConflict: 'user_name, work_date' })
-        .select()
+        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .single();
 
       if (result.error) {
@@ -44,7 +44,7 @@ export function useAttendanceEngine() {
           result = await supabase
             .from('daily_attendance')
             .upsert(cleanPayload, { onConflict: 'user_name, work_date' })
-            .select()
+            .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
             .single();
         }
       }
@@ -116,7 +116,7 @@ export function useAttendanceEngine() {
     fetchHistory: async () => {
       const { data, error } = await supabase
         .from('daily_attendance')
-        .select('*')
+        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .order('work_date', { ascending: false })
         .order('user_name', { ascending: true });
       return { success: !error, data, error };

@@ -72,7 +72,7 @@ export async function simularFlujoAsistencia() {
         work_date: today,
         [step.action]: timestamp
       }, { onConflict: 'user_id, work_date' })
-      .select()
+      .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out')
       .single();
 
     if (error) {
