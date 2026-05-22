@@ -23,26 +23,38 @@ export function useAttendanceEngine() {
 
     try {
       // 1. Lógica de Upsert en Supabase para mantener un solo registro por día
-      const { data, error } = await supabase
+      const payload: any = {
+        user_id: session.user_id,
+        user_name: session.user_name,
+        user_role: session.user_role,
+        work_date: today,
+        [action]: timestamp,
+        last_location: location || null
+      };
+
+      let result = await supabase
         .from('daily_attendance')
-        .upsert(
-          {
-            user_id: session.user_id,
-            user_name: session.user_name,
-            user_role: session.user_role,
-            work_date: today,
-            [action]: timestamp,
-            last_location: location || null
-          },
-          { onConflict: 'user_name, work_date' }
-        )
+        .upsert(payload, { onConflict: 'user_name, work_date' })
         .select()
         .single();
 
-      if (error) {
-        console.error('Supabase Error Details:', error);
-        throw error;
+      if (result.error) {
+        if (result.error.message && (result.error.message.includes('user_role') || result.error.message.includes('column'))) {
+          const { user_role, ...cleanPayload } = payload;
+          result = await supabase
+            .from('daily_attendance')
+            .upsert(cleanPayload, { onConflict: 'user_name, work_date' })
+            .select()
+            .single();
+        }
       }
+
+      if (result.error) {
+        console.error('Supabase Error Details:', result.error);
+        throw result.error;
+      }
+
+      const data = result.data;
 
       // 2. Insertar en log de notificaciones para el Admin
       const labelMap: Record<AttendanceAction, string> = {

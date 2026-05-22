@@ -280,7 +280,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
 
-      const { error } = await supabase
+      let { error } = await supabase
         .from('daily_attendance')
         .upsert(
           {
@@ -292,6 +292,23 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           },
           { onConflict: 'user_name, work_date' }
         );
+
+      if (error) {
+        if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
+          const retryResult = await supabase
+            .from('daily_attendance')
+            .upsert(
+              {
+                ...(existing || {}),
+                user_name: employeeName,
+                work_date: today,
+                last_location: updatedLocation
+              },
+              { onConflict: 'user_name, work_date' }
+            );
+          error = retryResult.error;
+        }
+      }
 
       if (error) throw error;
 
@@ -378,9 +395,19 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         fieldsToUpdate.check_out = new Date().toISOString();
       }
 
-      const { error } = await supabase
+      let { error } = await supabase
         .from('daily_attendance')
         .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+
+      if (error) {
+        if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
+          const { user_role, ...cleanFields } = fieldsToUpdate;
+          const retryResult = await supabase
+            .from('daily_attendance')
+            .upsert(cleanFields, { onConflict: 'user_name, work_date' });
+          error = retryResult.error;
+        }
+      }
 
       if (error) throw error;
 
@@ -436,7 +463,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
 
-      const { error } = await supabase
+      let { error } = await supabase
         .from('daily_attendance')
         .upsert({
           ...(existing || {}),
@@ -445,6 +472,20 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           user_role: targetUserRole,
           last_location: updatedLocation
         }, { onConflict: 'user_name, work_date' });
+
+      if (error) {
+        if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
+          const retryResult = await supabase
+            .from('daily_attendance')
+            .upsert({
+              ...(existing || {}),
+              user_name: employeeName,
+              work_date: today,
+              last_location: updatedLocation
+            }, { onConflict: 'user_name, work_date' });
+          error = retryResult.error;
+        }
+      }
 
       if (error) throw error;
       await loadData();
