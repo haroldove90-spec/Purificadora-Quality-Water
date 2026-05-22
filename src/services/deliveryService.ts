@@ -6,15 +6,22 @@ import { Order } from '../lib/types.supabase';
  * handleCompleteDelivery
  * Actualiza el estado del pedido y genera el mensaje para el ticket de WhatsApp.
  */
-export async function handleCompleteDelivery(orderId: string) {
+export async function handleCompleteDelivery(orderId: string, customItems?: string, customTotalPrice?: number) {
   try {
+    const updateBody: any = {
+      status: 'delivered'
+    };
+    if (customItems !== undefined) {
+      updateBody.items = customItems;
+    }
+    if (customTotalPrice !== undefined) {
+      updateBody.total_price = customTotalPrice;
+    }
+
     // 1. Actualizar estado en Supabase
     const { data, error } = await supabase
       .from('orders')
-      .update({ 
-        status: 'delivered',
-        delivered_at: new Date().toISOString() 
-      })
+      .update(updateBody)
       .eq('id', orderId)
       .select()
       .single();

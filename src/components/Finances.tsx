@@ -27,7 +27,8 @@ import {
   ArrowDownRight,
   X,
   Loader2,
-  Trash2
+  Trash2,
+  Edit3
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -90,6 +91,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [isExporting, setIsExporting] = useState(false);
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
   const [showNewEmployeeModal, setShowNewEmployeeModal] = useState(false);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
@@ -233,7 +235,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
     setIsSavingCustomer(true);
     
     const formData = new FormData(e.currentTarget);
-    const newCustomer = {
+    const customerData = {
       name: formData.get('name') as string,
       address: formData.get('address') as string,
       phone: formData.get('phone') as string,
@@ -242,25 +244,67 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
     };
 
     try {
-      console.log('Intentando guardar cliente:', newCustomer);
-      const { error } = await supabase
-        .from('customers')
-        .insert([newCustomer]);
+      if (editingCustomer) {
+        console.log('Intentando actualizar cliente:', customerData);
+        // If it was a mock customer list edit (its id might start with C instead of standard UUID format)
+        if (editingCustomer.id && editingCustomer.id.startsWith('C')) {
+          const { error } = await supabase
+            .from('customers')
+            .insert([customerData]);
+          if (error) {
+            console.error('Error al insertar de mock:', error);
+            throw error;
+          }
+        } else {
+          const { error } = await supabase
+            .from('customers')
+            .update(customerData)
+            .eq('id', editingCustomer.id);
+          if (error) {
+            console.error('Error al actualizar cliente:', error);
+            throw error;
+          }
+        }
+        console.log('Cliente actualizado con éxito');
+      } else {
+        console.log('Intentando guardar cliente:', customerData);
+        const { error } = await supabase
+          .from('customers')
+          .insert([customerData]);
 
-      if (error) {
-        console.error('Error detallado de Supabase (clientes):', error);
-        throw error;
+        if (error) {
+          console.error('Error detallado de Supabase (clientes):', error);
+          throw error;
+        }
+        console.log('Cliente guardado con éxito');
       }
       
-      console.log('Cliente guardado con éxito');
       await fetchCustomers();
-      setShowNewCustomerModal(false);
+      handleCloseCustomerModal();
     } catch (error: any) {
       console.error('Error al guardar cliente:', error);
-      alert('ERROR AL GUARDAR CLIENTE: ' + (error.message || 'Error desconocido') + '\n\nVerifica si la tabla "customers" existe y tiene políticas RLS habilitadas para inserción.');
+      alert('ERROR AL GUARDAR CLIENTE: ' + (error.message || 'Error desconocido') + '\n\nVerifica si la tabla "customers" existe y tiene políticas RLS habilitadas.');
     } finally {
       setIsSavingCustomer(false);
     }
+  };
+
+  const handleStartEditCustomer = (client: any) => {
+    const preparedClient = {
+      id: client.id,
+      name: client.name,
+      address: client.address || client.neighborhood || '',
+      phone: client.phone || '',
+      tier: client.tier || 'frequent',
+      geolocation_url: client.geolocation_url || ''
+    };
+    setEditingCustomer(preparedClient);
+    setShowNewCustomerModal(true);
+  };
+
+  const handleCloseCustomerModal = () => {
+    setShowNewCustomerModal(false);
+    setEditingCustomer(null);
   };
 
   const handleNewEmployeeSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -572,7 +616,10 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                     <Download size={14} /> Exportar
                   </button>
                   <button 
-                    onClick={() => setShowNewCustomerModal(true)}
+                    onClick={() => {
+                      setEditingCustomer(null);
+                      setShowNewCustomerModal(true);
+                    }}
                     className="flex items-center gap-2 bg-sky-500 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all shrink-0"
                   >
                     <Plus size={16} /> Alta de Cliente
@@ -608,17 +655,22 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                         <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase italic">Hoy</td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => handleStartEditCustomer(client)}
+                              className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
+                              title="Ver / Editar"
+                            >
+                              <Edit3 size={16} />
+                            </button>
                             {userRole === 'admin' && (
                               <button 
                                 onClick={() => handleDeleteCustomer(client.id, client.name)}
                                 className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                title="Eliminar"
                               >
                                 <Trash2 size={16} />
                               </button>
                             )}
-                            <button className="p-2 text-slate-300 hover:text-sky-500 transition-colors">
-                              <MoreVertical size={18} />
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -639,17 +691,22 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                         <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase italic">{client.lastActivity}</td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => handleStartEditCustomer(client)}
+                              className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
+                              title="Ver / Editar"
+                            >
+                              <Edit3 size={16} />
+                            </button>
                             {userRole === 'admin' && (
                               <button 
                                 onClick={() => handleDeleteCustomer(client.id, client.name)}
                                 className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                title="Eliminar"
                               >
                                 <Trash2 size={16} />
                               </button>
                             )}
-                            <button className="p-2 text-slate-300 hover:text-sky-500 transition-colors">
-                              <MoreVertical size={18} />
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -944,7 +1001,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => !isSavingCustomer && setShowNewCustomerModal(false)}
+              onClick={() => !isSavingCustomer && handleCloseCustomerModal()}
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             />
             <motion.div
@@ -954,9 +1011,9 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
               className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8"
             >
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black text-slate-800 uppercase italic">Alta de <span className="text-sky-500">Cliente</span></h3>
+                <h3 className="text-xl font-black text-slate-800 uppercase italic">{editingCustomer ? 'Editar' : 'Alta de'} <span className="text-sky-500">Cliente</span></h3>
                 <button 
-                  onClick={() => setShowNewCustomerModal(false)}
+                  onClick={handleCloseCustomerModal}
                   disabled={isSavingCustomer}
                   className="p-2 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-0"
                 >
@@ -967,20 +1024,20 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
               <form onSubmit={handleNewCustomerSubmit} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo</label>
-                  <input name="name" required type="text" placeholder="Ej. Residencial Palmas" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                  <input name="name" required type="text" defaultValue={editingCustomer?.name || ''} placeholder="Ej. Residencial Palmas" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Colonia / Zona</label>
-                  <input name="address" required type="text" placeholder="Ej. Santa Fe" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                  <input name="address" required type="text" defaultValue={editingCustomer?.address || ''} placeholder="Ej. Santa Fe" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
-                    <input name="phone" required type="tel" placeholder="55 1234 5678" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                    <input name="phone" required type="tel" defaultValue={editingCustomer?.phone || ''} placeholder="55 1234 5678" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nivel</label>
-                    <select name="tier" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
+                    <select name="tier" defaultValue={editingCustomer?.tier || 'frequent'} className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
                       <option value="frequent">Frecuente</option>
                       <option value="vip">VIP</option>
                       <option value="company">Empresa</option>
@@ -993,6 +1050,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                   <input 
                     name="geolocation_url"
                     type="url" 
+                    defaultValue={editingCustomer?.geolocation_url || ''}
                     placeholder="https://maps.google.com/..." 
                     className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" 
                   />
@@ -1015,7 +1073,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                       Registrando...
                     </>
                   ) : (
-                    'Guardar Cliente'
+                    editingCustomer ? 'Guardar Cambios' : 'Guardar Cliente'
                   )}
                 </button>
               </form>

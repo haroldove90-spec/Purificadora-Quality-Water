@@ -16,6 +16,7 @@ export default function Products({ userRole }: { userRole: string | null }) {
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [formData, setFormData] = useState({
@@ -57,17 +58,31 @@ export default function Products({ userRole }: { userRole: string | null }) {
 
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from('products')
-        .insert([{
-          name: formData.name,
-          description: formData.description,
-          price: parseFloat(formData.price)
-        }]);
+      if (editingProduct) {
+        const { error } = await supabase
+          .from('products')
+          .update({
+            name: formData.name,
+            description: formData.description,
+            price: parseFloat(formData.price)
+          })
+          .eq('id', editingProduct.id);
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('products')
+          .insert([{
+            name: formData.name,
+            description: formData.description,
+            price: parseFloat(formData.price)
+          }]);
+
+        if (error) throw error;
+      }
       
       setShowAddModal(false);
+      setEditingProduct(null);
       setFormData({ name: '', description: '', price: '' });
       fetchProducts();
     } catch (error: any) {
@@ -75,6 +90,22 @@ export default function Products({ userRole }: { userRole: string | null }) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleStartEdit = (product: Product) => {
+    setEditingProduct(product);
+    setFormData({
+      name: product.name,
+      description: product.description || '',
+      price: product.price.toString()
+    });
+    setShowAddModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setEditingProduct(null);
+    setFormData({ name: '', description: '', price: '' });
   };
 
   const handleDeleteProduct = async (id: string) => {
@@ -100,7 +131,11 @@ export default function Products({ userRole }: { userRole: string | null }) {
         
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setEditingProduct(null);
+              setFormData({ name: '', description: '', price: '' });
+              setShowAddModal(true);
+            }}
             className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 shrink-0"
           >
             <Plus size={18} /> Nuevo Producto
@@ -146,7 +181,10 @@ export default function Products({ userRole }: { userRole: string | null }) {
                   <Tag size={24} />
                 </div>
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button className="p-2 text-slate-400 hover:text-sky-500 transition-colors">
+                  <button 
+                    onClick={() => handleStartEdit(product)} 
+                    className="p-2 text-slate-400 hover:text-sky-500 transition-colors"
+                  >
                     <Edit3 size={18} />
                   </button>
                   {userRole === 'admin' && (
@@ -197,8 +235,10 @@ export default function Products({ userRole }: { userRole: string | null }) {
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-[40px] shadow-2xl z-[101] overflow-hidden"
             >
               <div className="p-8 pb-4 flex justify-between items-center">
-                <h2 className="text-2xl font-black text-slate-800 uppercase italic">Nuevo <span className="text-sky-500">Producto</span></h2>
-                <button onClick={() => setShowAddModal(false)} className="p-2 text-slate-400 hover:text-slate-800">
+                <h2 className="text-2xl font-black text-slate-800 uppercase italic">
+                  {editingProduct ? 'Editar' : 'Nuevo'} <span className="text-sky-500">Producto</span>
+                </h2>
+                <button onClick={handleCloseModal} className="p-2 text-slate-400 hover:text-slate-800">
                   <X />
                 </button>
               </div>
@@ -245,7 +285,7 @@ export default function Products({ userRole }: { userRole: string | null }) {
                 <div className="flex gap-4 pt-4">
                   <button 
                     type="button"
-                    onClick={() => setShowAddModal(false)}
+                    onClick={handleCloseModal}
                     className="flex-1 p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest text-slate-400 hover:bg-slate-50"
                   >
                     Cancelar
@@ -256,7 +296,7 @@ export default function Products({ userRole }: { userRole: string | null }) {
                     className="flex-3 bg-sky-500 text-white p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-200 active:scale-95 transition-all flex items-center justify-center gap-2"
                   >
                     {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                    Registrar Producto
+                    {editingProduct ? 'Guardar Cambios' : 'Registrar Producto'}
                   </button>
                 </div>
               </form>

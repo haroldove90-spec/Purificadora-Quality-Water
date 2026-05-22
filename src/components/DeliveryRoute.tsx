@@ -108,16 +108,42 @@ export default function DeliveryRoute() {
 
   const currentDelivery = deliveries.find(d => d.id === selectedDelivery);
 
+  const [products, setProducts] = useState<any[]>([]);
+  const [deliveryItems, setDeliveryItems] = useState('');
+  const [deliveryTotal, setDeliveryTotal] = useState(0);
+
+  const fetchProducts = async () => {
+    try {
+      const { data } = await supabase.from('products').select('*').order('name');
+      if (data) setProducts(data);
+    } catch (e) {
+      console.warn('Error fetching products for driver:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  useEffect(() => {
+    if (step === 3 && currentDelivery) {
+      setDeliveryItems(currentDelivery.items || '');
+      setDeliveryTotal(currentDelivery.total_price || 0);
+    }
+  }, [step, selectedDelivery]);
+
   const handleComplete = async () => {
     if (!selectedDelivery) return;
     setCompleting(true);
     
-    const result = await handleCompleteDelivery(selectedDelivery);
+    const result = await handleCompleteDelivery(selectedDelivery, deliveryItems, deliveryTotal);
     
     if (result.success) {
       await fetchDeliveries();
       setStep(1);
       setSelectedDelivery(null);
+    } else {
+      alert('Error al confirmar entrega: ' + result.error);
     }
     setCompleting(false);
   };
@@ -296,47 +322,101 @@ export default function DeliveryRoute() {
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-white p-6 rounded-3xl border-2 border-emerald-100 shadow-xl shadow-emerald-900/5 mb-6"
+          className="bg-white p-6 rounded-3xl border-2 border-emerald-100 shadow-xl shadow-emerald-900/5 mb-6 animate-fade-in"
         >
           <button 
             onClick={() => setStep(2)}
-            className="mb-6 flex items-center gap-2 text-slate-400 font-bold text-sm min-h-[44px]"
+            className="mb-4 flex items-center gap-2 text-slate-400 font-bold text-sm min-h-[44px]"
           >
             <ArrowLeft size={16} /> Volver
           </button>
 
-          <h3 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
+          <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
             <CheckCircle2 className="text-emerald-500" /> Finalizar Entrega
           </h3>
 
-          <div className="space-y-8">
-            <div className="text-center">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Envases Recibidos</p>
-              <div className="flex items-center justify-center gap-8">
+          <div className="space-y-6">
+            <div className="text-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Envases Recibidos</p>
+              <div className="flex items-center justify-center gap-6">
                 <button 
                   onClick={() => setJugsReceived(Math.max(0, jugsReceived - 1))}
-                  className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-600 active:bg-slate-200 min-h-[44px]"
+                  className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-600 active:bg-slate-150 shadow-sm min-h-[44px]"
                 >
-                  <Minus size={24} />
+                  <Minus size={20} />
                 </button>
-                <span className="text-5xl font-black text-slate-900 w-16">{jugsReceived}</span>
+                <span className="text-4xl font-black text-slate-950 w-12">{jugsReceived}</span>
                 <button 
                   onClick={() => setJugsReceived(jugsReceived + 1)}
-                  className="w-14 h-14 bg-sky-500 rounded-2xl flex items-center justify-center text-white active:bg-sky-600 min-h-[44px]"
+                  className="w-12 h-12 bg-sky-500 rounded-xl flex items-center justify-center text-white active:bg-sky-600 shadow-lg shadow-sky-500/20 min-h-[44px]"
                 >
-                  <Plus size={24} />
+                  <Plus size={20} />
                 </button>
               </div>
             </div>
 
-            <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Total a Cobrar</span>
-                <span className="text-3xl font-black text-emerald-700">
-                  ${currentDelivery?.total_price.toFixed(2)}
-                </span>
+            {/* Preparation of sale */}
+            <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-3">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Concepto de la Venta / Productos</label>
+              
+              {/* Catalogue items buttons */}
+              <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-1 custom-scrollbar">
+                {products.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      const prefix = deliveryItems ? ', ' : '';
+                      setDeliveryItems(prev => prev + prefix + '1x ' + p.name);
+                      setDeliveryTotal(prev => prev + p.price);
+                    }}
+                    className="bg-white hover:bg-sky-50 border border-slate-200 hover:border-sky-300 text-slate-700 hover:text-sky-600 px-3 py-2 rounded-xl text-[10px] font-extrabold transition-all text-left flex justify-between items-center"
+                  >
+                    <span className="truncate">{p.name}</span>
+                    <span className="text-emerald-500 font-mono shrink-0">${p.price}</span>
+                  </button>
+                ))}
               </div>
-              <p className="text-[10px] text-emerald-600 font-bold mt-1 uppercase text-right">Efectivo o Transferencia</p>
+
+              <textarea 
+                value={deliveryItems}
+                onChange={(e) => setDeliveryItems(e.target.value)}
+                placeholder="Ej. 1x Garrafón 20L, 1x Botella 1.5L"
+                className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-xs focus:ring-2 focus:ring-sky-500 outline-none h-16 resize-none"
+              />
+
+              <div className="flex justify-between items-center pt-2">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setDeliveryItems('');
+                    setDeliveryTotal(0);
+                  }}
+                  className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:bg-rose-50 px-2 py-1 rounded-lg"
+                >
+                  Limpiar Venta
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total ($):</span>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={deliveryTotal}
+                    onChange={(e) => setDeliveryTotal(parseFloat(e.target.value) || 0)}
+                    className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-right focus:ring-2 focus:ring-sky-500 outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Monto Final</span>
+                <span className="text-xs text-emerald-600 font-bold font-sans">Cobrar al cliente</span>
+              </div>
+              <span className="text-3xl font-black text-emerald-600 font-sans">
+                ${deliveryTotal.toFixed(2)}
+              </span>
             </div>
 
             <button 

@@ -52,15 +52,30 @@ interface Product {
   price: number;
 }
 
+interface Customer {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  tier: string;
+  geolocation_url?: string;
+  created_at?: string;
+}
+
 export default function Dashboard({ userRole }: { userRole: string | null }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [drivers, setDrivers] = useState<Employee[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
 
@@ -114,10 +129,24 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     }
   };
 
+  const fetchCustomers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      if (data) setCustomers(data as Customer[]);
+    } catch (err) {
+      console.warn('Error fetching customers:', err);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
     fetchDrivers();
     fetchProducts();
+    fetchCustomers();
     setLoading(false);
 
     const channel = supabase
@@ -539,16 +568,73 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                   </div>
                 </div>
 
-                <div className={newOrder.source === 'local' ? 'col-span-2' : 'col-span-1'}>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Nombre del Cliente</label>
+                <div className={`${newOrder.source === 'local' ? 'col-span-2' : 'col-span-1'} relative`}>
+                  <div className="flex justify-between items-center mb-2 px-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Nombre del Cliente</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewCustomerModal(true)}
+                      className="text-[10px] font-black text-sky-500 hover:text-sky-600 uppercase tracking-wider flex items-center gap-1 transition-colors"
+                    >
+                      <UserPlus size={12} /> + Nuevo Cliente
+                    </button>
+                  </div>
                   <input 
                     required
                     type="text"
                     value={newOrder.customer_name}
-                    onChange={(e) => setNewOrder({...newOrder, customer_name: e.target.value})}
-                    placeholder="Ej. Juan Pérez"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewOrder({...newOrder, customer_name: val});
+                      setCustomerSearchQuery(val);
+                      setShowCustomerDropdown(true);
+                    }}
+                    onFocus={() => {
+                      setCustomerSearchQuery(newOrder.customer_name);
+                      setShowCustomerDropdown(true);
+                    }}
+                    placeholder="Escribe para buscar o ingresar..."
                     className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
                   />
+                  
+                  {showCustomerDropdown && (
+                    <div className="absolute left-0 right-0 z-[110] mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
+                      <div className="p-2 border-b border-slate-50 text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                        Clientes Registrados
+                      </div>
+                      {customers
+                        .filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase()))
+                        .map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setNewOrder({
+                                ...newOrder,
+                                customer_name: c.name,
+                                address: c.address || ''
+                              });
+                              setShowCustomerDropdown(false);
+                            }}
+                            className="w-full text-left p-3 hover:bg-slate-50 flex flex-col transition-colors border-b border-slate-50 last:border-none"
+                          >
+                            <span className="font-bold text-xs text-slate-800">{c.name}</span>
+                            <span className="text-[10px] font-medium text-slate-400">{c.address || 'Sin dirección'}</span>
+                          </button>
+                        ))}
+                      {customers.filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase())).length === 0 && (
+                        <div className="p-4 text-center text-xs text-slate-400 font-bold">
+                          Sin coincidencias. Haz clic en "+ Nuevo Cliente" arriba.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {showCustomerDropdown && (
+                    <div 
+                      className="fixed inset-0 z-[109]" 
+                      onClick={() => setShowCustomerDropdown(false)}
+                    />
+                  )}
                 </div>
 
                 {newOrder.source !== 'local' && (
@@ -657,6 +743,123 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
               </form>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* New Customer from Order Modal */}
+      <AnimatePresence>
+        {showNewCustomerModal && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isSavingCustomer && setShowNewCustomerModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8 z-[121]"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-black text-slate-800 uppercase italic">Alta de <span className="text-sky-500">Cliente (Pedido)</span></h3>
+                <button 
+                  type="button"
+                  onClick={() => setShowNewCustomerModal(false)}
+                  disabled={isSavingCustomer}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setIsSavingCustomer(true);
+                
+                const formData = new FormData(e.currentTarget);
+                const newCustomer = {
+                  name: formData.get('name') as string,
+                  address: formData.get('address') as string,
+                  phone: formData.get('phone') as string,
+                  tier: (formData.get('tier') as string)?.toLowerCase() || 'frequent',
+                  geolocation_url: formData.get('geolocation_url') as string,
+                };
+
+                try {
+                  const { error } = await supabase
+                    .from('customers')
+                    .insert([newCustomer]);
+
+                  if (error) throw error;
+                  
+                  await fetchCustomers();
+                  
+                  setNewOrder({
+                    ...newOrder,
+                    customer_name: newCustomer.name,
+                    address: newCustomer.address
+                  });
+                  
+                  setShowNewCustomerModal(false);
+                } catch (error: any) {
+                  alert('ERROR AL GUARDAR CLIENTE: ' + (error.message || 'Error desconocido'));
+                } finally {
+                  setIsSavingCustomer(false);
+                }
+              }} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo / Razón Social</label>
+                  <input name="name" required type="text" placeholder="Ej. Juan Pérez / Residencial Palmas" className="w-[100%] bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dirección de Entrega</label>
+                  <input name="address" required type="text" placeholder="Ej. Calle Palmas #123, Santa Fe" className="w-[100%] bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono</label>
+                    <input name="phone" required type="tel" placeholder="55 1234 5678" className="w-[100%] bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nivel</label>
+                    <select name="tier" className="w-[100%] bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
+                      <option value="frequent">Frecuente</option>
+                      <option value="vip">VIP</option>
+                      <option value="company">Empresa</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Link de Ubicación (Google Maps / Waze)</label>
+                  <input 
+                    name="geolocation_url"
+                    type="url" 
+                    placeholder="https://maps.google.com/..." 
+                    className="w-[100%] bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" 
+                  />
+                </div>
+
+                <button 
+                  type="submit"
+                  disabled={isSavingCustomer}
+                  className="w-full bg-sky-500 text-white py-5 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl shadow-sky-500/20 hover:bg-sky-600 transition-all active:scale-95 mt-4 flex items-center justify-center gap-2"
+                >
+                  {isSavingCustomer ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Registrando...
+                    </>
+                  ) : (
+                    'Guardar Cliente y Asociar'
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
