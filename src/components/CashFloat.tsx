@@ -63,18 +63,12 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [activeDriverSession, setActiveDriverSession] = useState<any>(null);
 
-  // helper to fuzzy match names (like Harold Anguiano Morales vs Haroldo Anguiano)
+  // helper to match names exactly (case-insensitive, trimmed, and normalized double spaces)
   const namesMatch = (name1?: string, name2?: string): boolean => {
     if (!name1 || !name2) return false;
-    const n1 = name1.toLowerCase().trim();
-    const n2 = name2.toLowerCase().trim();
-    if (n1 === n2) return true;
-
-    const isHarold1 = n1.includes('harold') && n1.includes('anguiano');
-    const isHarold2 = n2.includes('harold') && n2.includes('anguiano');
-    if (isHarold1 && isHarold2) return true;
-
-    return false;
+    const n1 = name1.toLowerCase().replace(/\s+/g, ' ').trim();
+    const n2 = name2.toLowerCase().replace(/\s+/g, ' ').trim();
+    return n1 === n2;
   };
 
   const getDriverSalesObj = (driverName: string) => {
@@ -297,13 +291,16 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         cash_assigned_at: new Date().toISOString()
       };
 
-      const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
+      const targetEmp = employees.find(e => e.name === employeeName);
+      const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
+      const targetUserRole = targetEmp?.role || 'driver';
 
       let { error } = await supabase
         .from('daily_attendance')
         .upsert(
           {
             ...(existing || {}),
+            user_id: existing?.user_id || targetUserId,
             user_name: employeeName,
             work_date: today,
             user_role: targetUserRole,
@@ -319,6 +316,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             .upsert(
               {
                 ...(existing || {}),
+                user_id: existing?.user_id || targetUserId,
                 user_name: employeeName,
                 work_date: today,
                 last_location: updatedLocation
@@ -510,6 +508,85 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       await loadData();
     } catch (e: any) {
       alert('Error al reabrir caja: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Delete/Revert assigned cash float
+  const handleDeleteFloat = async (employeeName: string) => {
+    if (!confirm(`¿Estás seguro de eliminar el fondo de caja asignado a ${employeeName}?`)) return;
+    setActionLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+
+    try {
+      // Find existing attendance
+      const { data: existing } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('user_name', employeeName)
+        .eq('work_date', today)
+        .maybeSingle();
+
+      if (existing) {
+        // If the employee hasn't clocked in (no check_in time) and no breaks/check_outs,
+        // we can safely remove the row, or clear the last_location cash fields.
+        if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
+          const { error } = await supabase
+            .from('daily_attendance')
+            .delete()
+            .eq('id', existing.id);
+          if (error) throw error;
+        } else {
+          // If they have clocked in already, keep the attendance record but clear cash_float
+          const existingLocation = existing.last_location || {};
+          const updatedLocation = { ...existingLocation };
+          delete updatedLocation.cash_float;
+          delete updatedLocation.cash_closed;
+          delete updatedLocation.cash_assigned_at;
+          delete updatedLocation.cash_closed_at;
+          delete updatedLocation.cash_sales_total;
+          delete updatedLocation.cash_total_to_deliver;
+          delete updatedLocation.closed_by_role;
+          delete updatedLocation.closed_by_name;
+
+          const fieldsToUpdate = {
+            ...existing,
+            last_location: updatedLocation
+          };
+
+          let { error } = await supabase
+            .from('daily_attendance')
+            .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+
+          if (error) {
+            if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
+              const { user_role, ...cleanFields } = fieldsToUpdate;
+              const retryResult = await supabase
+                .from('daily_attendance')
+                .upsert(cleanFields, { onConflict: 'user_name, work_date' });
+              error = retryResult.error;
+            }
+          }
+          if (error) throw error;
+        }
+
+        // Add notification for safety
+        await supabase.from('notifications_log').insert([
+          {
+            title: '🚫 Fondo de Caja Revertido',
+            message: `El fondo de caja asignado para hoy a ${employeeName} ha sido cancelado por el administrador.`,
+            type: 'finance',
+            user_role: 'admin',
+            is_read: false
+          }
+        ]);
+      }
+
+      await loadData();
+      alert(`Fondo de caja para ${employeeName} eliminado exitosamente.`);
+    } catch (e: any) {
+      alert('Error al desactivar el fondo de caja: ' + e.message);
     } finally {
       setActionLoading(false);
     }
@@ -866,6 +943,17 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-[9px] uppercase tracking-widest transition-all"
                                   >
                                     {drv.cash_float !== null ? 'Modif. Fondo' : '+ Dar Fondo'}
+                                  </button>
+                                )}
+
+                                {/* Reset/Delete assigned Float / Closure (Always visible to Admin/Operator if cash is initialized) */}
+                                {isAdminOrOperator && drv.cash_float !== null && (
+                                  <button
+                                    onClick={() => handleDeleteFloat(drv.name)}
+                                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                                    title="Eliminar registro de fondo/cierre"
+                                  >
+                                    <Trash2 size={15} />
                                   </button>
                                 )}
 

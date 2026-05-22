@@ -215,6 +215,29 @@ export function useRealtimeNotifications(userRole: string | null) {
     }
   };
 
+  const deleteNotifications = async (ids: string[]) => {
+    try {
+      // 1. Update local state
+      setNotifications(prev => {
+        const remaining = prev.filter(n => !ids.includes(n.id));
+        setUnreadCount(remaining.filter(n => !n.read).length);
+        return remaining;
+      });
+
+      // 2. Persistir en Base de Datos
+      const { error } = await supabase
+        .from('notifications_log')
+        .delete()
+        .in('id', ids);
+
+      if (error) {
+        console.error('Supabase delete error (deleteNotifications):', error);
+      }
+    } catch (err) {
+      console.error('Unexpected error in deleteNotifications:', err);
+    }
+  };
+
   const clearUnread = () => setUnreadCount(0);
 
   return { 
@@ -225,6 +248,7 @@ export function useRealtimeNotifications(userRole: string | null) {
     staffStatus,
     markAsRead, 
     markAllAsRead,
+    deleteNotifications,
     clearUnread, 
     fetchNotificationLogs 
   };
