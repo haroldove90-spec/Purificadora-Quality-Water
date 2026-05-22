@@ -316,7 +316,21 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       await loadData();
       setSelectedDriverForFloat(null);
     } catch (e: any) {
-      alert('Error al asignar fondo: ' + e.message);
+      if (e.message && (e.message.includes('user_role') || e.message.includes('column'))) {
+        alert(
+          'Falta la columna "user_role" en la tabla "daily_attendance" de tu base de datos Supabase.\n\n' +
+          'Para solucionarlo de inmediato de forma 100% segura:\n\n' +
+          '1. Abre tu panel de Supabase -> SQL Editor\n' +
+          '2. Crea una pestaña nueva pulsando "+ New Query"\n' +
+          '3. Copia y pega EXACTAMENTE esta línea:\n\n' +
+          '   ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS user_role TEXT;\n' +
+          '   NOTIFY pgrst, \'reload schema\';\n\n' +
+          '4. Haz clic en "RUN" abajo a la derecha.\n\n' +
+          '¡Con eso se soluciona de inmediato! Recarga la app después de correr el script.'
+        );
+      } else {
+        alert('Error al asignar fondo: ' + e.message);
+      }
     } finally {
       setActionLoading(false);
     }
