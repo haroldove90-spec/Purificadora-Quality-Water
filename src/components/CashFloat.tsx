@@ -71,6 +71,17 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     return n1 === n2;
   };
 
+  // Helper to safely parse JSON field to object
+  const parseJsonFields = (val: any): any => {
+    if (!val) return {};
+    if (typeof val === 'object') return val;
+    try {
+      return JSON.parse(val);
+    } catch (_) {
+      return {};
+    }
+  };
+
   const getDriverSalesObj = (driverName: string) => {
     const foundKey = Object.keys(todaySales).find(k => namesMatch(k, driverName));
     return foundKey ? todaySales[foundKey] : { salesTotal: 0, ordersCount: 0 };
@@ -193,7 +204,10 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('work_date', today);
 
-      const attendancesList = (attData || []) as AttendanceRecord[];
+      const attendancesList = (attData || []).map((a: any) => ({
+        ...a,
+        last_location: parseJsonFields(a.last_location)
+      })) as AttendanceRecord[];
       setAttendances(attendancesList);
 
       // 3. Fetch today's orders delivered by these drivers
@@ -283,7 +297,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         .eq('work_date', today)
         .maybeSingle();
 
-      const existingLocation = existing?.last_location || {};
+      const existingLocation = parseJsonFields(existing?.last_location);
       const updatedLocation = {
         ...existingLocation,
         cash_float: amount,
@@ -384,7 +398,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         .eq('work_date', today)
         .maybeSingle();
 
-      const existingLocation = existing?.last_location || {};
+      const existingLocation = parseJsonFields(existing?.last_location);
       const updatedLocation = {
         ...existingLocation,
         cash_float: floatAmount,
@@ -470,7 +484,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         .eq('work_date', today)
         .maybeSingle();
 
-      const existingLocation = existing?.last_location || {};
+      const existingLocation = parseJsonFields(existing?.last_location);
       const updatedLocation = {
         ...existingLocation,
         cash_closed: false,
@@ -539,7 +553,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           if (error) throw error;
         } else {
           // If they have clocked in already, keep the attendance record but clear cash_float
-          const existingLocation = existing.last_location || {};
+          const existingLocation = parseJsonFields(existing.last_location);
           const updatedLocation = { ...existingLocation };
           delete updatedLocation.cash_float;
           delete updatedLocation.cash_closed;
@@ -621,8 +635,8 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       const att = attendances.find(a => namesMatch(a.user_name, emp.name));
       const sales = getDriverSalesObj(emp.name);
       
-      const lastLoc = att?.last_location || {};
-      const floatVal = lastLoc.cash_float !== undefined ? Number(lastLoc.cash_float) : null;
+      const lastLoc = parseJsonFields(att?.last_location);
+      const floatVal = lastLoc.cash_float !== undefined && lastLoc.cash_float !== null ? Number(lastLoc.cash_float) : null;
       const isClosed = !!lastLoc.cash_closed;
       const closedAt = lastLoc.cash_closed_at || null;
       const closedByName = lastLoc.closed_by_name || null;
@@ -946,12 +960,12 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                                   </button>
                                 )}
 
-                                {/* Reset/Delete assigned Float / Closure (Always visible to Admin/Operator if cash is initialized) */}
-                                {isAdminOrOperator && drv.cash_float !== null && (
+                                {/* Reset/Delete assigned Float / Closure (Always visible to Admin/Operator if cash is initialized or clocked in) */}
+                                {isAdminOrOperator && (drv.cash_float !== null || drv.hasClockedIn) && (
                                   <button
                                     onClick={() => handleDeleteFloat(drv.name)}
                                     className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
-                                    title="Eliminar registro de fondo/cierre"
+                                    title="Eliminar registro de fondo/cierre/asistencia"
                                   >
                                     <Trash2 size={15} />
                                   </button>
