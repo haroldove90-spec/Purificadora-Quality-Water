@@ -1,0 +1,1065 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  DollarSign, 
+  Clock, 
+  CheckCircle2, 
+  AlertCircle, 
+  ArrowRight, 
+  Lock, 
+  Unlock, 
+  FileText, 
+  TrendingUp, 
+  User, 
+  Plus, 
+  RefreshCw, 
+  Download, 
+  UserPlus, 
+  Trash2,
+  ChevronRight,
+  ClipboardList,
+  Check,
+  Building,
+  Printer,
+  Loader2,
+  X
+} from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+import { exportToPDF } from '../utils/pdfExport';
+
+interface CashFloatProps {
+  userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  role: string;
+  phone?: string;
+  status?: string;
+}
+
+interface AttendanceRecord {
+  id: string;
+  user_name: string;
+  user_role: string;
+  work_date: string;
+  check_in?: string;
+  check_out?: string;
+  last_location?: any; // JSONB storage
+}
+
+interface OrderItemSummary {
+  driverName: string;
+  salesTotal: number;
+  ordersCount: number;
+}
+
+export default function CashFloat({ userRole }: CashFloatProps) {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
+  const [todaySales, setTodaySales] = useState<Record<string, OrderItemSummary>>({});
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [activeDriverSession, setActiveDriverSession] = useState<any>(null);
+  
+  // Toggle for admins and operators to view either the master list or personal drawer
+  const [viewMode, setViewMode] = useState<'admin' | 'personal'>('personal');
+
+  // Modals and inputs
+  const [selectedDriverForFloat, setSelectedDriverForFloat] = useState<Employee | null>(null);
+  const [customFloatAmount, setCustomFloatAmount] = useState('600');
+  const [selectedDriverForClose, setSelectedDriverForClose] = useState<any | null>(null);
+
+  // Get current date
+  const todayDate = new Date().toISOString().split('T')[0];
+
+  // Get current logger info
+  const [currentUser, setCurrentUser] = useState({
+    name: 'Empleado Demo',
+    role: userRole || 'driver'
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem('qw_session');
+    if (saved) {
+      try {
+        const session = JSON.parse(saved);
+        if (session.user_name) {
+          const matchedRole = userRole || session.user_role || 'driver';
+          setCurrentUser({
+            name: session.user_name,
+            role: matchedRole
+          });
+          setViewMode(matchedRole === 'admin' ? 'admin' : 'personal');
+        }
+      } catch (e) {}
+    } else {
+      const backupStr = localStorage.getItem('quality_water_session_backup');
+      if (backupStr) {
+        try {
+          const backup = JSON.parse(backupStr);
+          if (backup.userName) {
+            const matchedRole = userRole || backup.currentRoleView || 'driver';
+            setCurrentUser({
+              name: backup.userName,
+              role: matchedRole
+            });
+            setViewMode(matchedRole === 'admin' ? 'admin' : 'personal');
+          }
+        } catch (_) {}
+      }
+    }
+  }, [userRole]);
+
+  // Load all necessary info (employees, today's attendance, today's order sales)
+  const loadData = async () => {
+    setLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+    
+    try {
+      // 1. Fetch all staff members (excluding customers/clients)
+      const { data: empData, error: empError } = await supabase
+        .from('employees')
+        .select('*')
+        .order('name');
+      
+      let driversList: Employee[] = [];
+      if (empData) {
+        driversList = empData.filter(e => 
+          e.role !== 'client' && 
+          e.role !== 'customer'
+        );
+        setEmployees(driversList);
+      }
+
+      // 2. Fetch daily attendance entries for today
+      const { data: attData } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      const attendancesList = (attData || []) as AttendanceRecord[];
+      setAttendances(attendancesList);
+
+      // 3. Fetch today's orders delivered by these drivers
+      // Filter status = delivered and created_at on today
+      const startOfDay = `${today}T00:00:00.000Z`;
+      const endOfDay = `${today}T23:59:59.999Z`;
+
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('total_price, assigned_to_name, status')
+        .eq('status', 'delivered')
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+
+      const salesSummary: Record<string, OrderItemSummary> = {};
+      
+      // Initialize for all drivers
+      driversList.forEach(drv => {
+        salesSummary[drv.name] = {
+          driverName: drv.name,
+          salesTotal: 0,
+          ordersCount: 0
+        };
+      });
+
+      // Aggregate
+      if (ordersData) {
+        ordersData.forEach(o => {
+          const name = o.assigned_to_name;
+          if (name) {
+            if (!salesSummary[name]) {
+              salesSummary[name] = {
+                driverName: name,
+                salesTotal: 0,
+                ordersCount: 0
+              };
+            }
+            salesSummary[name].salesTotal += Number(o.total_price || 0);
+            salesSummary[name].ordersCount += 1;
+          }
+        });
+      }
+      setTodaySales(salesSummary);
+
+      // 4. Find if there is a session for the currently logged-in driver employee
+      const loggedInDriverName = currentUser.name;
+      const driverAttendance = attendancesList.find(a => a.user_name === loggedInDriverName);
+      setActiveDriverSession(driverAttendance || null);
+
+    } catch (e) {
+      console.warn('Error fetching cash float dashboard data:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    // Setup realtime subscription
+    const channel = supabase
+      .channel('cash_float_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_attendance' }, () => {
+        loadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser.name, userRole]);
+
+  // Assign starting cash float to a driver (Upserts attendance entry with custom metadata)
+  const handleAssignFloat = async (employeeName: string, amount: number) => {
+    setActionLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+
+    try {
+      // Find existing attendance
+      const { data: existing } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('user_name', employeeName)
+        .eq('work_date', today)
+        .maybeSingle();
+
+      const existingLocation = existing?.last_location || {};
+      const updatedLocation = {
+        ...existingLocation,
+        cash_float: amount,
+        cash_closed: false,
+        cash_assigned_at: new Date().toISOString()
+      };
+
+      const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
+
+      const { error } = await supabase
+        .from('daily_attendance')
+        .upsert(
+          {
+            ...(existing || {}),
+            user_name: employeeName,
+            work_date: today,
+            user_role: targetUserRole,
+            last_location: updatedLocation
+          },
+          { onConflict: 'user_name, work_date' }
+        );
+
+      if (error) throw error;
+
+      // Add audit notification
+      await supabase.from('notifications_log').insert([{
+        title: 'Fondo Asignado',
+        message: `Se asignó fondo de caja de $${amount} a ${employeeName}`,
+        type: 'finance',
+        user_role: 'admin',
+        is_read: false
+      }]);
+
+      await loadData();
+      setSelectedDriverForFloat(null);
+    } catch (e: any) {
+      alert('Error al asignar fondo: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Close shift cash drawer
+  const handleCloseCashDrawer = async (employeeName: string, floatAmount: number, salesAmount: number) => {
+    setActionLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+    const totalToDeliver = floatAmount + salesAmount;
+
+    try {
+      const { data: existing } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('user_name', employeeName)
+        .eq('work_date', today)
+        .maybeSingle();
+
+      const existingLocation = existing?.last_location || {};
+      const updatedLocation = {
+        ...existingLocation,
+        cash_float: floatAmount,
+        cash_closed: true,
+        cash_closed_at: new Date().toISOString(),
+        cash_sales_total: salesAmount,
+        cash_total_to_deliver: totalToDeliver,
+        closed_by_role: currentUser.role,
+        closed_by_name: currentUser.name
+      };
+
+      const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
+
+      // Also set check_out timestamp if closing cash itself is treated as check_out
+      const fieldsToUpdate: any = {
+        ...(existing || {}),
+        user_name: employeeName,
+        work_date: today,
+        user_role: targetUserRole,
+        last_location: updatedLocation
+      };
+
+      // If the driver closes it, automatically log a check_out if there wasn't one
+      if (!existing?.check_out) {
+        fieldsToUpdate.check_out = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('daily_attendance')
+        .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+
+      if (error) throw error;
+
+      // Log notification
+      await supabase.from('notifications_log').insert([{
+        title: 'Cierre de Caja Realizado',
+        message: `Cierre realizado para ${employeeName}. Total entregado: $${totalToDeliver}`,
+        type: 'finance',
+        user_role: 'admin',
+        is_read: false
+      }]);
+
+      await loadData();
+      setSelectedDriverForClose(null);
+      alert(`¡Cierre exitoso para ${employeeName}! Caja cerrada debidamente.`);
+    } catch (e: any) {
+      alert('Error en cierre de caja: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Re-open Cash drawer (Admin lock toggle)
+  const handleReopenCashDrawer = async (employeeName: string) => {
+    if (!confirm(`¿Estás seguro de reabrir la caja de ${employeeName}?`)) return;
+    setActionLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+
+    try {
+      const { data: existing } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('user_name', employeeName)
+        .eq('work_date', today)
+        .maybeSingle();
+
+      const existingLocation = existing?.last_location || {};
+      const updatedLocation = {
+        ...existingLocation,
+        cash_closed: false,
+        cash_reopened_at: new Date().toISOString(),
+        cash_reopened_by: currentUser.name
+      };
+
+      const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
+
+      const { error } = await supabase
+        .from('daily_attendance')
+        .upsert({
+          ...(existing || {}),
+          user_name: employeeName,
+          work_date: today,
+          user_role: targetUserRole,
+          last_location: updatedLocation
+        }, { onConflict: 'user_name, work_date' });
+
+      if (error) throw error;
+      await loadData();
+    } catch (e: any) {
+      alert('Error al reabrir caja: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Print shift receipt PDF
+  const handleExportReceiptPDF = (driverData: any) => {
+    const columns = ['Concepto', 'Monto'];
+    const data = [
+      ['Fondo de Caja (Inicio)', `$${driverData.cash_float.toFixed(2)} pesos`],
+      ['Ventas del Día (Entregas)', `$${driverData.sales_total.toFixed(2)} pesos`],
+      ['Total de Entregas Realizadas', `${driverData.orders_count} pedidos`],
+      ['Monto Total Neto a Entregar', `$${driverData.total_to_deliver.toFixed(2)} pesos`],
+      ['Estatus de Caja', 'Cerrada / Liquidada'],
+      ['Fecha de Cierre', new Date(driverData.closed_at || '').toLocaleString()],
+      ['Firmado por', `${driverData.name} (Repartidor)`],
+      ['Recibido por', `${driverData.closed_by_name || 'Administrador'}`],
+    ];
+
+    exportToPDF({
+      title: 'Comprobante de Cierre de Caja',
+      subtitle: `QualityWater - Repartidor: ${driverData.name} - Fecha: ${todayDate}`,
+      columns,
+      data,
+      filename: `Comprobante_Cierre_${driverData.name.replace(/\s+/g, '_')}`
+    });
+  };
+
+  // Build the list of driver statuses with floats
+  const getDriversStatuses = () => {
+    return employees.map(emp => {
+      const att = attendances.find(a => a.user_name === emp.name);
+      const sales = todaySales[emp.name] || { salesTotal: 0, ordersCount: 0 };
+      
+      const lastLoc = att?.last_location || {};
+      const floatVal = lastLoc.cash_float !== undefined ? Number(lastLoc.cash_float) : null;
+      const isClosed = !!lastLoc.cash_closed;
+      const closedAt = lastLoc.cash_closed_at || null;
+      const closedByName = lastLoc.closed_by_name || null;
+
+      return {
+        id: emp.id,
+        name: emp.name,
+        role: emp.role,
+        phone: emp.phone,
+        hasClockedIn: !!att?.check_in,
+        checkInTime: att?.check_in,
+        cash_float: floatVal,
+        sales_total: sales.salesTotal,
+        orders_count: sales.ordersCount,
+        is_closed: isClosed,
+        closed_at: closedAt,
+        closed_by_name: closedByName,
+        total_to_deliver: floatVal !== null ? floatVal + sales.salesTotal : sales.salesTotal
+      };
+    });
+  };
+
+  const driversStatusData = getDriversStatuses();
+
+  // Calculate high-level KPI cards for the admin
+  const assignedFloatsTotal = driversStatusData.reduce((acc, d) => acc + (d.cash_float || 0), 0);
+  const registeredSalesTotal = driversStatusData.reduce((acc, d) => acc + d.sales_total, 0);
+  const collectedTotal = driversStatusData.filter(d => d.is_closed).reduce((acc, d) => acc + d.total_to_deliver, 0);
+  const activeInPlayTotal = driversStatusData.filter(d => !d.is_closed).reduce((acc, d) => acc + d.total_to_deliver, 0);
+
+  const isAdminOrOperator = currentUser.role === 'admin' || currentUser.role === 'operator';
+
+  return (
+    <div className="p-8 max-w-6xl mx-auto space-y-8">
+      {/* Header section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2">
+        <div>
+          <h2 className="text-3xl font-black text-slate-800 italic uppercase">
+            Módulo <span className="text-sky-500">Fondo de Caja</span>
+          </h2>
+          <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest leading-none">
+            {isAdminOrOperator 
+              ? 'Control de capital diario, flotantes y liquidación de personal' 
+              : 'Detalle de fondo flotante asignado y balance de liquidación diario'}
+          </p>
+        </div>
+        <button 
+          onClick={loadData}
+          disabled={loading}
+          className="flex items-center gap-2 bg-slate-50 text-slate-500 hover:text-slate-800 border border-slate-100 p-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-100 active:scale-95 transition-all self-start md:self-auto"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          Actualizar Datos
+        </button>
+      </div>
+
+      {/* View Switcher Pill (Interactive toggle for Admin and Planta Operator roles) */}
+      {isAdminOrOperator && (
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl max-w-sm border border-slate-200/50 shadow-inner">
+          <button
+            onClick={() => setViewMode('admin')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
+              viewMode === 'admin' 
+                ? 'bg-white text-slate-800 shadow-md border border-slate-100' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Building size={14} />
+            Control General
+          </button>
+          <button
+            onClick={() => setViewMode('personal')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
+              viewMode === 'personal' 
+                ? 'bg-white text-slate-800 shadow-md border border-slate-100' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <User size={14} />
+            Mi Caja Personal
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="bg-white rounded-[40px] border border-slate-100 p-20 flex flex-col justify-center items-center shadow-sm">
+          <Loader2 size={48} className="text-sky-500 animate-spin mb-4" />
+          <p className="font-black text-slate-400 uppercase text-xs tracking-widest">Cargando cuentas de caja...</p>
+        </div>
+      ) : (
+        <>
+          {/* ROL ADMIN / PLANTA PANEL */}
+          {viewMode === 'admin' ? (
+            <div className="space-y-8">
+              {/* Metrics KPIs Dashboard */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fondos de Caja Asignados</p>
+                  <p className="text-2xl font-black text-slate-800 mt-2">${assignedFloatsTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                  <div className="absolute top-6 right-6 w-10 h-10 bg-sky-50 rounded-2xl flex items-center justify-center text-sky-500">
+                    <DollarSign size={20} />
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ventas en Ruta Hoy</p>
+                  <p className="text-2xl font-black text-slate-800 mt-2">${registeredSalesTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                  <div className="absolute top-6 right-6 w-10 h-10 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500">
+                    <TrendingUp size={20} />
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Efectivo Recaudado</p>
+                  <p className="text-2xl font-black text-emerald-500 mt-2">${collectedTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                  <div className="absolute top-6 right-6 w-10 h-10 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center">
+                    <CheckCircle2 size={20} />
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pendiente en Ruta</p>
+                  <p className="text-2xl font-black text-slate-800 mt-2">${activeInPlayTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                  <div className="absolute top-6 right-6 w-10 h-10 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500">
+                    <Clock size={20} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Table for staff cash registers */}
+              <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+                <div className="p-8 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                      <ClipboardList size={18} className="text-sky-500" />
+                      Estado de Fondos y Cierres de Personal
+                    </h3>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Asignación diaria de fondos e historial de liquidaciones de hoy</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                      <tr>
+                        <th className="px-8 py-4">Personal</th>
+                        <th className="px-8 py-4">Asistencia</th>
+                        <th className="px-8 py-4 text-center">Fondo Inicial</th>
+                        <th className="px-8 py-4 text-center">Ventas Hoy</th>
+                        <th className="px-8 py-4 text-center">Total a Cobrar</th>
+                        <th className="px-8 py-4">Estado Caja</th>
+                        <th className="px-8 py-4 text-right">Caja / Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {driversStatusData.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-8 py-12 text-center text-xs font-bold text-slate-300 uppercase italic">
+                            Sin personal registrado en el sistema.
+                          </td>
+                        </tr>
+                      ) : (
+                        driversStatusData.map((drv) => (
+                          <tr key={drv.id} className="hover:bg-slate-50 transition-all">
+                            <td className="px-8 py-5">
+                              <p className="font-black text-slate-800 text-sm whitespace-nowrap italic">{drv.name}</p>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                                  drv.role === 'admin' 
+                                    ? 'bg-rose-50 text-rose-500 border border-rose-100' 
+                                    : drv.role === 'operator' 
+                                      ? 'bg-indigo-50 text-indigo-500 border border-indigo-100'
+                                      : 'bg-sky-50 text-sky-500 border border-sky-100'
+                                }`}>
+                                  {drv.role === 'admin' ? 'Admin' : drv.role === 'operator' ? 'Planta' : 'Repartidor'}
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{drv.phone || 'Sin número'}</span>
+                              </div>
+                            </td>
+                            <td className="px-8 py-5">
+                              {drv.hasClockedIn ? (
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase inline-block self-start">En Turno</span>
+                                  <span className="text-[9px] font-bold text-slate-400 mt-1">
+                                    {new Date(drv.checkInTime || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-[9px] font-black text-slate-300 bg-slate-50 px-2 py-0.5 rounded-lg uppercase inline-block">Sin Marcaje</span>
+                              )}
+                            </td>
+                            <td className="px-8 py-5 text-center">
+                              {drv.cash_float !== null ? (
+                                <span className="font-black text-sm text-slate-800">$ {drv.cash_float.toFixed(2)}</span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-rose-400 uppercase italic">No asignado</span>
+                              )}
+                            </td>
+                            <td className="px-8 py-5 text-center">
+                              <span className="font-bold text-xs text-slate-500">${drv.sales_total.toFixed(2)}</span>
+                              <span className="text-[9px] font-bold text-slate-400 block mt-0.5">{drv.orders_count} pedidos</span>
+                            </td>
+                            <td className="px-8 py-5 text-center">
+                              <span className="font-black text-sm text-slate-800">
+                                ${drv.total_to_deliver.toFixed(2)}
+                              </span>
+                              <span className="text-[8px] font-black text-slate-400 block leading-tight mt-0.5 uppercase tracking-widest">(Fondo + Ventas)</span>
+                            </td>
+                            <td className="px-8 py-5">
+                              {drv.is_closed ? (
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-white bg-emerald-500 px-2 py-0.5 rounded-lg uppercase inline-block self-start">🟢 LIQUIDADO</span>
+                                  <p className="text-[8px] font-bold text-slate-400 mt-1 uppercase leading-none">
+                                    Al: {new Date(drv.closed_at || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              ) : drv.cash_float !== null ? (
+                                <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-100 uppercase inline-block">🟡 CAJA ABIERTA</span>
+                              ) : (
+                                <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg uppercase inline-block">SIN INICIAR</span>
+                              )}
+                            </td>
+                            <td className="px-8 py-5 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {/* Assign or Edit Float */}
+                                {!drv.is_closed && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedDriverForFloat(drv);
+                                      setCustomFloatAmount(drv.cash_float !== null ? String(drv.cash_float) : '600');
+                                    }}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-[9px] uppercase tracking-widest transition-all"
+                                  >
+                                    {drv.cash_float !== null ? 'Modif. Fondo' : '+ Dar Fondo'}
+                                  </button>
+                                )}
+
+                                {/* Perform close */}
+                                {!drv.is_closed && drv.cash_float !== null ? (
+                                  <button
+                                    onClick={() => setSelectedDriverForClose(drv)}
+                                    className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest shadow-md shadow-sky-100 transition-all active:scale-95"
+                                  >
+                                    Cerrar Caja
+                                  </button>
+                                ) : null}
+
+                                {/* Print tickets for closed drawers */}
+                                {drv.is_closed && (
+                                  <>
+                                    <button
+                                      onClick={() => handleExportReceiptPDF(drv)}
+                                      className="p-2 bg-slate-50 text-slate-400 hover:text-sky-500 rounded-xl hover:bg-slate-100 transition-all"
+                                      title="Comprobante PDF"
+                                    >
+                                      <Printer size={15} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleReopenCashDrawer(drv.name)}
+                                      className="p-1.5 text-slate-400 hover:text-amber-500 transition-colors"
+                                      title="Reabrir caja"
+                                    >
+                                      <Unlock size={14} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* DRIVER ROLE PANEL (Vuelo de Repartidor) */
+            <div className="space-y-8 max-w-2xl mx-auto">
+              {/* Shift status banner */}
+              <div className="bg-slate-900 text-white p-8 rounded-[40px] shadow-2xl relative overflow-hidden">
+                <div className="relative z-10 space-y-4">
+                  <span className="text-[9px] font-black text-sky-400 uppercase tracking-[0.2em] block">SISTEMA DE LIQUIDACIÓN DE RUTA</span>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center font-black">
+                      <User size={24} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase leading-none">Repartidor activo</p>
+                      <p className="text-lg font-black italic text-white uppercase mt-1">{currentUser.name}</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-white/10 flex justify-between items-center text-xs">
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase">Estatus actual de tu caja</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {activeDriverSession ? (
+                          <>
+                            {activeDriverSession.last_location?.cash_closed ? (
+                              <span className="text-[10px] font-black text-emerald-400 uppercase">🟢 CERRADO Y ENTREGADO</span>
+                            ) : activeDriverSession.last_location?.cash_float !== undefined ? (
+                              <span className="text-[10px] font-black text-amber-400 uppercase">🟡 EN CURSO (ABIERTA)</span>
+                            ) : (
+                              <span className="text-[10px] font-black text-yellow-500 uppercase">⚠️ ESPERANDO ASIGNACIÓN DE FONDO</span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-[10px] font-black text-rose-400 uppercase">🔴 SIN REGISTRO DE ENTRADA HOY</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Timestamp if closed */}
+                    {activeDriverSession?.last_location?.cash_closed && (
+                      <div className="text-right">
+                        <p className="text-[9px] font-black text-slate-400 uppercase">Cerrado el</p>
+                        <p className="font-bold text-white mt-0.5">{new Date(activeDriverSession.last_location.cash_closed_at).toLocaleTimeString()}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="absolute -top-12 -right-12 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl" />
+              </div>
+
+              {/* Main workflow box */}
+              {activeDriverSession?.last_location?.cash_closed ? (
+                /* Closed Ticket Mockup */
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-xl text-center space-y-6"
+                >
+                  <div className="w-16 h-16 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                    <CheckCircle2 size={36} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-800 uppercase italic">¡Caja Liquidada!</h3>
+                    <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mt-1">Has realizado tu cierre de caja de hoy con éxito.</p>
+                  </div>
+
+                  {/* Receipt overview details */}
+                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 text-left space-y-4 max-w-sm mx-auto font-mono text-xs">
+                    <div className="border-b border-dashed border-slate-200 pb-3 text-center">
+                      <p className="font-extrabold text-[10px] tracking-widest text-slate-400 uppercase">QUALITYWATER PURIFICADORA</p>
+                      <p className="text-[10px] text-slate-500 font-bold mt-1">Ticket #: CLOS-{activeDriverSession.id.substring(0, 6).toUpperCase()}</p>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 uppercase">Fondo Recibido:</span>
+                      <span className="font-black text-slate-800">${Number(activeDriverSession.last_location?.cash_float || 0).toFixed(2)}</span>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 uppercase">Ventas Entregadas:</span>
+                      <span className="font-black text-slate-800">${Number(activeDriverSession.last_location?.cash_sales_total || 0).toFixed(2)}</span>
+                    </div>
+
+                    <div className="border-t border-dashed border-slate-200 pt-3 flex justify-between font-extrabold text-sm">
+                      <span className="text-slate-500 uppercase">TOTAL ENTREGADO:</span>
+                      <span className="text-slate-800">${Number(activeDriverSession.last_location?.cash_total_to_deliver || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const completeClosureData = {
+                        name: currentUser.name,
+                        cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
+                        sales_total: Number(activeDriverSession.last_location?.cash_sales_total || 0),
+                        orders_count: todaySales[currentUser.name]?.ordersCount || 0,
+                        total_to_deliver: Number(activeDriverSession.last_location?.cash_total_to_deliver || 0),
+                        closed_at: activeDriverSession.last_location?.cash_closed_at,
+                        closed_by_name: activeDriverSession.last_location?.closed_by_name
+                      };
+                      handleExportReceiptPDF(completeClosureData);
+                    }}
+                    className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-4 rounded-[20px] font-black text-xs uppercase tracking-widest shadow-xl transition-all mx-auto active:scale-95"
+                  >
+                    <Download size={16} /> Descargar Comprobante PDF
+                  </button>
+                </motion.div>
+              ) : activeDriverSession?.last_location?.cash_float !== undefined ? (
+                /* Driver Drawer active - can perform Cierre */
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Fondo de Caja (Inicio)</p>
+                      <p className="text-2xl font-black text-slate-800 mt-2">
+                        ${Number(activeDriverSession?.last_location?.cash_float || 0).toFixed(2)}
+                      </p>
+                      <span className="text-[8px] text-slate-400 block mt-1 uppercase">Entregado por el Admin</span>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Tus Ventas de Hoy</p>
+                      <p className="text-2xl font-black text-slate-800 mt-2">
+                        ${Number(todaySales[currentUser.name]?.salesTotal || 0).toFixed(2)}
+                      </p>
+                      <span className="text-[8px] text-slate-400 block mt-1 uppercase">
+                        {todaySales[currentUser.name]?.ordersCount || 0} pedidos confirmados
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Math Formula visual presentation */}
+                  <div className="bg-sky-50/50 p-8 rounded-[36px] border border-sky-100/50 space-y-6">
+                    <h4 className="text-[10px] font-black text-sky-600 uppercase tracking-widest mb-1">Cálculo de Fórmula de Cierre de Caja</h4>
+                    
+                    <div className="space-y-3 font-bold text-sm text-slate-600">
+                      <div className="flex justify-between">
+                        <span>Fondo de Caja inicial:</span>
+                        <span className="text-slate-800">${Number(activeDriverSession.last_location.cash_float).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-sky-100 pb-3">
+                        <span>+ Ventas cobradas hoy:</span>
+                        <span className="text-slate-800">${Number(todaySales[currentUser.name]?.salesTotal || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-base font-black pt-2 text-slate-800">
+                        <span className="uppercase">EFECTIVO A ENTREGAR:</span>
+                        <span className="text-sky-600">
+                          ${(Number(activeDriverSession.last_location.cash_float) + Number(todaySales[currentUser.name]?.salesTotal || 0)).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cierre Action Button */}
+                  <button
+                    onClick={() => {
+                      const dummyDrv = {
+                        name: currentUser.name,
+                        cash_float: Number(activeDriverSession.last_location.cash_float),
+                        sales_total: Number(todaySales[currentUser.name]?.salesTotal || 0)
+                      };
+                      setSelectedDriverForClose(dummyDrv);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-[24px] font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-950/10 active:scale-95 transition-all"
+                  >
+                    <Lock size={16} /> Realizar Cierre de Caja de Hoy
+                  </button>
+                </div>
+              ) : (
+                /* Waiting for cash float assignment */
+                <div className="bg-white p-12 rounded-[40px] border border-slate-100 shadow-xl text-center space-y-6">
+                  <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto">
+                    <Clock size={32} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-800 uppercase italic">Esperando Asignación de Fondo</h3>
+                    <p className="text-xs text-slate-400 font-bold max-w-sm mx-auto uppercase mt-2 leading-relaxed">
+                      Para poder iniciar tu jornada y registrar tus ventas, el administrador o la planta de control debe asignarte un flotante de caja de inicio (ej. $600 pesos).
+                    </p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-2xl text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                    ⚠️ Por favor solicita tu fondo al encargado antes de salir a ruta.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* MODAL: ASSIGN INITIAL FLOAT (FOR ADMIN/OPERATORS) */}
+      <AnimatePresence>
+        {selectedDriverForFloat && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !actionLoading && setSelectedDriverForFloat(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8 z-[121]"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-slate-800 uppercase italic">Asignar <span className="text-sky-500">Fondo de Caja</span></h3>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedDriverForFloat(null)}
+                  disabled={actionLoading}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-slate-50 p-4 rounded-2xl flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black">
+                    {selectedDriverForFloat.name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-black uppercase">Fondo para el repartidor</p>
+                    <p className="text-sm font-black text-slate-800 uppercase italic">{selectedDriverForFloat.name}</p>
+                  </div>
+                </div>
+
+                {/* Preset quick values selector */}
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Valores Rápidos de Asignación</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {['200', '400', '600', '1000'].map((val) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setCustomFloatAmount(val)}
+                        className={`p-3 rounded-2xl font-black text-xs transition-all border ${
+                          customFloatAmount === val 
+                            ? 'bg-sky-50 border-sky-500 text-sky-600' 
+                            : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        ${val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom numeric field */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">O Ingresa un Monto Personalizado ($)</label>
+                  <input 
+                    type="number"
+                    value={customFloatAmount}
+                    onChange={(e) => setCustomFloatAmount(e.target.value)}
+                    placeholder="Ej. 600"
+                    placeholderClassName="placeholder:font-bold"
+                    className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-base font-black text-slate-800 outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => setSelectedDriverForFloat(null)}
+                    className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all text-center"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={actionLoading || !customFloatAmount || isNaN(Number(customFloatAmount))}
+                    onClick={() => handleAssignFloat(selectedDriverForFloat.name, Number(customFloatAmount))}
+                    className="flex-2 bg-sky-500 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-sky-500/10 hover:bg-sky-600 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Unlock size={14} />}
+                    Asignar $ {customFloatAmount}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: SHIFT CLOSING CONFIRMATION */}
+      <AnimatePresence>
+        {selectedDriverForClose && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !actionLoading && setSelectedDriverForClose(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8 z-[121]"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-slate-800 uppercase italic">Confirmar <span className="text-sky-500">Cierre de Caja</span></h3>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedDriverForClose(null)}
+                  disabled={actionLoading}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-wide leading-relaxed">
+                  ¿Confirmas que el repartidor ha concluido su turno y deseas realizar el cierre contable con los siguientes datos?
+                </p>
+
+                {/* Closing details list */}
+                <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-3.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Repartidor:</span>
+                    <span className="font-black text-slate-800 italic uppercase">{selectedDriverForClose.name}</span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Fondo Inicial:</span>
+                    <span className="font-black text-slate-800">${Number(selectedDriverForClose.cash_float).toFixed(2)} pesos</span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-400 uppercase">Ventas reportadas:</span>
+                    <span className="font-black text-slate-800">${Number(selectedDriverForClose.sales_total).toFixed(2)} pesos</span>
+                  </div>
+
+                  <div className="border-t border-dashed border-slate-200 pt-3.5 flex justify-between text-slate-800 font-extrabold">
+                    <span className="font-bold text-slate-500 uppercase text-[10px] tracking-widest">EFECTIVO TOTAL ENTREGADO:</span>
+                    <span className="text-sm font-black text-sky-600">
+                      ${(Number(selectedDriverForClose.cash_float) + Number(selectedDriverForClose.sales_total)).toFixed(2)} pesos
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => setSelectedDriverForClose(null)}
+                    className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all text-center"
+                  >
+                    Volver
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => handleCloseCashDrawer(selectedDriverForClose.name, Number(selectedDriverForClose.cash_float), Number(selectedDriverForClose.sales_total))}
+                    className="flex-2 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-950/10 hover:bg-slate-800 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+                    Confirmar y Liquidar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+    </div>
+  );
+}

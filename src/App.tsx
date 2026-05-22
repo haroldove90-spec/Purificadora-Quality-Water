@@ -40,13 +40,14 @@ import QualityLog from './components/QualityLog';
 import ClientStatus from './components/ClientStatus';
 import Notifications from './components/Notifications';
 import POS from './components/POS';
+import CashFloat from './components/CashFloat';
 
 import Lobby from './components/Lobby';
 import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
@@ -457,6 +458,7 @@ export default function App() {
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'cash_float', label: 'Fondo de Caja', icon: DollarSign },
         { id: 'sales', label: 'Métricas', icon: History },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'driver_sales', label: 'Empleados', icon: Truck },
@@ -472,6 +474,7 @@ export default function App() {
         { id: 'route', label: 'Mi Ruta', icon: Truck },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
@@ -483,6 +486,7 @@ export default function App() {
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'sales', label: 'Métricas', icon: History },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'cash_float', label: 'Fondo de Caja', icon: DollarSign },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
@@ -768,6 +772,7 @@ export default function App() {
                  activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={currentRoleView} /> :
                  activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={currentRoleView} /> :
                  activeView === 'attendance' ? <Attendance userRole={currentRoleView} /> :
+                 activeView === 'cash_float' ? <CashFloat userRole={currentRoleView} /> :
                  activeView === 'quality' ? <QualityLog userRole={currentRoleView} /> :
                  activeView === 'route' ? <DeliveryRoute userRole={currentRoleView} /> :
                  activeView === 'client_status' ? <ClientStatus userRole={currentRoleView} /> :
