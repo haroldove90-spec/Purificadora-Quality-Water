@@ -201,7 +201,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       // 2. Fetch daily attendance entries for today
       const { data: attData } = await supabase
         .from('daily_attendance')
-        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
+        .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('work_date', today);
 
       const attendancesList = (attData || []).map((a: any) => ({
@@ -292,7 +292,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       // Find existing attendance
       const { data: existing } = await supabase
         .from('daily_attendance')
-        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
+        .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('user_name', employeeName)
         .eq('work_date', today)
         .maybeSingle();
@@ -314,7 +314,6 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         .upsert(
           {
             ...(existing || {}),
-            user_id: existing?.user_id || targetUserId,
             user_name: employeeName,
             work_date: today,
             user_role: targetUserRole,
@@ -330,7 +329,6 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             .upsert(
               {
                 ...(existing || {}),
-                user_id: existing?.user_id || targetUserId,
                 user_name: employeeName,
                 work_date: today,
                 last_location: updatedLocation
@@ -393,7 +391,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     try {
       const { data: existing } = await supabase
         .from('daily_attendance')
-        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
+        .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('user_name', employeeName)
         .eq('work_date', today)
         .maybeSingle();
@@ -479,7 +477,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     try {
       const { data: existing } = await supabase
         .from('daily_attendance')
-        .select('id, user_id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
+        .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
         .eq('user_name', employeeName)
         .eq('work_date', today)
         .maybeSingle();
