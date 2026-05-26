@@ -599,63 +599,23 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       if (findError) throw findError;
 
       if (existing) {
-        // Safe check for existing clocks
-        const hasTimes = !!(existing.check_in || existing.check_out || existing.break_start || existing.break_end);
+        console.log(`Deleting row completely for ${employeeName}`);
+        const { error: deleteError } = await supabase
+          .from('daily_attendance')
+          .delete()
+          .eq('id', existing.id);
         
-        if (!hasTimes) {
-          console.log(`Deleting row completely for ${employeeName} as there are no attendance clocks`);
-          const { error: deleteError } = await supabase
+        if (deleteError) {
+          console.error('Delete error, trying alternative delete by unique tuple:', deleteError);
+          const { error: altDeleteError } = await supabase
             .from('daily_attendance')
             .delete()
-            .eq('id', existing.id);
+            .eq('user_name', employeeName)
+            .eq('work_date', today);
           
-          if (deleteError) {
-            console.error('Delete error, trying alternative delete by unique tuple:', deleteError);
-            const { error: altDeleteError } = await supabase
-              .from('daily_attendance')
-              .delete()
-              .eq('user_name', employeeName)
-              .eq('work_date', today);
-            
-            if (altDeleteError) {
-              console.error('Alt delete failed, falling back to clearing last_location:', altDeleteError);
-              const { error: fallbackError } = await supabase
-                .from('daily_attendance')
-                .update({ last_location: {} })
-                .eq('id', existing.id);
-              if (fallbackError) throw fallbackError;
-            }
-          }
-        } else {
-          console.log(`Updating row to clear cash fields for ${employeeName} since they have clocks`);
-          const existingLocation = parseJsonFields(existing.last_location);
-          const updatedLocation = { ...existingLocation };
-          
-          delete updatedLocation.cash_float;
-          delete updatedLocation.cash_closed;
-          delete updatedLocation.cash_assigned_at;
-          delete updatedLocation.cash_closed_at;
-          delete updatedLocation.cash_sales_total;
-          delete updatedLocation.cash_orders_count;
-          delete updatedLocation.cash_total_to_deliver;
-          delete updatedLocation.closed_by_role;
-          delete updatedLocation.closed_by_name;
-
-          const { error: updateError } = await supabase
-            .from('daily_attendance')
-            .update({ last_location: updatedLocation })
-            .eq('id', existing.id);
-
-          if (updateError) {
-            console.error('Update failed, trying alternative update by unique tuple:', updateError);
-            const { error: altUpdateError } = await supabase
-              .from('daily_attendance')
-              .update({ last_location: updatedLocation })
-              .eq('user_name', employeeName)
-              .eq('work_date', today);
-            if (altUpdateError) throw altUpdateError;
-          }
+          if (altDeleteError) throw altDeleteError;
         }
+
 
         // Add notification for safety (both employee and admin)
         const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
@@ -722,53 +682,17 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       let countProcessed = 0;
 
       if (existingRecords && existingRecords.length > 0) {
-        for (const existing of existingRecords) {
-          const hasTimes = !!(existing.check_in || existing.check_out || existing.break_start || existing.break_end);
-          
-          if (!hasTimes) {
-            // Completely delete row
-            const { error: deleteError } = await supabase
-              .from('daily_attendance')
-              .delete()
-              .eq('id', existing.id);
-            
-            if (!deleteError) {
-              countProcessed++;
-            } else {
-              console.warn(`Delete failed for ID ${existing.id}, falling back to empty last_location`, deleteError);
-              const { error: fallbackError } = await supabase
-                .from('daily_attendance')
-                .update({ last_location: {} })
-                .eq('id', existing.id);
-              if (!fallbackError) countProcessed++;
-            }
-          } else {
-            // Clear last_location cash fields
-            const existingLocation = parseJsonFields(existing.last_location);
-            const updatedLocation = { ...existingLocation };
-            
-            delete updatedLocation.cash_float;
-            delete updatedLocation.cash_closed;
-            delete updatedLocation.cash_assigned_at;
-            delete updatedLocation.cash_closed_at;
-            delete updatedLocation.cash_sales_total;
-            delete updatedLocation.cash_orders_count;
-            delete updatedLocation.cash_total_to_deliver;
-            delete updatedLocation.closed_by_role;
-            delete updatedLocation.closed_by_name;
-
-            const { error: updateError } = await supabase
-              .from('daily_attendance')
-              .update({ last_location: updatedLocation })
-              .eq('id', existing.id);
-
-            if (!updateError) {
-              countProcessed++;
-            } else {
-              console.error(`Update failed for ID ${existing.id}`, updateError);
-            }
-          }
+        const idsToDelete = existingRecords.map(r => r.id);
+        const { error: deleteError } = await supabase
+          .from('daily_attendance')
+          .delete()
+          .in('id', idsToDelete);
+        
+        if (deleteError) {
+          console.error('Bulk delete failed:', deleteError);
+          throw deleteError;
         }
+        countProcessed = existingRecords.length;
       }
 
       // Add a single notification reporting the action
@@ -814,53 +738,17 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       let countProcessed = 0;
 
       if (allAtt && allAtt.length > 0) {
-        for (const existing of allAtt) {
-          const hasTimes = !!(existing.check_in || existing.check_out || existing.break_start || existing.break_end);
-          
-          if (!hasTimes) {
-            // Completely delete row
-            const { error: deleteError } = await supabase
-              .from('daily_attendance')
-              .delete()
-              .eq('id', existing.id);
-            
-            if (!deleteError) {
-              countProcessed++;
-            } else {
-              console.warn(`Reset delete failed for ID ${existing.id}, falling back to empty last_location`, deleteError);
-              const { error: fallbackError } = await supabase
-                .from('daily_attendance')
-                .update({ last_location: {} })
-                .eq('id', existing.id);
-              if (!fallbackError) countProcessed++;
-            }
-          } else {
-            // Keep the attendance clock but clear cash fields inside last_location
-            const existingLocation = parseJsonFields(existing.last_location);
-            const updatedLocation = { ...existingLocation };
-            
-            delete updatedLocation.cash_float;
-            delete updatedLocation.cash_closed;
-            delete updatedLocation.cash_assigned_at;
-            delete updatedLocation.cash_closed_at;
-            delete updatedLocation.cash_sales_total;
-            delete updatedLocation.cash_orders_count;
-            delete updatedLocation.cash_total_to_deliver;
-            delete updatedLocation.closed_by_role;
-            delete updatedLocation.closed_by_name;
-
-            const { error: updateError } = await supabase
-              .from('daily_attendance')
-              .update({ last_location: updatedLocation })
-              .eq('id', existing.id);
-
-            if (!updateError) {
-              countProcessed++;
-            } else {
-              console.error(`Reset update failed for ID ${existing.id}`, updateError);
-            }
-          }
+        const idsToDelete = allAtt.map(r => r.id);
+        const { error: deleteError } = await supabase
+          .from('daily_attendance')
+          .delete()
+          .in('id', idsToDelete);
+        
+        if (deleteError) {
+          console.error('Reset all failed:', deleteError);
+          throw deleteError;
         }
+        countProcessed = allAtt.length;
       }
 
       // Add a single notification reporting the action
