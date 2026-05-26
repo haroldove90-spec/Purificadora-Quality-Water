@@ -198,7 +198,7 @@ export default function App() {
         lowerMsg.includes('invalid_grant') || 
         lowerMsg.includes('grant') || 
         lowerMsg.includes('authapierror') ||
-        lowerMsg.includes('not found')
+        lowerMsg.includes('token not found')
       ) {
         console.warn('Capturado y mitigado error de Auth del servidor (unhandledrejection):', message);
         try {
@@ -272,11 +272,12 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
       console.log(`Evento de Auth detectado: ${event}`);
-      setSession(currentSession);
       
-      if (currentSession?.user) {
+      if (currentSession) {
+        setSession(currentSession);
         fetchUserRole(currentSession.user.id, currentSession.user.user_metadata?.full_name);
       } else if (event === 'SIGNED_OUT') {
+        setSession(null);
         setUserRole(null);
         setCurrentRoleView(null);
         setActiveView('lobby');
@@ -311,10 +312,29 @@ export default function App() {
           setSession(initialSession);
           await fetchUserRole(initialSession.user.id, initialSession.user.user_metadata?.full_name);
         } else {
-          console.log('No hay sesión de usuario guardada');
-          setUserRole(null);
-          setCurrentRoleView(null);
-          setActiveView('lobby');
+          console.log('No inicial de Supabase. Comprobando backup...');
+          // Si no hay sesión devuelta por Supabase pero tenemos backup, ¡lo conservamos!
+          const backupStr = localStorage.getItem('quality_water_session_backup');
+          let hasBackup = false;
+          if (backupStr) {
+            try {
+              const backup = JSON.parse(backupStr);
+              if (backup && backup.session) {
+                console.log('Sesión recuperada desde el backup de localStorage en refresh');
+                setSession(backup.session);
+                setUserRole(backup.userRole);
+                setCurrentRoleView(backup.currentRoleView);
+                setUserName(backup.userName);
+                hasBackup = true;
+              }
+            } catch (_) {}
+          }
+          
+          if (!hasBackup) {
+            setUserRole(null);
+            setCurrentRoleView(null);
+            setActiveView('lobby');
+          }
         }
       } catch (err: any) {
         console.error('Fallo de inicialización crítica en init:', err);

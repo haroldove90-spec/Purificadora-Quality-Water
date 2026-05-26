@@ -133,6 +133,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
   // Modals and inputs
   const [selectedDriverForFloat, setSelectedDriverForFloat] = useState<Employee | null>(null);
+  const [assignedSuccessModal, setAssignedSuccessModal] = useState<{ employeeName: string; amount: number } | null>(null);
   const [customFloatAmount, setCustomFloatAmount] = useState('600');
   const [selectedDriverForClose, setSelectedDriverForClose] = useState<any | null>(null);
 
@@ -361,6 +362,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       await loadData();
       setSelectedDriverForFloat(null);
+      setAssignedSuccessModal({ employeeName, amount });
     } catch (e: any) {
       if (e.message && (e.message.includes('user_role') || e.message.includes('column'))) {
         alert(
@@ -1381,6 +1383,68 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                     Confirmar y Liquidar
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: ASSIGN SUCCESS POPUP (FOR ADMIN/OPERATORS) */}
+      <AnimatePresence>
+        {assignedSuccessModal && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAssignedSuccessModal(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-[40px] shadow-2xl overflow-hidden p-8 z-[131] text-center"
+            >
+              <div className="flex justify-end absolute top-4 right-4">
+                <button 
+                  type="button"
+                  onClick={() => setAssignedSuccessModal(null)}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="flex flex-col items-center mt-4">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border-4 border-emerald-500/20 text-emerald-500 flex items-center justify-center mb-6">
+                  <CheckCircle2 size={36} />
+                </div>
+                
+                <h3 className="text-xl font-black text-slate-800 uppercase italic mb-2">¡Asignación <span className="text-emerald-500">Exitosa</span>!</h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-wide mb-6">
+                  Fondo de caja registrado correctamente
+                </p>
+
+                <div className="w-full bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4 mb-6">
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] text-slate-400 font-black uppercase mb-1">Empleado</span>
+                    <span className="text-sm font-black text-slate-800 uppercase italic leading-none">{assignedSuccessModal.employeeName}</span>
+                  </div>
+                  <div className="border-t border-dashed border-slate-200" />
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] text-slate-400 font-black uppercase mb-1">Monto Asignado</span>
+                    <span className="text-2xl font-black text-emerald-600">${assignedSuccessModal.amount.toFixed(2)} pesos</span>
+                  </div>
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={() => setAssignedSuccessModal(null)}
+                  className="w-full py-4 bg-slate-950 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-slate-900/10"
+                >
+                  Entendido
+                </button>
               </div>
             </motion.div>
           </div>

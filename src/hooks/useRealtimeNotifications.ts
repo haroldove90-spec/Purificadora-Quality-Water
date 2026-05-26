@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Order, AppNotification } from '../lib/types.supabase';
 
@@ -9,6 +9,7 @@ export function useRealtimeNotifications(userRole: string | null) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState<any[]>([]); 
   const [staffStatus, setStaffStatus] = useState<Record<string, any>>({}); // { user_id: { name, role, last_event, time } }
+  const shownIdsRef = useRef<Set<string>>(new Set());
 
   const playNotificationSound = () => {
     console.log('--- SOUND PLACEHOLDER: Reproduciendo alerta de WhatsApp ---');
@@ -22,7 +23,7 @@ export function useRealtimeNotifications(userRole: string | null) {
     }, 5000);
   };
 
-  const fetchNotificationLogs = async () => {
+  const fetchNotificationLogs = async (triggerAlerts = false) => {
     const twentyFourHoursAgo = new Date();
     twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
     
@@ -48,6 +49,32 @@ export function useRealtimeNotifications(userRole: string | null) {
         read: log.is_read,
         created_at: log.created_at
       }));
+
+      // Si se solicita alertar, mostramos toasts para notificaciones unread nuevas
+      if (triggerAlerts) {
+        formatted.forEach(notif => {
+          if (!notif.read && !shownIdsRef.current.has(notif.id)) {
+            shownIdsRef.current.add(notif.id);
+            
+            // Solo alertar si ocurrió hace menos de 45 segundos para evitar floods
+            const ageMs = Date.now() - new Date(notif.created_at).getTime();
+            if (ageMs < 45000) {
+              addToast({
+                title: notif.title,
+                message: notif.message,
+                type: notif.type
+              });
+              playNotificationSound();
+            }
+          }
+        });
+      } else {
+        // En consultas normales, agregar a mostrados para evitar repetir alertas
+        formatted.forEach(notif => {
+          shownIdsRef.current.add(notif.id);
+        });
+      }
+
       setNotifications(formatted);
       
       const count = formatted.filter(n => !n.read).length;
@@ -83,7 +110,13 @@ export function useRealtimeNotifications(userRole: string | null) {
   useEffect(() => {
     if (!userRole) return;
 
-    fetchNotificationLogs();
+    // Carga inicial sin disparar alertas repetidas
+    fetchNotificationLogs(false);
+
+    // Refuerzo de sincronización proactiva periódica (polling cada 8 segundos de respaldo)
+    const backupInterval = setInterval(() => {
+      fetchNotificationLogs(true);
+    }, 8000);
 
     const psqlChannel = supabase.channel(`notifs_psql_${Math.random().toString(36).slice(2, 10)}`);
 
@@ -97,6 +130,9 @@ export function useRealtimeNotifications(userRole: string | null) {
         if (userRole !== 'admin' && newLog.user_role !== userRole) {
           return;
         }
+
+        // Registrar inmediatamente en mostrados
+        shownIdsRef.current.add(newLog.id);
 
         // Formatear para el estado local
         const formatted: AppNotification = {
@@ -158,9 +194,6 @@ export function useRealtimeNotifications(userRole: string | null) {
 
     // 2. Escuchar Broadcast de Asistencia en un canal separado (Staff Monitor)
     const broadcastChannel = supabase.channel(`staff_bcast_${Math.random().toString(36).slice(2, 10)}`);
-    // Note: To receive broadcasts sent by others, we must listen to the same channel name.
-    // Wait, if I use a unique name, I won't hear them if they send to a specific name.
-    // But broadcast is sent to WHATEVER channel name the sender specified.
     
     const sharedBroadcast = supabase.channel('asistencias_en_vivo');
     sharedBroadcast
@@ -179,6 +212,7 @@ export function useRealtimeNotifications(userRole: string | null) {
       .subscribe();
 
     return () => {
+      clearInterval(backupInterval);
       supabase.removeChannel(psqlChannel);
       supabase.removeChannel(sharedBroadcast);
     };
