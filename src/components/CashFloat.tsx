@@ -219,7 +219,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       const { data: ordersData } = await supabase
         .from('orders')
-        .select('total_price, assigned_to_name, status')
+        .select('total_price, assigned_to_name, status, created_at')
         .eq('status', 'delivered')
         .gte('created_at', startOfDay)
         .lte('created_at', endOfDay);
@@ -240,6 +240,26 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         ordersData.forEach(o => {
           const name = o.assigned_to_name;
           if (name) {
+            // Check if this driver has a cash session and if the order belongs to it
+            const drvAtt = attendancesList.find(a => namesMatch(a.user_name, name));
+            const lastLoc = drvAtt ? parseJsonFields(drvAtt.last_location) : {};
+            const cashAssignedAt = lastLoc.cash_assigned_at;
+            const hasFloat = lastLoc.cash_float !== undefined && lastLoc.cash_float !== null;
+
+            if (hasFloat) {
+              if (cashAssignedAt && !lastLoc.cash_closed) {
+                const orderTime = new Date(o.created_at).getTime();
+                const assignTime = new Date(cashAssignedAt).getTime();
+                // If order was delivered before the cash float was assigned, skip it
+                if (orderTime < assignTime) {
+                  return;
+                }
+              }
+            } else {
+              // No cash float assigned/active yet for this driver, skip today's deliveries prior to a session
+              return;
+            }
+
             if (!salesSummary[name]) {
               salesSummary[name] = {
                 driverName: name,
@@ -396,7 +416,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   };
 
   // Close shift cash drawer
-  const handleCloseCashDrawer = async (employeeName: string, floatAmount: number, salesAmount: number) => {
+  const handleCloseCashDrawer = async (employeeName: string, floatAmount: number, salesAmount: number, ordersCount?: number) => {
     setActionLoading(true);
     const today = new Date().toISOString().split('T')[0];
     const totalToDeliver = floatAmount + salesAmount;
@@ -416,6 +436,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         cash_closed: true,
         cash_closed_at: new Date().toISOString(),
         cash_sales_total: salesAmount,
+        cash_orders_count: ordersCount !== undefined ? ordersCount : (selectedDriverForClose?.orders_count || 0),
         cash_total_to_deliver: totalToDeliver,
         closed_by_role: currentUser.role,
         closed_by_name: currentUser.name
@@ -863,6 +884,15 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       const closedAt = lastLoc.cash_closed_at || null;
       const closedByName = lastLoc.closed_by_name || null;
 
+      // Closed session values
+      const salesTotal = isClosed && lastLoc.cash_sales_total !== undefined 
+        ? Number(lastLoc.cash_sales_total) 
+        : sales.salesTotal;
+        
+      const ordersCount = isClosed && lastLoc.cash_orders_count !== undefined
+        ? Number(lastLoc.cash_orders_count)
+        : sales.ordersCount;
+
       return {
         id: emp.id,
         name: emp.name,
@@ -871,12 +901,12 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         hasClockedIn: !!att?.check_in,
         checkInTime: att?.check_in,
         cash_float: floatVal,
-        sales_total: sales.salesTotal,
-        orders_count: sales.ordersCount,
+        sales_total: salesTotal,
+        orders_count: ordersCount,
         is_closed: isClosed,
         closed_at: closedAt,
         closed_by_name: closedByName,
-        total_to_deliver: floatVal !== null ? floatVal + sales.salesTotal : sales.salesTotal
+        total_to_deliver: floatVal !== null ? floatVal + salesTotal : salesTotal
       };
     });
   };
@@ -1654,7 +1684,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                   <button 
                     type="button"
                     disabled={actionLoading}
-                    onClick={() => handleCloseCashDrawer(selectedDriverForClose.name, Number(selectedDriverForClose.cash_float), Number(selectedDriverForClose.sales_total))}
+                    onClick={() => handleCloseCashDrawer(selectedDriverForClose.name, Number(selectedDriverForClose.cash_float), Number(selectedDriverForClose.sales_total), Number(selectedDriverForClose.orders_count))}
                     className="flex-2 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-950/10 hover:bg-slate-800 transition-all active:scale-95 flex items-center justify-center gap-2"
                   >
                     {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
