@@ -62,6 +62,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeDriverSession, setActiveDriverSession] = useState<any>(null);
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
 
   // helper to match names exactly (case-insensitive, trimmed, and normalized double spaces)
   const namesMatch = (name1?: string, name2?: string): boolean => {
@@ -606,6 +607,177 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     }
   };
 
+  // Bulk delete/reset selected cash float / entries
+  const handleBulkDeleteFloat = async () => {
+    if (selectedEmployees.length === 0) {
+      alert('Por favor selecciona al menos un registro para borrar.');
+      return;
+    }
+
+    const confirmMsg = `¿Estás seguro de eliminar el registro de fondo de caja, asistencia o asignación de los ${selectedEmployees.length} empleados seleccionados? Esto restablecerá su estado de caja y turno para hoy.`;
+    if (!confirm(confirmMsg)) return;
+
+    setActionLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+
+    try {
+      let countDeleted = 0;
+      for (const employeeName of selectedEmployees) {
+        // Find existing attendance
+        const { data: existing } = await supabase
+          .from('daily_attendance')
+          .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
+          .eq('user_name', employeeName)
+          .eq('work_date', today)
+          .maybeSingle();
+
+        if (existing) {
+          // If they haven't clocked in (no check_in time) and no breaks/check_outs, we can safely delete
+          if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
+            const { error } = await supabase
+              .from('daily_attendance')
+              .delete()
+              .eq('id', existing.id);
+            if (error) throw error;
+          } else {
+            // Otherwise keep the attendance record but clear cash fields
+            const existingLocation = parseJsonFields(existing.last_location);
+            const updatedLocation = { ...existingLocation };
+            delete updatedLocation.cash_float;
+            delete updatedLocation.cash_closed;
+            delete updatedLocation.cash_assigned_at;
+            delete updatedLocation.cash_closed_at;
+            delete updatedLocation.cash_sales_total;
+            delete updatedLocation.cash_total_to_deliver;
+            delete updatedLocation.closed_by_role;
+            delete updatedLocation.closed_by_name;
+
+            const fieldsToUpdate = {
+              ...existing,
+              last_location: updatedLocation
+            };
+
+            let { error } = await supabase
+              .from('daily_attendance')
+              .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+
+            if (error) {
+              if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
+                const { user_role, ...cleanFields } = fieldsToUpdate as any;
+                const retryResult = await supabase
+                  .from('daily_attendance')
+                  .upsert(cleanFields, { onConflict: 'user_name, work_date' });
+                error = retryResult.error;
+              }
+            }
+            if (error) throw error;
+          }
+          countDeleted++;
+        }
+      }
+
+      // Add a single notification reporting the action
+      if (countDeleted > 0) {
+        await supabase.from('notifications_log').insert([
+          {
+            title: '🚫 Borrado Masivo de Fondos',
+            message: `El administrador eliminó o restableció los fondos/asistencias de ${countDeleted} empleado(s) seleccionados.`,
+            type: 'finance',
+            user_role: 'admin',
+            is_read: false
+          }
+        ]);
+      }
+
+      setSelectedEmployees([]);
+      await loadData();
+      alert(`Se procesaron y eliminaron/restablecieron los registros de ${countDeleted} empleado(s).`);
+    } catch (e: any) {
+      alert('Error en el borrado masivo: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Delete/reset all cash float / entries for today
+  const handleResetAllFloats = async () => {
+    const confirmMsg = `¿Estás seguro de restablecer o eliminar el registro de fondo de caja, asistencia y asignación de TODOS los empleados de la lista de hoy?`;
+    if (!confirm(confirmMsg)) return;
+
+    setActionLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+
+    try {
+      // Fetch all attendance for today
+      const { data: allAtt } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      if (allAtt && allAtt.length > 0) {
+        for (const existing of allAtt) {
+          if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
+            const { error } = await supabase
+              .from('daily_attendance')
+              .delete()
+              .eq('id', existing.id);
+            if (error) throw error;
+          } else {
+            const existingLocation = parseJsonFields(existing.last_location);
+            const updatedLocation = { ...existingLocation };
+            delete updatedLocation.cash_float;
+            delete updatedLocation.cash_closed;
+            delete updatedLocation.cash_assigned_at;
+            delete updatedLocation.cash_closed_at;
+            delete updatedLocation.cash_sales_total;
+            delete updatedLocation.cash_total_to_deliver;
+            delete updatedLocation.closed_by_role;
+            delete updatedLocation.closed_by_name;
+
+            const fieldsToUpdate = {
+              ...existing,
+              last_location: updatedLocation
+            };
+
+            let { error } = await supabase
+              .from('daily_attendance')
+              .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+
+            if (error) {
+              if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
+                const { user_role, ...cleanFields } = fieldsToUpdate;
+                const retryResult = await supabase
+                  .from('daily_attendance')
+                  .upsert(cleanFields, { onConflict: 'user_name, work_date' });
+                error = retryResult.error;
+              }
+            }
+            if (error) throw error;
+          }
+        }
+
+        // Add a single notification reporting the action
+        await supabase.from('notifications_log').insert([
+          {
+            title: '🚫 Restablecimiento Completo de Fondos',
+            message: `El administrador restableció por completo todos los fondos de caja y registros de asistencia ordinaria de hoy.`,
+            type: 'finance',
+            user_role: 'admin',
+            is_read: false
+          }
+        ]);
+      }
+
+      setSelectedEmployees([]);
+      await loadData();
+      alert('Todos los registros de caja y asistencias no consolidadas han sido eliminados de hoy.');
+    } catch (e: any) {
+      alert('Error al restablecer todos los registros: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Print shift receipt PDF
   const handleExportReceiptPDF = (driverData: any) => {
     const columns = ['Concepto', 'Monto'];
@@ -862,12 +1034,52 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                     </h3>
                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Asignación diaria de fondos e historial de liquidaciones de hoy</p>
                   </div>
+                  {isAdminOrOperator && (
+                    <div className="flex items-center gap-2">
+                      {selectedEmployees.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleBulkDeleteFloat}
+                          className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all shadow-sm border border-rose-100"
+                        >
+                          <Trash2 size={12} />
+                          Borrar Seleccionados ({selectedEmployees.length})
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleResetAllFloats}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all"
+                        title="Restablecer todos los registros de fondos y asistencia de hoy"
+                      >
+                        <RefreshCw size={12} className={actionLoading ? 'animate-spin' : ''} />
+                        Borrar Todo
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest">
                       <tr>
+                        {isAdminOrOperator && (
+                          <th className="px-6 py-4 text-center w-12">
+                            <input
+                              type="checkbox"
+                              checked={driversStatusData.length > 0 && selectedEmployees.length === driversStatusData.length}
+                              onChange={() => {
+                                const allChecked = driversStatusData.length > 0 && selectedEmployees.length === driversStatusData.length;
+                                if (allChecked) {
+                                  setSelectedEmployees([]);
+                                } else {
+                                  setSelectedEmployees(driversStatusData.map(d => d.name));
+                                }
+                              }}
+                              className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer h-4 w-4"
+                            />
+                          </th>
+                        )}
                         <th className="px-8 py-4">Personal</th>
                         <th className="px-8 py-4">Asistencia</th>
                         <th className="px-8 py-4 text-center">Fondo Inicial</th>
@@ -880,13 +1092,29 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                     <tbody className="divide-y divide-slate-50">
                       {driversStatusData.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-8 py-12 text-center text-xs font-bold text-slate-300 uppercase italic">
+                          <td colSpan={isAdminOrOperator ? 8 : 7} className="px-8 py-12 text-center text-xs font-bold text-slate-300 uppercase italic">
                             Sin personal registrado en el sistema.
                           </td>
                         </tr>
                       ) : (
                         driversStatusData.map((drv) => (
                           <tr key={drv.id} className="hover:bg-slate-50 transition-all">
+                            {isAdminOrOperator && (
+                              <td className="px-6 py-5 text-center w-12">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedEmployees.includes(drv.name)}
+                                  onChange={() => {
+                                    if (selectedEmployees.includes(drv.name)) {
+                                      setSelectedEmployees(selectedEmployees.filter(name => name !== drv.name));
+                                    } else {
+                                      setSelectedEmployees([...selectedEmployees, drv.name]);
+                                    }
+                                  }}
+                                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer h-4 w-4"
+                                />
+                              </td>
+                            )}
                             <td className="px-8 py-5">
                               <p className="font-black text-slate-800 text-sm whitespace-nowrap italic">{drv.name}</p>
                               <div className="flex items-center gap-1.5 mt-1">
