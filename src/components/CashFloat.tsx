@@ -589,41 +589,48 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
     try {
       // Find existing attendance
-      const { data: existing } = await supabase
+      const { data: existing, error: findError } = await supabase
         .from('daily_attendance')
         .select('*')
         .eq('user_name', employeeName)
         .eq('work_date', today)
         .maybeSingle();
 
+      if (findError) throw findError;
+
       if (existing) {
-        // If the employee hasn't clocked in (no check_in time) and no breaks/check_outs,
-        // we can safely remove the row, or clear the last_location cash fields.
-        if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
+        // Safe check for existing clocks
+        const hasTimes = !!(existing.check_in || existing.check_out || existing.break_start || existing.break_end);
+        
+        if (!hasTimes) {
+          console.log(`Deleting row completely for ${employeeName} as there are no attendance clocks`);
           const { error: deleteError } = await supabase
             .from('daily_attendance')
             .delete()
             .eq('id', existing.id);
+          
           if (deleteError) {
-            console.warn('Delete failed, fallback to clearing last_location cash fields:', deleteError);
-            const fieldsToUpdate = {
-              ...existing,
-              check_in: null,
-              check_out: null,
-              break_start: null,
-              break_end: null,
-              last_location: {}
-            };
-            const { user_role, ...cleanFields } = fieldsToUpdate as any;
-            const { error: upsertError } = await supabase
+            console.error('Delete error, trying alternative delete by unique tuple:', deleteError);
+            const { error: altDeleteError } = await supabase
               .from('daily_attendance')
-              .upsert(cleanFields, { onConflict: 'user_name, work_date' });
-            if (upsertError) throw upsertError;
+              .delete()
+              .eq('user_name', employeeName)
+              .eq('work_date', today);
+            
+            if (altDeleteError) {
+              console.error('Alt delete failed, falling back to clearing last_location:', altDeleteError);
+              const { error: fallbackError } = await supabase
+                .from('daily_attendance')
+                .update({ last_location: {} })
+                .eq('id', existing.id);
+              if (fallbackError) throw fallbackError;
+            }
           }
         } else {
-          // If they have clocked in already, keep the attendance record but clear cash_float
+          console.log(`Updating row to clear cash fields for ${employeeName} since they have clocks`);
           const existingLocation = parseJsonFields(existing.last_location);
           const updatedLocation = { ...existingLocation };
+          
           delete updatedLocation.cash_float;
           delete updatedLocation.cash_closed;
           delete updatedLocation.cash_assigned_at;
@@ -634,16 +641,20 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           delete updatedLocation.closed_by_role;
           delete updatedLocation.closed_by_name;
 
-          const fieldsToUpdate = {
-            ...existing,
-            last_location: updatedLocation
-          };
-
-          const { user_role, ...cleanFields } = fieldsToUpdate as any;
-          const { error } = await supabase
+          const { error: updateError } = await supabase
             .from('daily_attendance')
-            .upsert(cleanFields, { onConflict: 'user_name, work_date' });
-          if (error) throw error;
+            .update({ last_location: updatedLocation })
+            .eq('id', existing.id);
+
+          if (updateError) {
+            console.error('Update failed, trying alternative update by unique tuple:', updateError);
+            const { error: altUpdateError } = await supabase
+              .from('daily_attendance')
+              .update({ last_location: updatedLocation })
+              .eq('user_name', employeeName)
+              .eq('work_date', today);
+            if (altUpdateError) throw altUpdateError;
+          }
         }
 
         // Add notification for safety (both employee and admin)
@@ -651,7 +662,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         let targetUserRole = targetEmp?.role || 'driver';
         const normRole = targetUserRole.toLowerCase().trim();
         if (normRole === 'administrador' || normRole === 'admin') {
-          targetUserRole = 'driver'; // Los administradores que reciben fondos actúan como repartidores
+          targetUserRole = 'driver';
         } else if (normRole === 'operador' || normRole === 'planta' || normRole === 'operator') {
           targetUserRole = 'operator';
         } else {
@@ -699,7 +710,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      // 1. Fetch all selected attendance records in a single query to prevent N+1 queries
+      // 1. Fetch all selected attendance records in a single query
       const { data: existingRecords, error: fetchError } = await supabase
         .from('daily_attendance')
         .select('*')
@@ -708,18 +719,34 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       if (fetchError) throw fetchError;
 
-      const recordsToDelete: string[] = [];
-      const recordsToUpsert: any[] = [];
+      let countProcessed = 0;
 
       if (existingRecords && existingRecords.length > 0) {
         for (const existing of existingRecords) {
-          // If they haven't clocked in and no breaks/outs, we can safely delete the row
-          if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
-            recordsToDelete.push(existing.id);
+          const hasTimes = !!(existing.check_in || existing.check_out || existing.break_start || existing.break_end);
+          
+          if (!hasTimes) {
+            // Completely delete row
+            const { error: deleteError } = await supabase
+              .from('daily_attendance')
+              .delete()
+              .eq('id', existing.id);
+            
+            if (!deleteError) {
+              countProcessed++;
+            } else {
+              console.warn(`Delete failed for ID ${existing.id}, falling back to empty last_location`, deleteError);
+              const { error: fallbackError } = await supabase
+                .from('daily_attendance')
+                .update({ last_location: {} })
+                .eq('id', existing.id);
+              if (!fallbackError) countProcessed++;
+            }
           } else {
-            // Otherwise, keep the attendance record but clear cash fields
+            // Clear last_location cash fields
             const existingLocation = parseJsonFields(existing.last_location);
             const updatedLocation = { ...existingLocation };
+            
             delete updatedLocation.cash_float;
             delete updatedLocation.cash_closed;
             delete updatedLocation.cash_assigned_at;
@@ -730,55 +757,19 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             delete updatedLocation.closed_by_role;
             delete updatedLocation.closed_by_name;
 
-            const fieldsToUpdate = {
-              ...existing,
-              last_location: updatedLocation
-            };
-            recordsToUpsert.push(fieldsToUpdate);
-          }
-        }
-      }
+            const { error: updateError } = await supabase
+              .from('daily_attendance')
+              .update({ last_location: updatedLocation })
+              .eq('id', existing.id);
 
-      // Execute bulk delete in ONE call
-      if (recordsToDelete.length > 0) {
-        const { error: deleteError } = await supabase
-          .from('daily_attendance')
-          .delete()
-          .in('id', recordsToDelete);
-        
-        if (deleteError) {
-          console.warn('Bulk delete failed. Falling back to clearing cash fields for all.', deleteError);
-          // Fallback: clear the cash fields and attendance times for these records
-          for (const id of recordsToDelete) {
-            const foundRec = existingRecords.find(r => r.id === id);
-            if (foundRec) {
-              recordsToUpsert.push({
-                ...foundRec,
-                check_in: null,
-                check_out: null,
-                break_start: null,
-                break_end: null,
-                last_location: {}
-              });
+            if (!updateError) {
+              countProcessed++;
+            } else {
+              console.error(`Update failed for ID ${existing.id}`, updateError);
             }
           }
         }
       }
-
-      // Execute bulk upsert in ONE call
-      if (recordsToUpsert.length > 0) {
-        const clearedRecordsToUpsert = recordsToUpsert.map(rec => {
-          const { user_role, ...cleanRec } = rec;
-          return cleanRec;
-        });
-
-        const { error: upsertError } = await supabase
-          .from('daily_attendance')
-          .upsert(clearedRecordsToUpsert, { onConflict: 'user_name, work_date' });
-        if (upsertError) throw upsertError;
-      }
-
-      const countProcessed = recordsToDelete.length + recordsToUpsert.length;
 
       // Add a single notification reporting the action
       if (countProcessed > 0) {
@@ -820,16 +811,34 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       if (fetchError) throw fetchError;
 
-      const recordsToDelete: string[] = [];
-      const recordsToUpsert: any[] = [];
+      let countProcessed = 0;
 
       if (allAtt && allAtt.length > 0) {
         for (const existing of allAtt) {
-          if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
-            recordsToDelete.push(existing.id);
+          const hasTimes = !!(existing.check_in || existing.check_out || existing.break_start || existing.break_end);
+          
+          if (!hasTimes) {
+            // Completely delete row
+            const { error: deleteError } = await supabase
+              .from('daily_attendance')
+              .delete()
+              .eq('id', existing.id);
+            
+            if (!deleteError) {
+              countProcessed++;
+            } else {
+              console.warn(`Reset delete failed for ID ${existing.id}, falling back to empty last_location`, deleteError);
+              const { error: fallbackError } = await supabase
+                .from('daily_attendance')
+                .update({ last_location: {} })
+                .eq('id', existing.id);
+              if (!fallbackError) countProcessed++;
+            }
           } else {
+            // Keep the attendance clock but clear cash fields inside last_location
             const existingLocation = parseJsonFields(existing.last_location);
             const updatedLocation = { ...existingLocation };
+            
             delete updatedLocation.cash_float;
             delete updatedLocation.cash_closed;
             delete updatedLocation.cash_assigned_at;
@@ -840,55 +849,19 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             delete updatedLocation.closed_by_role;
             delete updatedLocation.closed_by_name;
 
-            const fieldsToUpdate = {
-              ...existing,
-              last_location: updatedLocation
-            };
-            recordsToUpsert.push(fieldsToUpdate);
-          }
-        }
-      }
+            const { error: updateError } = await supabase
+              .from('daily_attendance')
+              .update({ last_location: updatedLocation })
+              .eq('id', existing.id);
 
-      // Execute bulk delete in ONE call
-      if (recordsToDelete.length > 0) {
-        const { error: deleteError } = await supabase
-          .from('daily_attendance')
-          .delete()
-          .in('id', recordsToDelete);
-        
-        if (deleteError) {
-          console.warn('Reset delete failed. Falling back to clearing cash fields for all.', deleteError);
-          // Fallback: clear the cash fields and attendance times for these records
-          for (const id of recordsToDelete) {
-            const foundRec = allAtt.find(r => r.id === id);
-            if (foundRec) {
-              recordsToUpsert.push({
-                ...foundRec,
-                check_in: null,
-                check_out: null,
-                break_start: null,
-                break_end: null,
-                last_location: {}
-              });
+            if (!updateError) {
+              countProcessed++;
+            } else {
+              console.error(`Reset update failed for ID ${existing.id}`, updateError);
             }
           }
         }
       }
-
-      // Execute bulk upsert in ONE call
-      if (recordsToUpsert.length > 0) {
-        const clearedRecordsToUpsert = recordsToUpsert.map(rec => {
-          const { user_role, ...cleanRec } = rec;
-          return cleanRec;
-        });
-
-        const { error: upsertError } = await supabase
-          .from('daily_attendance')
-          .upsert(clearedRecordsToUpsert, { onConflict: 'user_name, work_date' });
-        if (upsertError) throw upsertError;
-      }
-
-      const countProcessed = recordsToDelete.length + recordsToUpsert.length;
 
       // Add a single notification reporting the action
       if (countProcessed > 0) {
