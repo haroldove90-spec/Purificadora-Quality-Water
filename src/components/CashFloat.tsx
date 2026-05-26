@@ -307,9 +307,19 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         cash_assigned_at: new Date().toISOString()
       };
 
-      const targetEmp = employees.find(e => e.name === employeeName);
+      const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
       const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
-      const targetUserRole = targetEmp?.role || 'driver';
+      let targetUserRole = targetEmp?.role || 'driver';
+
+      // Normalizar roles para las alertas en tiempo real
+      const normRole = targetUserRole.toLowerCase().trim();
+      if (normRole === 'administrador' || normRole === 'admin') {
+        targetUserRole = 'driver'; // Los administradores que reciben fondos actúan como repartidores
+      } else if (normRole === 'operador' || normRole === 'planta' || normRole === 'operator') {
+        targetUserRole = 'operator';
+      } else {
+        targetUserRole = 'driver';
+      }
 
       let { error } = await supabase
         .from('daily_attendance')
@@ -411,7 +421,18 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         closed_by_name: currentUser.name
       };
 
-      const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
+      const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
+      let targetUserRole = targetEmp?.role || 'driver';
+
+      // Normalizar roles para las alertas en tiempo real
+      const normRole = targetUserRole.toLowerCase().trim();
+      if (normRole === 'administrador' || normRole === 'admin') {
+        targetUserRole = 'driver'; // Los administradores que reciben fondos actúan como repartidores
+      } else if (normRole === 'operador' || normRole === 'planta' || normRole === 'operator') {
+        targetUserRole = 'operator';
+      } else {
+        targetUserRole = 'driver';
+      }
 
       // Also set check_out timestamp if closing cash itself is treated as check_out
       const fieldsToUpdate: any = {
@@ -493,7 +514,18 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         cash_reopened_by: currentUser.name
       };
 
-      const targetUserRole = employees.find(e => e.name === employeeName)?.role || 'driver';
+      const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
+      let targetUserRole = targetEmp?.role || 'driver';
+
+      // Normalizar roles para las alertas en tiempo real
+      const normRole = targetUserRole.toLowerCase().trim();
+      if (normRole === 'administrador' || normRole === 'admin') {
+        targetUserRole = 'driver'; // Los administradores que reciben fondos actúan como repartidores
+      } else if (normRole === 'operador' || normRole === 'planta' || normRole === 'operator') {
+        targetUserRole = 'operator';
+      } else {
+        targetUserRole = 'driver';
+      }
 
       let { error } = await supabase
         .from('daily_attendance')
@@ -586,11 +618,29 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           if (error) throw error;
         }
 
-        // Add notification for safety
+        // Add notification for safety (both employee and admin)
+        const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
+        let targetUserRole = targetEmp?.role || 'driver';
+        const normRole = targetUserRole.toLowerCase().trim();
+        if (normRole === 'administrador' || normRole === 'admin') {
+          targetUserRole = 'driver'; // Los administradores que reciben fondos actúan como repartidores
+        } else if (normRole === 'operador' || normRole === 'planta' || normRole === 'operator') {
+          targetUserRole = 'operator';
+        } else {
+          targetUserRole = 'driver';
+        }
+
         await supabase.from('notifications_log').insert([
           {
             title: '🚫 Fondo de Caja Revertido',
             message: `El fondo de caja asignado para hoy a ${employeeName} ha sido cancelado por el administrador.`,
+            type: 'finance',
+            user_role: targetUserRole,
+            is_read: false
+          },
+          {
+            title: '🚫 Fondo de Caja Revertido',
+            message: `Fondo de caja cancelado para ${employeeName}.`,
             type: 'finance',
             user_role: 'admin',
             is_read: false
