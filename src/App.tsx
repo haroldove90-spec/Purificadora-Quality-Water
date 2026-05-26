@@ -404,12 +404,22 @@ export default function App() {
         if (role === 'administrador') role = 'admin';
         
         setUserRole(role as any);
-        setCurrentRoleView(role as any);
+        
+        // Mantener la vista de rol seleccionada previamente por el usuario si está guardada en localStorage
+        const savedRoleView = localStorage.getItem('currentRoleView');
+        const finalRoleView = (savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView))
+          ? (savedRoleView as any)
+          : (role as any);
+          
+        setCurrentRoleView(finalRoleView);
         setUserName(data.name);
         
-        // Cambio de vista inmediato
-        if (activeView === 'lobby') {
-          switch(role) {
+        // Cambio de vista inmediato respetando la selección previa de localStorage
+        const savedActiveView = localStorage.getItem('activeView');
+        if (savedActiveView && savedActiveView !== 'lobby') {
+          setActiveView(savedActiveView as View);
+        } else if (activeView === 'lobby') {
+          switch(finalRoleView) {
             case 'admin': setActiveView('metrics'); break;
             case 'operator': setActiveView('pos'); break;
             case 'driver': setActiveView('pos'); break;
@@ -417,17 +427,31 @@ export default function App() {
           }
         }
       } else {
+        const savedRoleView = localStorage.getItem('currentRoleView') as any;
         setUserRole('driver');
-        setCurrentRoleView('driver');
+        setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
         setUserName(defaultName || 'Repartidor');
-        if (activeView === 'lobby') setActiveView('pos');
+        
+        const savedActiveView = localStorage.getItem('activeView');
+        if (savedActiveView && savedActiveView !== 'lobby') {
+          setActiveView(savedActiveView as View);
+        } else if (activeView === 'lobby') {
+          setActiveView('pos');
+        }
       }
     } catch (err) {
       console.error('Error obteniendo rol:', err);
+      const savedRoleView = localStorage.getItem('currentRoleView') as any;
       setUserRole('driver');
-      setCurrentRoleView('driver');
+      setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
       setUserName(defaultName || 'Usuario');
-      if (activeView === 'lobby') setActiveView('pos');
+      
+      const savedActiveView = localStorage.getItem('activeView');
+      if (savedActiveView && savedActiveView !== 'lobby') {
+        setActiveView(savedActiveView as View);
+      } else if (activeView === 'lobby') {
+        setActiveView('pos');
+      }
     } finally {
       setLoading(false);
     }

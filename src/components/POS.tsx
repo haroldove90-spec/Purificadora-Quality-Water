@@ -366,7 +366,7 @@ export default function POS({ userRole }: { userRole: string | null }) {
       total_price: generatedTicket.total,
       status: 'delivered', // Immediate delivery
       source: 'pos', // Source tracking
-      assigned_to_name: userName || (userRole === 'driver' ? 'Repartidor' : 'Operador Planta'),
+      assigned_to_name: userRole === 'driver' ? (userName || 'Repartidor') : 'Mostrador',
       created_at: new Date().toISOString()
     };
 
