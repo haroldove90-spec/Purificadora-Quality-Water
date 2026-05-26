@@ -614,9 +614,10 @@ export default function CashFloat({ userRole }: CashFloatProps) {
               break_end: null,
               last_location: {}
             };
+            const { user_role, ...cleanFields } = fieldsToUpdate as any;
             const { error: upsertError } = await supabase
               .from('daily_attendance')
-              .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+              .upsert(cleanFields, { onConflict: 'user_name, work_date' });
             if (upsertError) throw upsertError;
           }
         } else {
@@ -628,6 +629,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           delete updatedLocation.cash_assigned_at;
           delete updatedLocation.cash_closed_at;
           delete updatedLocation.cash_sales_total;
+          delete updatedLocation.cash_orders_count;
           delete updatedLocation.cash_total_to_deliver;
           delete updatedLocation.closed_by_role;
           delete updatedLocation.closed_by_name;
@@ -637,19 +639,10 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             last_location: updatedLocation
           };
 
-          let { error } = await supabase
+          const { user_role, ...cleanFields } = fieldsToUpdate as any;
+          const { error } = await supabase
             .from('daily_attendance')
-            .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
-
-          if (error) {
-            if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
-              const { user_role, ...cleanFields } = fieldsToUpdate;
-              const retryResult = await supabase
-                .from('daily_attendance')
-                .upsert(cleanFields, { onConflict: 'user_name, work_date' });
-              error = retryResult.error;
-            }
-          }
+            .upsert(cleanFields, { onConflict: 'user_name, work_date' });
           if (error) throw error;
         }
 
@@ -706,40 +699,25 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      let countDeleted = 0;
-      for (const employeeName of selectedEmployees) {
-        // Find existing attendance
-        const { data: existing } = await supabase
-          .from('daily_attendance')
-          .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
-          .eq('user_name', employeeName)
-          .eq('work_date', today)
-          .maybeSingle();
+      // 1. Fetch all selected attendance records in a single query to prevent N+1 queries
+      const { data: existingRecords, error: fetchError } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .in('user_name', selectedEmployees)
+        .eq('work_date', today);
 
-        if (existing) {
-          // If they haven't clocked in (no check_in time) and no breaks/check_outs, we can safely delete
+      if (fetchError) throw fetchError;
+
+      const recordsToDelete: string[] = [];
+      const recordsToUpsert: any[] = [];
+
+      if (existingRecords && existingRecords.length > 0) {
+        for (const existing of existingRecords) {
+          // If they haven't clocked in and no breaks/outs, we can safely delete the row
           if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
-            const { error: deleteError } = await supabase
-              .from('daily_attendance')
-              .delete()
-              .eq('id', existing.id);
-            if (deleteError) {
-              console.warn('Bulk delete failed for employee:', employeeName, deleteError);
-              const fieldsToUpdate = {
-                ...existing,
-                check_in: null,
-                check_out: null,
-                break_start: null,
-                break_end: null,
-                last_location: {}
-              };
-              const { error: upsertError } = await supabase
-                .from('daily_attendance')
-                .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
-              if (upsertError) throw upsertError;
-            }
+            recordsToDelete.push(existing.id);
           } else {
-            // Otherwise keep the attendance record but clear cash fields
+            // Otherwise, keep the attendance record but clear cash fields
             const existingLocation = parseJsonFields(existing.last_location);
             const updatedLocation = { ...existingLocation };
             delete updatedLocation.cash_float;
@@ -747,6 +725,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             delete updatedLocation.cash_assigned_at;
             delete updatedLocation.cash_closed_at;
             delete updatedLocation.cash_sales_total;
+            delete updatedLocation.cash_orders_count;
             delete updatedLocation.cash_total_to_deliver;
             delete updatedLocation.closed_by_role;
             delete updatedLocation.closed_by_name;
@@ -755,32 +734,58 @@ export default function CashFloat({ userRole }: CashFloatProps) {
               ...existing,
               last_location: updatedLocation
             };
-
-            let { error } = await supabase
-              .from('daily_attendance')
-              .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
-
-            if (error) {
-              if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
-                const { user_role, ...cleanFields } = fieldsToUpdate as any;
-                const retryResult = await supabase
-                  .from('daily_attendance')
-                  .upsert(cleanFields, { onConflict: 'user_name, work_date' });
-                error = retryResult.error;
-              }
-            }
-            if (error) throw error;
+            recordsToUpsert.push(fieldsToUpdate);
           }
-          countDeleted++;
         }
       }
 
+      // Execute bulk delete in ONE call
+      if (recordsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('daily_attendance')
+          .delete()
+          .in('id', recordsToDelete);
+        
+        if (deleteError) {
+          console.warn('Bulk delete failed. Falling back to clearing cash fields for all.', deleteError);
+          // Fallback: clear the cash fields and attendance times for these records
+          for (const id of recordsToDelete) {
+            const foundRec = existingRecords.find(r => r.id === id);
+            if (foundRec) {
+              recordsToUpsert.push({
+                ...foundRec,
+                check_in: null,
+                check_out: null,
+                break_start: null,
+                break_end: null,
+                last_location: {}
+              });
+            }
+          }
+        }
+      }
+
+      // Execute bulk upsert in ONE call
+      if (recordsToUpsert.length > 0) {
+        const clearedRecordsToUpsert = recordsToUpsert.map(rec => {
+          const { user_role, ...cleanRec } = rec;
+          return cleanRec;
+        });
+
+        const { error: upsertError } = await supabase
+          .from('daily_attendance')
+          .upsert(clearedRecordsToUpsert, { onConflict: 'user_name, work_date' });
+        if (upsertError) throw upsertError;
+      }
+
+      const countProcessed = recordsToDelete.length + recordsToUpsert.length;
+
       // Add a single notification reporting the action
-      if (countDeleted > 0) {
+      if (countProcessed > 0) {
         await supabase.from('notifications_log').insert([
           {
             title: '🚫 Borrado Masivo de Fondos',
-            message: `El administrador eliminó o restableció los fondos/asistencias de ${countDeleted} empleado(s) seleccionados.`,
+            message: `El administrador eliminó o restableció los fondos/asistencias de ${countProcessed} empleado(s) seleccionados.`,
             type: 'finance',
             user_role: 'admin',
             is_read: false
@@ -790,7 +795,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       setSelectedEmployees([]);
       await loadData();
-      alert(`Se procesaron y eliminaron/restablecieron los registros de ${countDeleted} empleado(s).`);
+      alert(`Se procesaron y eliminaron/restablecieron los registros de ${countProcessed} empleado(s).`);
     } catch (e: any) {
       alert('Error en el borrado masivo: ' + e.message);
     } finally {
@@ -807,34 +812,21 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      // Fetch all attendance for today
-      const { data: allAtt } = await supabase
+      // Fetch all attendance for today in a single query
+      const { data: allAtt, error: fetchError } = await supabase
         .from('daily_attendance')
         .select('*')
         .eq('work_date', today);
 
+      if (fetchError) throw fetchError;
+
+      const recordsToDelete: string[] = [];
+      const recordsToUpsert: any[] = [];
+
       if (allAtt && allAtt.length > 0) {
         for (const existing of allAtt) {
           if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
-            const { error: deleteError } = await supabase
-              .from('daily_attendance')
-              .delete()
-              .eq('id', existing.id);
-            if (deleteError) {
-              console.warn('Reset delete failed for employee:', existing.user_name, deleteError);
-              const fieldsToUpdate = {
-                ...existing,
-                check_in: null,
-                check_out: null,
-                break_start: null,
-                break_end: null,
-                last_location: {}
-              };
-              const { error: upsertError } = await supabase
-                .from('daily_attendance')
-                .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
-              if (upsertError) throw upsertError;
-            }
+            recordsToDelete.push(existing.id);
           } else {
             const existingLocation = parseJsonFields(existing.last_location);
             const updatedLocation = { ...existingLocation };
@@ -843,6 +835,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             delete updatedLocation.cash_assigned_at;
             delete updatedLocation.cash_closed_at;
             delete updatedLocation.cash_sales_total;
+            delete updatedLocation.cash_orders_count;
             delete updatedLocation.cash_total_to_deliver;
             delete updatedLocation.closed_by_role;
             delete updatedLocation.closed_by_name;
@@ -851,29 +844,58 @@ export default function CashFloat({ userRole }: CashFloatProps) {
               ...existing,
               last_location: updatedLocation
             };
-
-            let { error } = await supabase
-              .from('daily_attendance')
-              .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
-
-            if (error) {
-              if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
-                const { user_role, ...cleanFields } = fieldsToUpdate;
-                const retryResult = await supabase
-                  .from('daily_attendance')
-                  .upsert(cleanFields, { onConflict: 'user_name, work_date' });
-                error = retryResult.error;
-              }
-            }
-            if (error) throw error;
+            recordsToUpsert.push(fieldsToUpdate);
           }
         }
+      }
 
-        // Add a single notification reporting the action
+      // Execute bulk delete in ONE call
+      if (recordsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('daily_attendance')
+          .delete()
+          .in('id', recordsToDelete);
+        
+        if (deleteError) {
+          console.warn('Reset delete failed. Falling back to clearing cash fields for all.', deleteError);
+          // Fallback: clear the cash fields and attendance times for these records
+          for (const id of recordsToDelete) {
+            const foundRec = allAtt.find(r => r.id === id);
+            if (foundRec) {
+              recordsToUpsert.push({
+                ...foundRec,
+                check_in: null,
+                check_out: null,
+                break_start: null,
+                break_end: null,
+                last_location: {}
+              });
+            }
+          }
+        }
+      }
+
+      // Execute bulk upsert in ONE call
+      if (recordsToUpsert.length > 0) {
+        const clearedRecordsToUpsert = recordsToUpsert.map(rec => {
+          const { user_role, ...cleanRec } = rec;
+          return cleanRec;
+        });
+
+        const { error: upsertError } = await supabase
+          .from('daily_attendance')
+          .upsert(clearedRecordsToUpsert, { onConflict: 'user_name, work_date' });
+        if (upsertError) throw upsertError;
+      }
+
+      const countProcessed = recordsToDelete.length + recordsToUpsert.length;
+
+      // Add a single notification reporting the action
+      if (countProcessed > 0) {
         await supabase.from('notifications_log').insert([
           {
             title: '🚫 Restablecimiento Completo de Fondos',
-            message: `El administrador restableció por completo todos los fondos de caja y registros de asistencia ordinaria de hoy.`,
+            message: `El administrador restableció por completo todos los fondos de caja y registros de asistencia de hoy (${countProcessed} registro(s)).`,
             type: 'finance',
             user_role: 'admin',
             is_read: false
@@ -883,7 +905,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       setSelectedEmployees([]);
       await loadData();
-      alert('Todos los registros de caja y asistencias no consolidadas han sido eliminados de hoy.');
+      alert('Se han restablecido exitosamente todos los fondos de caja y cierres de hoy.');
     } catch (e: any) {
       alert('Error al restablecer todos los registros: ' + e.message);
     } finally {
