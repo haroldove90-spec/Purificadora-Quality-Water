@@ -12,7 +12,64 @@ export function useRealtimeNotifications(userRole: string | null) {
   const shownIdsRef = useRef<Set<string>>(new Set());
 
   const playNotificationSound = () => {
-    console.log('--- SOUND PLACEHOLDER: Reproduciendo alerta de WhatsApp ---');
+    console.log('--- SOUND PLACEHOLDER: Reproduciendo alerta de interfaz tonal, positiva, ascendente y procesada ---');
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const now = ctx.currentTime;
+
+      // 1. Synth a ultra-clean, high-end "User Interface, Beep, Button, Tonal, Positive, Ascending, High, Processed" chime
+      // Three pure ascending notes that create a modern, elegant SaaS notification chord (A5 -> C#6 -> E6 -> A6)
+      const notes = [
+        { freq: 880, delay: 0, duration: 0.15, volume: 0.15 },    // A5 (tonal positive base)
+        { freq: 1109, delay: 0.05, duration: 0.15, volume: 0.15 }, // C#6 (major third - optimistic/positive)
+        { freq: 1318, delay: 0.10, duration: 0.20, volume: 0.18 }, // E6 (perfect fifth - stable ascending)
+        { freq: 1760, delay: 0.15, duration: 0.25, volume: 0.20 }  // A6 (high octave - processed peak sparkle)
+      ];
+
+      notes.forEach(note => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        // Pure sine wave combined with an exponential sweep/envelope to sound premium
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(note.freq, now + note.delay);
+        
+        // Attack-Decay envelope
+        gain.gain.setValueAtTime(0, now + note.delay);
+        gain.gain.linearRampToValueAtTime(note.volume, now + note.delay + 0.01); // fast 10ms attack
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + note.delay + note.duration); // smooth exponential release
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(now + note.delay);
+        osc.stop(now + note.delay + note.duration + 0.05);
+      });
+
+      // 2. Synthesize a processed reverb/sparkle tail
+      const sparklySparks = [2218, 2637, 3520]; // matching high-octave harmonics
+      sparklySparks.forEach((freq, idx) => {
+        const oscSpark = ctx.createOscillator();
+        const gainSpark = ctx.createGain();
+        
+        oscSpark.type = 'sine';
+        oscSpark.frequency.setValueAtTime(freq, now + 0.18 + (idx * 0.02));
+        
+        gainSpark.gain.setValueAtTime(0, now + 0.18 + (idx * 0.02));
+        gainSpark.gain.linearRampToValueAtTime(0.02, now + 0.18 + (idx * 0.02) + 0.005);
+        gainSpark.gain.exponentialRampToValueAtTime(0.0001, now + 0.18 + (idx * 0.02) + 0.08); // short delay ring
+        
+        oscSpark.connect(gainSpark);
+        gainSpark.connect(ctx.destination);
+        
+        oscSpark.start(now + 0.18 + (idx * 0.02));
+        oscSpark.stop(now + 0.18 + (idx * 0.02) + 0.10);
+      });
+    } catch (err) {
+      console.warn('Web Audio synthesis failed, falling back to console log:', err);
+    }
   };
 
   const addToast = (toast: any) => {
