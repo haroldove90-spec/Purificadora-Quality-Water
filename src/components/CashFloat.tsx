@@ -600,11 +600,25 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         // If the employee hasn't clocked in (no check_in time) and no breaks/check_outs,
         // we can safely remove the row, or clear the last_location cash fields.
         if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
-          const { error } = await supabase
+          const { error: deleteError } = await supabase
             .from('daily_attendance')
             .delete()
             .eq('id', existing.id);
-          if (error) throw error;
+          if (deleteError) {
+            console.warn('Delete failed, fallback to clearing last_location cash fields:', deleteError);
+            const fieldsToUpdate = {
+              ...existing,
+              check_in: null,
+              check_out: null,
+              break_start: null,
+              break_end: null,
+              last_location: {}
+            };
+            const { error: upsertError } = await supabase
+              .from('daily_attendance')
+              .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+            if (upsertError) throw upsertError;
+          }
         } else {
           // If they have clocked in already, keep the attendance record but clear cash_float
           const existingLocation = parseJsonFields(existing.last_location);
@@ -705,11 +719,25 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         if (existing) {
           // If they haven't clocked in (no check_in time) and no breaks/check_outs, we can safely delete
           if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
-            const { error } = await supabase
+            const { error: deleteError } = await supabase
               .from('daily_attendance')
               .delete()
               .eq('id', existing.id);
-            if (error) throw error;
+            if (deleteError) {
+              console.warn('Bulk delete failed for employee:', employeeName, deleteError);
+              const fieldsToUpdate = {
+                ...existing,
+                check_in: null,
+                check_out: null,
+                break_start: null,
+                break_end: null,
+                last_location: {}
+              };
+              const { error: upsertError } = await supabase
+                .from('daily_attendance')
+                .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+              if (upsertError) throw upsertError;
+            }
           } else {
             // Otherwise keep the attendance record but clear cash fields
             const existingLocation = parseJsonFields(existing.last_location);
@@ -788,11 +816,25 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       if (allAtt && allAtt.length > 0) {
         for (const existing of allAtt) {
           if (!existing.check_in && !existing.check_out && !existing.break_start && !existing.break_end) {
-            const { error } = await supabase
+            const { error: deleteError } = await supabase
               .from('daily_attendance')
               .delete()
               .eq('id', existing.id);
-            if (error) throw error;
+            if (deleteError) {
+              console.warn('Reset delete failed for employee:', existing.user_name, deleteError);
+              const fieldsToUpdate = {
+                ...existing,
+                check_in: null,
+                check_out: null,
+                break_start: null,
+                break_end: null,
+                last_location: {}
+              };
+              const { error: upsertError } = await supabase
+                .from('daily_attendance')
+                .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+              if (upsertError) throw upsertError;
+            }
           } else {
             const existingLocation = parseJsonFields(existing.last_location);
             const updatedLocation = { ...existingLocation };
@@ -1268,8 +1310,8 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                                   </button>
                                 )}
 
-                                {/* Reset/Delete assigned Float / Closure (Always visible to Admin/Operator if cash is initialized or clocked in) */}
-                                {isAdminOrOperator && (drv.cash_float !== null || drv.hasClockedIn) && (
+                                {/* Reset/Delete assigned Float / Closure (Always visible to Admin/Operator to allow resetting any entry) */}
+                                {isAdminOrOperator && (
                                   <button
                                     onClick={() => handleDeleteFloat(drv.name)}
                                     className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
