@@ -516,6 +516,7 @@ export default function App() {
         { id: 'pos', label: 'Venta POS', icon: CreditCard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
+        { id: 'sales', label: 'Mis Ventas', icon: History },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
@@ -528,7 +529,7 @@ export default function App() {
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
-        { id: 'sales', label: 'Métricas', icon: History },
+        { id: 'sales', label: 'Historial Ventas', icon: History },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'cash_float', label: 'Fondo de Caja', icon: DollarSign },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
@@ -809,12 +810,12 @@ export default function App() {
                 {activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
                  activeView === 'inventory' ? <Inventory userRole={currentRoleView} /> :
                  activeView === 'pos' ? <POS userRole={currentRoleView} /> :
-                 activeView === 'finances' ? <Finances userRole={currentRoleView} /> :
-                 activeView === 'metrics' ? <Finances initialTab="metrics" userRole={currentRoleView} /> :
-                 activeView === 'sales' ? <Finances initialTab="sales" userRole={currentRoleView} /> :
-                 activeView === 'customers' ? <Finances initialTab="customers" userRole={currentRoleView} /> :
-                 activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={currentRoleView} /> :
-                 activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={currentRoleView} /> :
+                 activeView === 'finances' ? <Finances userRole={currentRoleView} userName={userName} /> :
+                 activeView === 'metrics' ? <Finances initialTab="metrics" userRole={currentRoleView} userName={userName} /> :
+                 activeView === 'sales' ? <Finances initialTab="sales" userRole={currentRoleView} userName={userName} /> :
+                 activeView === 'customers' ? <Finances initialTab="customers" userRole={currentRoleView} userName={userName} /> :
+                 activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={currentRoleView} userName={userName} /> :
+                 activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'attendance' ? <Attendance userRole={currentRoleView} /> :
                  activeView === 'cash_float' ? <CashFloat userRole={currentRoleView} /> :
                  activeView === 'quality' ? <QualityLog userRole={currentRoleView} /> :

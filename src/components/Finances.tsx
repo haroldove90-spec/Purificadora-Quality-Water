@@ -85,9 +85,11 @@ type Tab = 'metrics' | 'sales' | 'customers' | 'driver_sales' | 'plant_cut';
 
 interface FinancesProps {
   initialTab?: Tab;
+  userRole: string | null;
+  userName?: string | null;
 }
 
-export default function Finances({ initialTab = 'metrics', userRole }: { initialTab?: Tab, userRole: string | null }) {
+export default function Finances({ initialTab = 'metrics', userRole, userName }: FinancesProps) {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [isExporting, setIsExporting] = useState(false);
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
@@ -100,6 +102,45 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
   const [employeesList, setEmployeesList] = useState<any[]>([]);
   const [salesList, setSalesList] = useState<any[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
+  const [salesSearch, setSalesSearch] = useState('');
+
+  const norm = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const namesMatch = (n1?: string, n2?: string) => {
+    if (!n1 || !n2) return false;
+    const s1 = norm(n1);
+    const s2 = norm(n2);
+    return s1.includes(s2) || s2.includes(s1);
+  };
+
+  const getFilteredSales = () => {
+    let list = salesList;
+
+    // Filter by role if not admin
+    if (userRole === 'driver' && userName) {
+      list = list.filter(sale => namesMatch(sale.assigned_to_name, userName));
+    } else if (userRole === 'operator') {
+      // Operator (Planta) roles see counter sales (Mostrador/POS) or general plant sales
+      list = list.filter(sale => 
+        !sale.assigned_to_name || 
+        namesMatch(sale.assigned_to_name, 'Mostrador') || 
+        sale.source === 'local' || 
+        sale.source === 'pos'
+      );
+    }
+
+    // Filter by search query
+    if (salesSearch.trim()) {
+      const q = norm(salesSearch);
+      list = list.filter(sale => 
+        norm(sale.id).includes(q) || 
+        norm(sale.customer_name).includes(q) || 
+        norm(sale.items).includes(q) ||
+        norm(sale.assigned_to_name).includes(q)
+      );
+    }
+
+    return list;
+  };
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -197,8 +238,17 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
 
       if (activeTab === 'sales') {
         filename = 'Reporte_Ventas';
-        columns = ['Folio', 'Cliente', 'Items', 'Método', 'Monto', 'Hora'];
-        data = GLOBAL_SALES.map(s => [s.id, s.customer, s.items, s.method, `$${s.amount}`, s.time]);
+        columns = ['Folio', 'Cliente', 'Cobrado Por', 'Productos/Items', 'Fuente', 'Monto', 'Fecha/Hora'];
+        const listToExport = getFilteredSales();
+        data = listToExport.map(s => [
+          s.id.slice(0, 8).toUpperCase(),
+          s.customer_name || 'Venta Mostrador',
+          s.assigned_to_name || 'Mostrador',
+          s.items || '',
+          s.source === 'local' ? 'Planta' : s.source === 'whatsapp' ? 'WhatsApp' : s.source === 'pos' ? 'Venta POS' : 'Teléfono',
+          `$${Number(s.total_price || 0).toFixed(2)}`,
+          new Date(s.created_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+        ]);
       } else if (activeTab === 'customers') {
         filename = 'Directorio_Clientes';
         columns = ['Nombre', 'Zona', 'Nivel', 'Pedidos'];
@@ -420,7 +470,14 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-slate-800 tracking-tight leading-none italic uppercase">
-            {activeTab === 'sales' ? 'Ventas' : 'Quality'} <span className="text-sky-500">{activeTab === 'sales' ? 'Globales' : 'Admin'}</span>
+            {activeTab === 'sales' 
+              ? (userRole === 'driver' ? 'Mis Ventas' : userRole === 'operator' ? 'Ventas Planta' : 'Ventas') 
+              : 'Quality'} 
+            <span className="text-sky-500">
+              {activeTab === 'sales' 
+                ? (userRole === 'driver' || userRole === 'operator' ? ' del Día' : ' Globales') 
+                : ' Admin'}
+            </span>
           </h1>
           <p className="text-slate-500 mt-2 font-bold flex items-center gap-2 text-sm italic">
             <ShieldCheck size={16} className="text-sky-500" />
@@ -526,14 +583,36 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
             <div className="space-y-6">
               <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Métricas de Ventas</h3>
+                  <div className="flex flex-col">
+                    <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">
+                      {userRole === 'driver' ? 'Mis Registros de Ventas' : userRole === 'operator' ? 'Historial de Caja / Ventas Planta' : 'Métricas de Ventas'}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold mt-1">
+                      {userRole === 'driver' 
+                        ? `Mostrando únicamente tus ventas registradas hoy como ${userName || 'Repartidor'}`
+                        : userRole === 'operator'
+                        ? 'Mostrando las ventas de mostrador / planta registradas en el día'
+                        : 'Mostrando todas las ventas entregadas y liquidadas en el sistema'
+                      }
+                    </p>
+                  </div>
                   <div className="flex items-center gap-3">
                     {loadingSales && <Loader2 size={16} className="animate-spin text-sky-500" />}
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleExport('Venta_Filtro')}
+                        className="flex items-center gap-2 bg-slate-100 text-slate-600 px-3.5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all shrink-0"
+                      >
+                        <Download size={12} /> Exportar PDF
+                      </button>
+                    </div>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                       <input 
                         type="text" 
                         placeholder="Buscar folio o cliente..." 
+                        value={salesSearch}
+                        onChange={(e) => setSalesSearch(e.target.value)}
                         className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs outline-none focus:ring-2 focus:ring-sky-500/20"
                       />
                     </div>
@@ -545,6 +624,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                       <tr>
                         <th className="px-6 py-4">Ref / Hora</th>
                         <th className="px-6 py-4">Cliente</th>
+                        <th className="px-6 py-4">Cobrado Por</th>
                         <th className="px-6 py-4">Items / Dirección</th>
                         <th className="px-6 py-4">Fuente</th>
                         <th className="px-6 py-4 text-right">Total</th>
@@ -552,7 +632,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {salesList.length > 0 ? salesList.map((sale) => (
+                      {getFilteredSales().length > 0 ? getFilteredSales().map((sale) => (
                         <tr key={sale.id} className="hover:bg-slate-50 transition-colors group">
                           <td className="px-6 py-4">
                             <p className="font-black text-sky-500 text-xs">{sale.id.slice(0, 8).toUpperCase()}</p>
@@ -560,7 +640,11 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                           </td>
                           <td className="px-6 py-4">
                             <p className="text-xs font-black text-slate-800 uppercase italic leading-none">{sale.customer_name}</p>
-                            {sale.assigned_to_name && <p className="text-[9px] text-slate-400 mt-1">Vendedor: {sale.assigned_to_name}</p>}
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="text-[10px] font-black uppercase text-slate-600 italic">
+                              {sale.assigned_to_name || 'Mostrador'}
+                            </p>
                           </td>
                           <td className="px-6 py-4">
                             <p className="text-[10px] text-slate-500 font-black uppercase">{sale.items}</p>
@@ -591,7 +675,7 @@ export default function Finances({ initialTab = 'metrics', userRole }: { initial
                         </tr>
                       )) : !loadingSales && (
                         <tr>
-                          <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                          <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
                             <History size={40} className="mx-auto mb-4 opacity-20" />
                             <p className="font-black uppercase text-[10px] tracking-widest">No hay ventas registradas hoy</p>
                           </td>
