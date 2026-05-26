@@ -24,61 +24,66 @@ export function useRealtimeNotifications(userRole: string | null) {
   };
 
   const fetchNotificationLogs = async (triggerAlerts = false) => {
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
-    
-    let query = supabase
-      .from('notifications_log')
-      .select('*')
-      .gte('created_at', twentyFourHoursAgo.toISOString())
-      .order('created_at', { ascending: false });
+    try {
+      const twentyFourHoursAgo = new Date();
+      twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+      
+      let query = supabase
+        .from('notifications_log')
+        .select('*')
+        .gte('created_at', twentyFourHoursAgo.toISOString())
+        .order('created_at', { ascending: false });
 
-    // Filtrar por rol si no es admin
-    if (userRole !== 'admin') {
-      query = query.eq('user_role', userRole);
-    }
-
-    const { data } = await query.limit(50);
-    
-    if (data) {
-      const formatted: AppNotification[] = data.map(log => ({
-        id: log.id,
-        title: log.title,
-        message: log.message,
-        type: log.type as any,
-        read: log.is_read,
-        created_at: log.created_at
-      }));
-
-      // Si se solicita alertar, mostramos toasts para notificaciones unread nuevas
-      if (triggerAlerts) {
-        formatted.forEach(notif => {
-          if (!notif.read && !shownIdsRef.current.has(notif.id)) {
-            shownIdsRef.current.add(notif.id);
-            
-            // Solo alertar si ocurrió hace menos de 45 segundos para evitar floods
-            const ageMs = Date.now() - new Date(notif.created_at).getTime();
-            if (ageMs < 45000) {
-              addToast({
-                title: notif.title,
-                message: notif.message,
-                type: notif.type
-              });
-              playNotificationSound();
-            }
-          }
-        });
-      } else {
-        // En consultas normales, agregar a mostrados para evitar repetir alertas
-        formatted.forEach(notif => {
-          shownIdsRef.current.add(notif.id);
-        });
+      // Filtrar por rol si no es admin
+      if (userRole !== 'admin') {
+        query = query.eq('user_role', userRole);
       }
 
-      setNotifications(formatted);
+      const { data, error } = await query.limit(50);
+      if (error) throw error;
       
-      const count = formatted.filter(n => !n.read).length;
-      setUnreadCount(count);
+      if (data) {
+        const formatted: AppNotification[] = data.map(log => ({
+          id: log.id,
+          title: log.title,
+          message: log.message,
+          type: log.type as any,
+          read: log.is_read,
+          created_at: log.created_at
+        }));
+
+        // Si se solicita alertar, mostramos toasts para notificaciones unread nuevas
+        if (triggerAlerts) {
+          formatted.forEach(notif => {
+            if (!notif.read && !shownIdsRef.current.has(notif.id)) {
+              shownIdsRef.current.add(notif.id);
+              
+              // Solo alertar si ocurrió hace menos de 45 segundos para evitar floods
+              const ageMs = Date.now() - new Date(notif.created_at).getTime();
+              if (ageMs < 45000) {
+                addToast({
+                  title: notif.title,
+                  message: notif.message,
+                  type: notif.type
+                });
+                playNotificationSound();
+              }
+            }
+          });
+        } else {
+          // En consultas normales, agregar a mostrados para evitar repetir alertas
+          formatted.forEach(notif => {
+            shownIdsRef.current.add(notif.id);
+          });
+        }
+
+        setNotifications(formatted);
+        
+        const count = formatted.filter(n => !n.read).length;
+        setUnreadCount(count);
+      }
+    } catch (err: any) {
+      console.warn('Fallo silencioso al recuperar notificaciones (posible problema de red):', err.message || err);
     }
   };
 
