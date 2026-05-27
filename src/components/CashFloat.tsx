@@ -1006,7 +1006,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   const collectedTotal = driversStatusData.filter(d => d.is_closed).reduce((acc, d) => acc + d.total_to_deliver, 0);
   const activeInPlayTotal = driversStatusData.filter(d => !d.is_closed).reduce((acc, d) => acc + d.total_to_deliver, 0);
 
-  const isAdminOrOperator = currentUser.role === 'admin' || currentUser.role === 'operator';
+  const isAdmin = currentUser.role === 'admin';
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
@@ -1017,7 +1017,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             Módulo <span className="text-sky-500">Fondo de Caja</span>
           </h2>
           <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest leading-none">
-            {isAdminOrOperator 
+            {isAdmin 
               ? 'Control de capital diario, flotantes y liquidación de personal' 
               : 'Detalle de fondo flotante asignado y balance de liquidación diario'}
           </p>
@@ -1032,8 +1032,8 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         </button>
       </div>
 
-      {/* View Switcher Pill (Interactive toggle for Admin and Planta Operator roles) */}
-      {isAdminOrOperator && (
+      {/* View Switcher Pill (Interactive toggle only for Admin role) */}
+      {isAdmin && (
         <div className="flex bg-slate-100 p-1.5 rounded-2xl max-w-sm border border-slate-200/50 shadow-inner">
           <button
             onClick={() => setViewMode('admin')}
@@ -1068,7 +1068,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       ) : (
         <>
           {/* ROL ADMIN / PLANTA PANEL */}
-          {viewMode === 'admin' ? (
+          {isAdmin && viewMode === 'admin' ? (
             <div className="space-y-8">
               {/* Metrics KPIs Dashboard */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1201,7 +1201,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                     </h3>
                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Asignación diaria de fondos e historial de liquidaciones de hoy</p>
                   </div>
-                  {isAdminOrOperator && (
+                  {isAdmin && (
                      <div className="flex items-center gap-2">
                       {selectedEmployees.length > 0 && (
                         <button
@@ -1213,7 +1213,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                           Borrar Seleccionados ({selectedEmployees.length})
                         </button>
                       )}
-                      {currentUser.role === 'admin' && (
+                      {isAdmin && (
                         <button
                           type="button"
                           onClick={handleGlobalCashClose}
@@ -1225,7 +1225,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                           Corte Global
                         </button>
                       )}
-                      {(currentUser.role === 'admin' || currentUser.role === 'operator') && (
+                      {isAdmin && (
                         <button
                           type="button"
                           onClick={handleExportGlobalPDF}
@@ -1254,7 +1254,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                   <table className="w-full text-left">
                     <thead className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest">
                       <tr>
-                        {isAdminOrOperator && (
+                        {isAdmin && (
                           <th className="px-6 py-4 text-center w-12">
                             <input
                               type="checkbox"
@@ -1283,14 +1283,14 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                     <tbody className="divide-y divide-slate-50">
                       {driversStatusData.length === 0 ? (
                         <tr>
-                          <td colSpan={isAdminOrOperator ? 8 : 7} className="px-8 py-12 text-center text-xs font-bold text-slate-300 uppercase italic">
+                          <td colSpan={isAdmin ? 8 : 7} className="px-8 py-12 text-center text-xs font-bold text-slate-300 uppercase italic">
                             Sin personal registrado en el sistema.
                           </td>
                         </tr>
                       ) : (
                         driversStatusData.map((drv) => (
                           <tr key={drv.id} className="hover:bg-slate-50 transition-all">
-                            {isAdminOrOperator && (
+                            {isAdmin && (
                               <td className="px-6 py-5 text-center w-12">
                                 <input
                                   type="checkbox"
@@ -1379,8 +1379,8 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                                   </button>
                                 )}
 
-                                {/* Reset/Delete assigned Float / Closure (Always visible to Admin/Operator to allow resetting any entry) */}
-                                {isAdminOrOperator && (
+                                {/* Reset/Delete assigned Float / Closure (Always visible to Admin to allow resetting any entry) */}
+                                {isAdmin && (
                                   <button
                                     onClick={() => handleDeleteFloat(drv.name)}
                                     className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
