@@ -22,6 +22,7 @@ import { exportToPDF } from '../utils/pdfExport';
 
 export default function DeliveryRoute() {
   const [deliveries, setDeliveries] = useState<Order[]>([]);
+  const [customersList, setCustomersList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDelivery, setSelectedDelivery] = useState<string | null>(null);
   const [jugsReceived, setJugsReceived] = useState(0);
@@ -53,9 +54,25 @@ export default function DeliveryRoute() {
   const driverId = '00000000-0000-0000-0000-000000000000'; 
   const { openNavigation } = useDriverRoute(driverId);
 
+  const handleOpenNavigation = (order: Order) => {
+    const clientMatch = customersList.find(c => c.name === order.customer_name);
+    if (clientMatch?.geolocation_url) {
+      console.log('Navegando a través del enlace de ubicación guardado:', clientMatch.geolocation_url);
+      window.open(clientMatch.geolocation_url, '_blank');
+    } else {
+      openNavigation(order);
+    }
+  };
+
   const fetchDeliveries = async () => {
     setLoading(true);
     try {
+      // Cargamos registros de clientes para ver Alias y Geounicaciones en vivo
+      const { data: custData } = await supabase.from('customers').select('*');
+      if (custData) {
+        setCustomersList(custData);
+      }
+
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -208,27 +225,36 @@ export default function DeliveryRoute() {
           </div>
 
           <div className="space-y-3">
-            {deliveries.map((delivery) => (
-              <div 
-                key={delivery.id}
-                onClick={() => {
-                  if (delivery.status !== 'delivered') {
-                    setSelectedDelivery(delivery.id);
-                    setStep(2);
-                  }
-                }}
-                className={`bg-white p-5 rounded-3xl border border-slate-200 shadow-sm transition-all cursor-pointer group ${
-                  delivery.status === 'delivered' ? 'opacity-50 grayscale pointer-events-none' : 'hover:border-sky-500'
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-lg font-black text-slate-800 leading-none">{delivery.customer_name}</h3>
-                    <p className="text-slate-400 font-bold mt-2 flex items-center gap-1 text-xs italic">
-                      <MapPin size={12} className="text-rose-500 shrink-0" /> 
-                      <span className="truncate w-40">{delivery.address}</span>
-                    </p>
-                  </div>
+            {deliveries.map((delivery) => {
+              const clientMatch = customersList.find(c => c.name === delivery.customer_name);
+              return (
+                <div 
+                  key={delivery.id}
+                  onClick={() => {
+                    if (delivery.status !== 'delivered') {
+                      setSelectedDelivery(delivery.id);
+                      setStep(2);
+                    }
+                  }}
+                  className={`bg-white p-5 rounded-3xl border border-slate-200 shadow-sm transition-all cursor-pointer group ${
+                    delivery.status === 'delivered' ? 'opacity-50 grayscale pointer-events-none' : 'hover:border-sky-500'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-black text-slate-800 leading-none">{delivery.customer_name}</h3>
+                        {clientMatch?.alias && (
+                          <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider shadow-sm border border-amber-200 shrink-0">
+                            {clientMatch.alias}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-400 font-bold mt-2 flex items-center gap-1 text-xs italic">
+                        <MapPin size={12} className="text-rose-500 shrink-0" /> 
+                        <span className="truncate w-40">{delivery.address}</span>
+                      </p>
+                    </div>
                   <div className="text-right">
                     <p className="text-xs font-black text-sky-600 uppercase">
                       {new Date(delivery.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -256,8 +282,9 @@ export default function DeliveryRoute() {
                   )}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
+        </div>
         </motion.div>
       ) : step === 2 ? (
         <motion.div
@@ -273,17 +300,29 @@ export default function DeliveryRoute() {
           </button>
 
           <div className="bg-white p-6 rounded-3xl border-2 border-sky-100 shadow-xl shadow-sky-900/5">
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex-1 pr-4">
-                <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{currentDelivery?.customer_name}</h3>
-                <p className="text-slate-400 font-bold mt-2 flex items-center gap-1 italic leading-tight">
-                  <MapPin size={14} className="text-rose-500 shrink-0" /> {currentDelivery?.address}
-                </p>
-              </div>
-              <div className="bg-sky-50 text-sky-600 px-3 py-1 rounded-xl text-xs font-black uppercase whitespace-nowrap">
-                {currentDelivery?.status}
-              </div>
-            </div>
+            {(() => {
+              const currentClientMatch = customersList.find(c => c.name === currentDelivery?.customer_name);
+              return (
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex-1 pr-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{currentDelivery?.customer_name}</h3>
+                      {currentClientMatch?.alias && (
+                        <span className="bg-amber-100 text-amber-800 text-xs font-black px-2 py-0.5 rounded-md uppercase tracking-wider shadow-sm border border-amber-200 shrink-0">
+                          {currentClientMatch.alias}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-slate-400 font-bold mt-2 flex items-center gap-1 italic leading-tight">
+                      <MapPin size={14} className="text-rose-500 shrink-0" /> {currentDelivery?.address}
+                    </p>
+                  </div>
+                  <div className="bg-sky-50 text-sky-600 px-3 py-1 rounded-xl text-xs font-black uppercase whitespace-nowrap">
+                    {currentDelivery?.status}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="space-y-3 mb-8">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-2">Artículos a Entregar</p>
@@ -295,7 +334,7 @@ export default function DeliveryRoute() {
 
             <div className="grid grid-cols-2 gap-4">
               <button 
-                onClick={() => currentDelivery && openNavigation(currentDelivery)}
+                onClick={() => currentDelivery && handleOpenNavigation(currentDelivery)}
                 className="flex flex-col items-center justify-center gap-2 bg-slate-100 p-4 rounded-2xl hover:bg-slate-200 transition-all min-h-[44px]"
               >
                 <Navigation size={20} className="text-sky-600" />

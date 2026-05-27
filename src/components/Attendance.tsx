@@ -9,9 +9,10 @@ import { supabase } from '../lib/supabaseClient';
 
 interface AttendanceProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
+  userName?: string | null;
 }
 
-export default function Attendance({ userRole }: AttendanceProps) {
+export default function Attendance({ userRole, userName }: AttendanceProps) {
   // Determinar si estamos en modo monitor (Admin) o modo marcado (Empleado)
   const isMonitorMode = userRole === 'admin';
 
@@ -85,21 +86,35 @@ export default function Attendance({ userRole }: AttendanceProps) {
   // Datos de sesión - Prioriza localStorage para coherencia entre módulos
   const [userData, setUserData] = useState({
     user_id: userRole === 'admin' ? 'admin-id' : '00000000-0000-0000-0000-000000000000',
-    user_name: userRole === 'admin' ? 'Administrador' : 'Empleado Demo',
+    user_name: userName || (userRole === 'admin' ? 'Administrador' : 'Empleado Demo'),
     user_role: userRole || 'repartidor'
   });
 
   useEffect(() => {
     const savedSession = localStorage.getItem('qw_session');
+    let finalName = userName || (userRole === 'admin' ? 'Administrador' : 'Empleado Demo');
+    let finalId = userRole === 'admin' ? 'admin-id' : '00000000-0000-0000-0000-000000000000';
+    let finalRole = userRole || 'repartidor';
+
     if (savedSession) {
       try {
         const session = JSON.parse(savedSession);
-        if (session.user_role === userRole || (!userRole && session.user_role)) {
-          setUserData(session);
-        }
+        if (session.user_name && !userName) finalName = session.user_name;
+        if (session.user_id) finalId = session.user_id;
+        if (session.user_role) finalRole = session.user_role;
       } catch (e) {}
     }
-  }, [userRole]);
+
+    if (userName) {
+      finalName = userName;
+    }
+
+    setUserData({
+      user_id: finalId,
+      user_name: finalName,
+      user_role: finalRole
+    });
+  }, [userRole, userName]);
 
   const handleAction = async (actionType: AttendanceAction) => {
     setStatus('loading');

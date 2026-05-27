@@ -84,6 +84,23 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   };
 
   const getDriverSalesObj = (driverName: string) => {
+    const emp = employees.find(e => namesMatch(e.name, driverName));
+    const isOperator = emp?.role === 'operator' || currentUser.role === 'operator';
+
+    if (isOperator) {
+      const ownKey = Object.keys(todaySales).find(k => namesMatch(k, driverName));
+      const mostradorKey = Object.keys(todaySales).find(k => namesMatch(k, 'Mostrador'));
+      
+      const ownSales = ownKey ? todaySales[ownKey] : { salesTotal: 0, ordersCount: 0 };
+      const mostradorSales = mostradorKey ? todaySales[mostradorKey] : { salesTotal: 0, ordersCount: 0 };
+      
+      return {
+        driverName: driverName,
+        salesTotal: (ownSales.salesTotal || 0) + (mostradorSales.salesTotal || 0),
+        ordersCount: (ownSales.ordersCount || 0) + (mostradorSales.ordersCount || 0)
+      };
+    }
+
     const foundKey = Object.keys(todaySales).find(k => namesMatch(k, driverName));
     return foundKey ? todaySales[foundKey] : { salesTotal: 0, ordersCount: 0 };
   };
@@ -213,16 +230,18 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       setAttendances(attendancesList);
 
       // 3. Fetch today's orders delivered by these drivers
-      // Filter status = delivered and created_at on today
-      const startOfDay = `${today}T00:00:00.000Z`;
-      const endOfDay = `${today}T23:59:59.999Z`;
+      // To ensure no sales are lost due to timezone differences, we fetch orders
+      // from yesterday to tomorrow, and then we filter in JavaScript by matching
+      // either the UTC date of the order, or its local date string, to today.
+      const startOfYesterday = new Date(new Date(today).getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] + 'T00:00:00.000Z';
+      const endOfTomorrow = new Date(new Date(today).getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] + 'T23:59:59.999Z';
 
       const { data: ordersData } = await supabase
         .from('orders')
         .select('total_price, assigned_to_name, status, created_at')
         .eq('status', 'delivered')
-        .gte('created_at', startOfDay)
-        .lte('created_at', endOfDay);
+        .gte('created_at', startOfYesterday)
+        .lte('created_at', endOfTomorrow);
 
       const salesSummary: Record<string, OrderItemSummary> = {};
       
@@ -235,29 +254,18 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         };
       });
 
-      // Aggregate
+      const localToday = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local format
       if (ordersData) {
         ordersData.forEach(o => {
           const name = o.assigned_to_name;
           if (name) {
-            // Check if this driver has a cash session and if the order belongs to it
-            const drvAtt = attendancesList.find(a => namesMatch(a.user_name, name));
-            const lastLoc = drvAtt ? parseJsonFields(drvAtt.last_location) : {};
-            const cashAssignedAt = lastLoc.cash_assigned_at;
-            const hasFloat = lastLoc.cash_float !== undefined && lastLoc.cash_float !== null;
-
-            if (hasFloat) {
-              if (cashAssignedAt && !lastLoc.cash_closed) {
-                const orderTime = new Date(o.created_at).getTime();
-                const assignTime = new Date(cashAssignedAt).getTime();
-                // If order was delivered before the cash float was assigned, skip it
-                if (orderTime < assignTime) {
-                  return;
-                }
-              }
-            } else {
-              // No cash float assigned/active yet for this driver, skip today's deliveries prior to a session
-              return;
+            // Match order date: either UTC matches or local format matches
+            const orderUtcDate = o.created_at.split('T')[0];
+            const orderLocalDate = new Date(o.created_at).toLocaleDateString('en-CA');
+            const isTodayOrder = (orderUtcDate === today) || (orderLocalDate === localToday);
+            
+            if (!isTodayOrder) {
+              return; // skip if it's from another day
             }
 
             if (!salesSummary[name]) {
@@ -379,7 +387,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           title: '💲 Fondo de Caja Recibido',
           message: `Hola ${employeeName}, se te ha asignado un fondo de caja de $${amount} pesos para iniciar tu jornada de hoy.`,
           type: 'finance',
-          user_role: targetUserRole,
+          user_role: targetUserRole === 'driver' && targetUserId ? `driver_${targetUserId}` : targetUserRole,
           is_read: false
         },
         {
@@ -419,7 +427,11 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   const handleCloseCashDrawer = async (employeeName: string, floatAmount: number, salesAmount: number, ordersCount?: number) => {
     setActionLoading(true);
     const today = new Date().toISOString().split('T')[0];
-    const totalToDeliver = floatAmount + salesAmount;
+    
+    const cleanFloatAmount = isNaN(floatAmount) ? 0 : floatAmount;
+    const cleanSalesAmount = isNaN(salesAmount) ? 0 : salesAmount;
+    const cleanOrdersCount = (ordersCount !== undefined && !isNaN(ordersCount)) ? ordersCount : (Number(selectedDriverForClose?.orders_count || 0) || 0);
+    const totalToDeliver = cleanFloatAmount + cleanSalesAmount;
 
     try {
       const { data: existing } = await supabase
@@ -432,17 +444,18 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       const existingLocation = parseJsonFields(existing?.last_location);
       const updatedLocation = {
         ...existingLocation,
-        cash_float: floatAmount,
+        cash_float: cleanFloatAmount,
         cash_closed: true,
         cash_closed_at: new Date().toISOString(),
-        cash_sales_total: salesAmount,
-        cash_orders_count: ordersCount !== undefined ? ordersCount : (selectedDriverForClose?.orders_count || 0),
+        cash_sales_total: cleanSalesAmount,
+        cash_orders_count: cleanOrdersCount,
         cash_total_to_deliver: totalToDeliver,
         closed_by_role: currentUser.role,
         closed_by_name: currentUser.name
       };
 
       const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
+      const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
       let targetUserRole = targetEmp?.role || 'driver';
 
       // Normalizar roles para las alertas en tiempo real
@@ -489,14 +502,14 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       await supabase.from('notifications_log').insert([
         {
           title: '📌 Caja Cerrada y Liquidada',
-          message: `Tu caja ha sido cerrada con éxito. Total liquidado: $${totalToDeliver} pesos (Fondo: $${floatAmount} + Ventas: $${salesAmount}).`,
+          message: `Tu caja ha sido cerrada con éxito. Total liquidado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
           type: 'finance',
-          user_role: targetUserRole,
+          user_role: targetUserRole === 'driver' && targetUserId ? `driver_${targetUserId}` : targetUserRole,
           is_read: false
         },
         {
           title: '🚨 Cierre de Caja Realizado',
-          message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${floatAmount} + Ventas: $${salesAmount}).`,
+          message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
           type: 'finance',
           user_role: 'admin',
           is_read: false
@@ -511,6 +524,146 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // Perform global cash register close (corte global de caja) for all employees today
+  const handleGlobalCashClose = async () => {
+    if (!confirm('¿Estás seguro de realizar el corte de caja GLOBAL de hoy? Esto cerrará y liquidará la sesión de todos los empleados y operadores que iniciaron jornada.')) return;
+    
+    setActionLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+    
+    try {
+      // 1. Fetch all attendance logs of today
+      const { data: attData, error: attErr } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+        
+      if (attErr) throw attErr;
+
+      if (!attData || attData.length === 0) {
+        alert('No hay ninguna jornada activa u operaciones registradas el día de hoy para poder realizar el corte global.');
+        return;
+      }
+
+      let closedCount = 0;
+      const notificationsToInsert = [];
+
+      for (const att of attData) {
+        const lastLoc = parseJsonFields(att.last_location);
+        const floatAmount = lastLoc.cash_float !== undefined ? Number(lastLoc.cash_float) : null;
+        const isClosed = !lastLoc.cash_closed;
+
+        // Skip if already closed, or if they don't even have a cash float assigned (meaning session was never opened)
+        if (isClosed || floatAmount === null) {
+          continue;
+        }
+
+        // Calculate sales total for this specific employee
+        const sales = getDriverSalesObj(att.user_name);
+        const totalToDeliver = floatAmount + sales.salesTotal;
+
+        const updatedLocation = {
+          ...lastLoc,
+          cash_float: floatAmount,
+          cash_closed: true,
+          cash_closed_at: new Date().toISOString(),
+          cash_sales_total: sales.salesTotal,
+          cash_orders_count: sales.ordersCount,
+          cash_total_to_deliver: totalToDeliver,
+          closed_by_role: currentUser.role,
+          closed_by_name: currentUser.name
+        };
+
+        const fieldsToUpdate: any = {
+          ...att,
+          last_location: updatedLocation
+        };
+
+        // If they hadn't checked out yet, automatically set a check_out timestamp
+        if (!att.check_out) {
+          fieldsToUpdate.check_out = new Date().toISOString();
+        }
+
+        const { error: updateError } = await supabase
+          .from('daily_attendance')
+          .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+
+        if (!updateError) {
+          closedCount++;
+          
+          notificationsToInsert.push({
+            title: '📌 Caja Cerrada (Corte Global)',
+            message: `Tu caja ha sido cerrada por el Administrador en corte global. Total: $${totalToDeliver} (Fondo: $${floatAmount} + Ventas: $${sales.salesTotal}).`,
+            type: 'finance',
+            user_role: att.user_role || 'driver',
+            is_read: false
+          });
+        }
+      }
+
+      if (closedCount > 0) {
+        notificationsToInsert.push({
+          title: '🚨 Corte Global Realizado',
+          message: `El Administrador realizó un cierre general y arqueo completo de ${closedCount} cajas el día de hoy.`,
+          type: 'finance',
+          user_role: 'admin',
+          is_read: false
+        });
+
+        await supabase.from('notifications_log').insert(notificationsToInsert);
+
+        await loadData();
+        alert(`¡Corte Global completado con éxito! Se cerraron y liquidaron ${closedCount} cajas de empleados.`);
+      } else {
+        alert('Todas las cajas activas de hoy ya estaban cerradas.');
+      }
+    } catch (e: any) {
+      alert('Error en corte de caja global: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Export a consolidated daily balance PDF for all employees and overall flows
+  const handleExportGlobalPDF = () => {
+    const todayDate = new Date().toLocaleDateString('es-MX', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+    const columns = ['Empleado', 'Estatus', 'Fondo Inicial', 'Ventas del Día', 'Pedidos', 'Efectivo a Entregar'];
+    
+    const data = driversStatusData.map(d => {
+      const statusStr = d.is_closed ? 'CERRADA' : d.cash_float !== null ? 'ABIERTA' : 'SIN INICIAR';
+      const roleStr = d.role === 'admin' ? 'Admin' : d.role === 'operator' ? 'Planta' : 'Repartidor';
+      return [
+        `${d.name} (${roleStr})`,
+        statusStr,
+        d.cash_float !== null ? `$${Number(d.cash_float).toFixed(2)}` : '$0.00',
+        `$${Number(d.sales_total).toFixed(2)}`,
+        `${d.orders_count} ped.`,
+        `$${Number(d.total_to_deliver).toFixed(2)}`
+      ];
+    });
+
+    data.push(['', '', '', '', '', '']); // space row
+    data.push(['RESUMEN DE CAPITAL CONSOLIDADO', '', '', '', '', '']);
+    data.push(['Total Fondos Asignados', '', '', '', '', `$${assignedFloatsTotal.toFixed(2)}`]);
+    data.push(['Total Ventas RegistradasToday', '', '', '', '', `$${registeredSalesTotal.toFixed(2)}`]);
+    data.push(['Total Efectivo Recaudado (Cierres)', '', '', '', '', `$${collectedTotal.toFixed(2)}`]);
+    data.push(['Total Flotante Pendiente', '', '', '', '', `$${activeInPlayTotal.toFixed(2)}`]);
+    data.push(['GRAN TOTAL PATRIMONIAL DIARIO', '', '', '', '', `$${(assignedFloatsTotal + registeredSalesTotal).toFixed(2)}`]);
+
+    exportToPDF({
+      title: 'Reporte Global de Cortes de Caja',
+      subtitle: `QualityWater Purificadora - Consolidado Diario - Fecha: ${todayDate}`,
+      columns,
+      data,
+      filename: `Reporte_Global_Cortes_${new Date().toISOString().split('T')[0]}`
+    });
   };
 
   // Re-open Cash drawer (Admin lock toggle)
@@ -619,6 +772,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
         // Add notification for safety (both employee and admin)
         const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
+        const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
         let targetUserRole = targetEmp?.role || 'driver';
         const normRole = targetUserRole.toLowerCase().trim();
         if (normRole === 'administrador' || normRole === 'admin') {
@@ -634,7 +788,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
             title: '🚫 Fondo de Caja Revertido',
             message: `El fondo de caja asignado para hoy a ${employeeName} ha sido cancelado por el administrador.`,
             type: 'finance',
-            user_role: targetUserRole,
+            user_role: targetUserRole === 'driver' && targetUserId ? `driver_${targetUserId}` : targetUserRole,
             is_read: false
           },
           {
@@ -776,21 +930,29 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
   // Print shift receipt PDF
   const handleExportReceiptPDF = (driverData: any) => {
-    const columns = ['Concepto', 'Monto'];
+    const columns = ['Concepto', 'Detalle'];
+    
+    const isClosed = !!driverData.is_closed || !!driverData.closed_at;
+    const statusLabel = isClosed ? 'Cerrada / Liquidada' : 'Caja Abierta (Sesión Activa)';
+    const closeTimeStr = isClosed 
+      ? new Date(driverData.closed_at || '').toLocaleString() 
+      : 'Borrador (Sesión en Curso)';
+
     const data = [
-      ['Fondo de Caja (Inicio)', `$${driverData.cash_float.toFixed(2)} pesos`],
-      ['Ventas del Día (Entregas)', `$${driverData.sales_total.toFixed(2)} pesos`],
-      ['Total de Entregas Realizadas', `${driverData.orders_count} pedidos`],
-      ['Monto Total Neto a Entregar', `$${driverData.total_to_deliver.toFixed(2)} pesos`],
-      ['Estatus de Caja', 'Cerrada / Liquidada'],
-      ['Fecha de Cierre', new Date(driverData.closed_at || '').toLocaleString()],
-      ['Firmado por', `${driverData.name} (Repartidor)`],
-      ['Recibido por', `${driverData.closed_by_name || 'Administrador'}`],
+      ['Empleado', `${driverData.name}`],
+      ['Fondo de Caja (Inicio)', `$${Number(driverData.cash_float || 0).toFixed(2)} pesos`],
+      ['Ventas del Día (Entregas)', `$${Number(driverData.sales_total || 0).toFixed(2)} pesos`],
+      ['Total de Entregas Realizadas', `${driverData.orders_count || 0} pedidos`],
+      ['Monto Total Neto a Entregar', `$${Number(driverData.total_to_deliver || 0).toFixed(2)} pesos`],
+      ['Estatus de Caja', statusLabel],
+      ['Fecha de Cierre / Reporte', closeTimeStr],
+      ['Firmado por', `${driverData.name} (Empleado)`],
+      ['Recibido por', `${driverData.closed_by_name || 'Administrador (Pendiente)'}`],
     ];
 
     exportToPDF({
-      title: 'Comprobante de Cierre de Caja',
-      subtitle: `QualityWater - Repartidor: ${driverData.name} - Fecha: ${todayDate}`,
+      title: isClosed ? 'Comprobante de Cierre de Caja' : 'Borrador de Corte de Caja',
+      subtitle: `QualityWater - Empleado: ${driverData.name} - Fecha: ${todayDate}`,
       columns,
       data,
       filename: `Comprobante_Cierre_${driverData.name.replace(/\s+/g, '_')}`
@@ -1040,7 +1202,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                     <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Asignación diaria de fondos e historial de liquidaciones de hoy</p>
                   </div>
                   {isAdminOrOperator && (
-                    <div className="flex items-center gap-2">
+                     <div className="flex items-center gap-2">
                       {selectedEmployees.length > 0 && (
                         <button
                           type="button"
@@ -1049,6 +1211,30 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                         >
                           <Trash2 size={12} />
                           Borrar Seleccionados ({selectedEmployees.length})
+                        </button>
+                      )}
+                      {currentUser.role === 'admin' && (
+                        <button
+                          type="button"
+                          onClick={handleGlobalCashClose}
+                          disabled={actionLoading}
+                          className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest transition-all shadow-md shadow-amber-500/10"
+                          title="Realizar Corte de Caja Global para todos los empleados de hoy"
+                        >
+                          <Lock size={12} />
+                          Corte Global
+                        </button>
+                      )}
+                      {(currentUser.role === 'admin' || currentUser.role === 'operator') && (
+                        <button
+                          type="button"
+                          onClick={handleExportGlobalPDF}
+                          disabled={actionLoading}
+                          className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all shadow-sm"
+                          title="Exportar Reporte Global de Cortes de Caja de hoy en PDF"
+                        >
+                          <Printer size={12} />
+                          Reporte Global (PDF)
                         </button>
                       )}
                       <button
@@ -1215,7 +1401,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                                 ) : null}
 
                                 {/* Print tickets for closed drawers */}
-                                {drv.is_closed && (
+                                {drv.cash_float !== null && (
                                   <>
                                     <button
                                       onClick={() => handleExportReceiptPDF(drv)}
@@ -1225,8 +1411,8 @@ export default function CashFloat({ userRole }: CashFloatProps) {
                                       <Printer size={15} />
                                     </button>
                                     <button
-                                      onClick={() => handleReopenCashDrawer(drv.name)}
-                                      className="p-1.5 text-slate-400 hover:text-amber-500 transition-colors"
+                                      onClick={() => { if (drv.is_closed) handleReopenCashDrawer(drv.name); }}
+                                      className={`p-1.5 text-slate-400 hover:text-amber-500 transition-colors ${drv.is_closed ? "" : "hidden"}`}
                                       title="Reabrir caja"
                                     >
                                       <Unlock size={14} />
@@ -1569,13 +1755,13 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
               <div className="space-y-6">
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wide leading-relaxed">
-                  ¿Confirmas que el repartidor ha concluido su turno y deseas realizar el cierre contable con los siguientes datos?
+                  ¿Confirmas que {currentUser.role === 'operator' ? 'el personal de planta' : 'el repartidor'} ha concluido su turno y deseas realizar el cierre contable con los siguientes datos?
                 </p>
 
                 {/* Closing details list */}
                 <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-3.5 text-xs">
                   <div className="flex justify-between">
-                    <span className="font-bold text-slate-400 uppercase">Repartidor:</span>
+                    <span className="font-bold text-slate-400 uppercase">{currentUser.role === 'operator' ? 'Operador/Planta:' : 'Repartidor:'}</span>
                     <span className="font-black text-slate-800 italic uppercase">{selectedDriverForClose.name}</span>
                   </div>
 

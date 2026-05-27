@@ -103,6 +103,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [salesList, setSalesList] = useState<any[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
   const [salesSearch, setSalesSearch] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
 
   const norm = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
   const namesMatch = (n1?: string, n2?: string) => {
@@ -110,6 +111,20 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     const s1 = norm(n1);
     const s2 = norm(n2);
     return s1.includes(s2) || s2.includes(s1);
+  };
+
+  const getFilteredCustomers = () => {
+    let list = customersList.length > 0 ? customersList : CLIENT_MANAGEMENT;
+    if (customerFilter.trim()) {
+      const q = norm(customerFilter);
+      list = list.filter(c => 
+        norm(c.name).includes(q) || 
+        norm(c.alias).includes(q) || 
+        norm(c.address || c.neighborhood).includes(q) || 
+        norm(c.phone).includes(q)
+      );
+    }
+    return list;
   };
 
   const getFilteredSales = () => {
@@ -285,8 +300,10 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     setIsSavingCustomer(true);
     
     const formData = new FormData(e.currentTarget);
-    const customerData = {
+    const aliasValue = (formData.get('alias') as string) || '';
+    const customerData: any = {
       name: formData.get('name') as string,
+      alias: aliasValue,
       address: formData.get('address') as string,
       phone: formData.get('phone') as string,
       tier: (formData.get('tier') as string)?.toLowerCase() || 'frequent',
@@ -301,19 +318,13 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           const { error } = await supabase
             .from('customers')
             .insert([customerData]);
-          if (error) {
-            console.error('Error al insertar de mock:', error);
-            throw error;
-          }
+          if (error) throw error;
         } else {
           const { error } = await supabase
             .from('customers')
             .update(customerData)
             .eq('id', editingCustomer.id);
-          if (error) {
-            console.error('Error al actualizar cliente:', error);
-            throw error;
-          }
+          if (error) throw error;
         }
         console.log('Cliente actualizado con éxito');
       } else {
@@ -322,18 +333,42 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           .from('customers')
           .insert([customerData]);
 
-        if (error) {
-          console.error('Error detallado de Supabase (clientes):', error);
-          throw error;
-        }
+        if (error) throw error;
         console.log('Cliente guardado con éxito');
       }
       
       await fetchCustomers();
       handleCloseCustomerModal();
     } catch (error: any) {
-      console.error('Error al guardar cliente:', error);
-      alert('ERROR AL GUARDAR CLIENTE: ' + (error.message || 'Error desconocido') + '\n\nVerifica si la tabla "customers" existe y tiene políticas RLS habilitadas.');
+      console.warn('Fallo inicial con campo alias, intentando fallback sin la columna alias...', error);
+      // Fallback: If 'alias' column does not exist on the database table 'customers',
+      // we remove 'alias' and append it to the client name so information is saved successfully.
+      try {
+        const fallbackData = {
+          ...customerData,
+          name: customerData.name + (aliasValue ? ` (${aliasValue})` : '')
+        };
+        delete fallbackData.alias;
+
+        if (editingCustomer) {
+          if (editingCustomer.id && editingCustomer.id.startsWith('C')) {
+            const { error } = await supabase.from('customers').insert([fallbackData]);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase.from('customers').update(fallbackData).eq('id', editingCustomer.id);
+            if (error) throw error;
+          }
+        } else {
+          const { error } = await supabase.from('customers').insert([fallbackData]);
+          if (error) throw error;
+        }
+        console.log('Cliente guardado con éxito mediante fallback de nombre');
+        await fetchCustomers();
+        handleCloseCustomerModal();
+      } catch (fallbackError: any) {
+        console.error('Failure saving fallback client:', fallbackError);
+        alert('ERROR AL GUARDAR CLIENTE: ' + (fallbackError.message || 'Error desconocido'));
+      }
     } finally {
       setIsSavingCustomer(false);
     }
@@ -691,8 +726,29 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           {activeTab === 'customers' && (
             <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Base de Datos de Clientes</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Base de Datos de Clientes</h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Buscador y directorio completo de nombres, alias y zonas</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre, alias o zona..."
+                      value={customerFilter}
+                      onChange={(e) => setCustomerFilter(e.target.value)}
+                      className="pl-9 pr-8 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-sky-500/20 transition-all w-56 placeholder-slate-400"
+                    />
+                    {customerFilter && (
+                      <button
+                        onClick={() => setCustomerFilter('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-extrabold"
+                      >
+                        [x]
+                      </button>
+                    )}
+                  </div>
                   <button 
                     onClick={() => handleExport('Cartera de Clientes')}
                     className="flex items-center gap-2 bg-slate-100 text-slate-600 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
@@ -714,7 +770,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 <table className="w-full text-left">
                   <thead className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest">
                     <tr>
-                      <th className="px-6 py-4">Nombre / Zona</th>
+                      <th className="px-6 py-4">Nombre / Zona / Alias</th>
                       <th className="px-6 py-4">Suscripción</th>
                       <th className="px-6 py-4">Acumulado</th>
                       <th className="px-6 py-4">Ultimo Pedido</th>
@@ -722,11 +778,20 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {customersList.length > 0 ? customersList.map((client) => (
+                    {getFilteredCustomers().map((client) => (
                       <tr key={client.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
-                          <p className="font-black text-slate-800 text-sm">{client.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{client.address || 'Sin zona'}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-black text-slate-800 text-sm">{client.name}</p>
+                            {client.alias && (
+                              <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider shrink-0 shadow-sm border border-amber-200">
+                                {client.alias}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">
+                            {client.address || client.neighborhood || 'Sin zona'}
+                          </p>
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
@@ -735,44 +800,12 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             {client.tier || 'Frecuente'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-xs font-black text-slate-800">0 Entregas</td>
-                        <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase italic">Hoy</td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button 
-                              onClick={() => handleStartEditCustomer(client)}
-                              className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
-                              title="Ver / Editar"
-                            >
-                              <Edit3 size={16} />
-                            </button>
-                            {userRole === 'admin' && (
-                              <button 
-                                onClick={() => handleDeleteCustomer(client.id, client.name)}
-                                className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                                title="Eliminar"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            )}
-                          </div>
+                        <td className="px-6 py-4 text-xs font-black text-slate-800">
+                          {client.totalOrders || '0'} Entregas
                         </td>
-                      </tr>
-                    )) : CLIENT_MANAGEMENT.map((client) => (
-                      <tr key={client.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <p className="font-black text-slate-800 text-sm">{client.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{client.neighborhood}</p>
+                        <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase italic">
+                          {client.lastActivity || 'Hoy'}
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
-                            client.tier === 'VIP' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
-                          }`}>
-                            {client.tier}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-xs font-black text-slate-800">{client.totalOrders} Entregas</td>
-                        <td className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase italic">{client.lastActivity}</td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button 
@@ -795,6 +828,14 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                         </td>
                       </tr>
                     ))}
+                    {getFilteredCustomers().length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="text-center py-12 text-slate-400">
+                          <p className="font-black uppercase text-[10px] tracking-widest mb-1 italic">No se encontraron clientes</p>
+                          <p className="text-xs">Usa otro término de búsqueda o registra un nuevo cliente arriba.</p>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1109,6 +1150,10 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo</label>
                   <input name="name" required type="text" defaultValue={editingCustomer?.name || ''} placeholder="Ej. Residencial Palmas" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Alias / Identificador Corto (Opcional)</label>
+                  <input name="alias" type="text" defaultValue={editingCustomer?.alias || ''} placeholder="Ej. Palmas 3, Ofi Carlos, Don Pedro" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Colonia / Zona</label>

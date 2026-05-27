@@ -183,7 +183,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           title: 'Nuevo Pedido Asignado',
           message: `Se te ha asignado el pedido de ${selectedOrder.customer_name}`,
           type: 'order',
-          user_role: 'driver'
+          user_role: `driver_${driverId}`
         },
         {
           title: 'Pedido Despachado',
@@ -212,6 +212,47 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     order.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     order.address.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleExportGlobal = () => {
+    const columns = ['ID / Referencia', 'Cliente', 'Dirección', 'Artículos', 'Repartidor', 'Estado', 'Fecha'];
+    const data = filteredOrders.map(order => [
+      order.id.slice(0, 8).toUpperCase(),
+      order.customer_name,
+      order.address,
+      order.items,
+      order.assigned_to_name || 'Sin Asignar',
+      order.status === 'delivered' ? 'Completado' : order.status === 'assigned' ? 'En Ruta' : 'Pendiente',
+      new Date(order.created_at).toLocaleString()
+    ]);
+    exportToPDF({
+      title: 'Reporte Global de Pedidos y Despacho',
+      subtitle: `Resumen de ${filteredOrders.length} pedido(s) correspondiente a la lista actual de despacho.`,
+      columns,
+      data,
+      filename: 'Reporte_Global_Despacho'
+    });
+  };
+
+  const handleExportIndividual = (order: any) => {
+    const columns = ['Campo', 'Detalle'];
+    const data = [
+      ['ID de Pedido', order.id.toUpperCase()],
+      ['Cliente', order.customer_name],
+      ['Dirección de Despacho', order.address],
+      ['Detalles / Artículos', order.items],
+      ['Repartidor Asignado', order.assigned_to_name || 'Sin Asignar'],
+      ['Estado Actual', order.status === 'delivered' ? 'Completado / Entregado' : order.status === 'assigned' ? 'En Ruta / Asignado' : 'Pendiente de Despacho'],
+      ['Tipo de Entrega', order.source === 'local' ? 'Venta Local en Planta' : 'Pedido de Entrega domicilio'],
+      ['Fecha y Hora', new Date(order.created_at).toLocaleString()]
+    ];
+    exportToPDF({
+      title: `Comprobante de Pedido #${order.id.slice(0, 8).toUpperCase()}`,
+      subtitle: `Detalle individual para despacho o entrega física de botella/garrafón.`,
+      columns,
+      data,
+      filename: `Pedido_${order.customer_name.replace(/\s+/g, '_')}`
+    });
+  };
 
   const handleRegisterOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -262,7 +303,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           title: 'Nuevo Pedido Asignado',
           message: `Se te ha asignado el pedido de ${newOrder.customer_name}`,
           type: 'order',
-          user_role: 'driver'
+          user_role: `driver_${newOrder.assigned_to}`
         });
       }
 
@@ -361,9 +402,19 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
             <Truck size={20} className="text-sky-500" />
             Control de Despacho
           </h2>
-          <span className="text-[10px] bg-slate-800 text-white px-3 py-1 rounded-full font-black uppercase tracking-widest">
-            {filteredOrders.length} Resultados
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportGlobal}
+              className="flex items-center gap-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 px-3.5 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95"
+              title="Exportar todos los pedidos de la lista actual"
+            >
+              <Download size={12} className="text-sky-500 animate-pulse" />
+              Exportar Todo ({filteredOrders.length})
+            </button>
+            <span className="text-[10px] bg-slate-800 text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-widest whitespace-nowrap">
+              {filteredOrders.length} Resultados
+            </span>
+          </div>
         </div>
         
         <div className="overflow-x-auto">
@@ -413,6 +464,13 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                   </td>
                   <td className="px-8 py-6 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleExportIndividual(order); }}
+                        className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
+                        title="Exportar Reporte Individual"
+                      >
+                        <Download size={16} />
+                      </button>
                       {userRole === 'admin' && (
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id, order.customer_name); }}
@@ -780,8 +838,10 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                 setIsSavingCustomer(true);
                 
                 const formData = new FormData(e.currentTarget);
-                const newCustomer = {
+                const aliasValue = (formData.get('alias') as string) || '';
+                const newCustomer: any = {
                   name: formData.get('name') as string,
+                  alias: aliasValue,
                   address: formData.get('address') as string,
                   phone: formData.get('phone') as string,
                   tier: (formData.get('tier') as string)?.toLowerCase() || 'frequent',
@@ -805,7 +865,32 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                   
                   setShowNewCustomerModal(false);
                 } catch (error: any) {
-                  alert('ERROR AL GUARDAR CLIENTE: ' + (error.message || 'Error desconocido'));
+                  console.warn('Fallo inicial con campo alias en Dashboard, intentando fallback sin la columna alias...', error);
+                  try {
+                    const fallbackCustomer = {
+                      ...newCustomer,
+                      name: newCustomer.name + (aliasValue ? ` (${aliasValue})` : '')
+                    };
+                    delete fallbackCustomer.alias;
+
+                    const { error: fallbackError } = await supabase
+                      .from('customers')
+                      .insert([fallbackCustomer]);
+
+                    if (fallbackError) throw fallbackError;
+
+                    await fetchCustomers();
+                    
+                    setNewOrder({
+                      ...newOrder,
+                      customer_name: fallbackCustomer.name,
+                      address: fallbackCustomer.address
+                    });
+                    
+                    setShowNewCustomerModal(false);
+                  } catch (fallbackErr: any) {
+                    alert('ERROR AL GUARDAR CLIENTE: ' + (fallbackErr.message || 'Error desconocido'));
+                  }
                 } finally {
                   setIsSavingCustomer(false);
                 }
@@ -813,6 +898,10 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Completo / Razón Social</label>
                   <input name="name" required type="text" placeholder="Ej. Juan Pérez / Residencial Palmas" className="w-[100%] bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Alias / Identificador Corto (Opcional)</label>
+                  <input name="alias" type="text" placeholder="Ej. Palmas 3, Ofi Carlos, Don Pedro" className="w-[100%] bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dirección de Entrega</label>

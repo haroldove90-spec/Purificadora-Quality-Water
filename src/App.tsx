@@ -123,6 +123,18 @@ export default function App() {
   }, [session, userRole, currentRoleView, userName]);
 
   useEffect(() => {
+    try {
+      if (userName || currentRoleView) {
+        localStorage.setItem('qw_session', JSON.stringify({
+          user_id: session?.user?.id || '00000000-0000-0000-0000-000000000000',
+          user_name: userName || 'Empleado Demo',
+          user_role: currentRoleView || userRole || 'repartidor'
+        }));
+      }
+    } catch (_) {}
+  }, [userName, currentRoleView, userRole, session]);
+
+  useEffect(() => {
     if (activeView && activeView !== 'lobby') {
       try {
         localStorage.setItem('activeView', activeView);
@@ -816,7 +828,7 @@ export default function App() {
                  activeView === 'customers' ? <Finances initialTab="customers" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={currentRoleView} userName={userName} /> :
-                 activeView === 'attendance' ? <Attendance userRole={currentRoleView} /> :
+                 activeView === 'attendance' ? <Attendance userRole={currentRoleView} userName={userName} /> :
                  activeView === 'cash_float' ? <CashFloat userRole={currentRoleView} /> :
                  activeView === 'quality' ? <QualityLog userRole={currentRoleView} /> :
                  activeView === 'route' ? <DeliveryRoute userRole={currentRoleView} /> :
