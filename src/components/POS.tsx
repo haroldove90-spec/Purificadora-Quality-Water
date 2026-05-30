@@ -19,6 +19,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { normalizeEmployeeName } from '../utils/nameHelper';
 
 interface Product {
   id: string;
@@ -49,14 +50,14 @@ export default function POS({ userRole }: { userRole: string | null }) {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.user_name) {
-          setUserName(parsed.user_name);
+          setUserName(normalizeEmployeeName(parsed.user_name));
         }
       } else {
         const backupStr = localStorage.getItem('quality_water_session_backup');
         if (backupStr) {
           const parsedBackup = JSON.parse(backupStr);
           if (parsedBackup.userName) {
-            setUserName(parsedBackup.userName);
+            setUserName(normalizeEmployeeName(parsedBackup.userName));
           }
         }
       }

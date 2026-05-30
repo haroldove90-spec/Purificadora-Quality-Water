@@ -41,6 +41,7 @@ import ClientStatus from './components/ClientStatus';
 import Notifications from './components/Notifications';
 import POS from './components/POS';
 import CashFloat from './components/CashFloat';
+import { normalizeEmployeeName } from './utils/nameHelper';
 
 import Lobby from './components/Lobby';
 import { usePWA } from './hooks/usePWA';
@@ -85,7 +86,7 @@ export default function App() {
       const backupStr = localStorage.getItem('quality_water_session_backup');
       if (backupStr) {
         const backup = JSON.parse(backupStr);
-        if (backup?.userName) return backup.userName;
+        if (backup?.userName) return normalizeEmployeeName(backup.userName);
       }
     } catch (_) {}
     return null;
@@ -424,7 +425,7 @@ export default function App() {
           : (role as any);
           
         setCurrentRoleView(finalRoleView);
-        setUserName(data.name);
+        setUserName(normalizeEmployeeName(data.name));
         
         // Cambio de vista inmediato respetando la selección previa de localStorage
         const savedActiveView = localStorage.getItem('activeView');
@@ -442,7 +443,7 @@ export default function App() {
         const savedRoleView = localStorage.getItem('currentRoleView') as any;
         setUserRole('driver');
         setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
-        setUserName(defaultName || 'Repartidor');
+        setUserName(normalizeEmployeeName(defaultName || 'Repartidor'));
         
         const savedActiveView = localStorage.getItem('activeView');
         if (savedActiveView && savedActiveView !== 'lobby') {
@@ -456,7 +457,7 @@ export default function App() {
       const savedRoleView = localStorage.getItem('currentRoleView') as any;
       setUserRole('driver');
       setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
-      setUserName(defaultName || 'Usuario');
+      setUserName(normalizeEmployeeName(defaultName || 'Usuario'));
       
       const savedActiveView = localStorage.getItem('activeView');
       if (savedActiveView && savedActiveView !== 'lobby') {

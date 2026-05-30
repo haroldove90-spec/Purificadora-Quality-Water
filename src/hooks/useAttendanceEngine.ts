@@ -22,13 +22,43 @@ export function useAttendanceEngine() {
     const timestamp = new Date().toISOString();
 
     try {
+      // Fetch existing record to preserve last_location contents (e.g. cash_float)
+      let existingLocObj: any = {};
+      try {
+        const { data: existingData } = await supabase
+          .from('daily_attendance')
+          .select('last_location')
+          .eq('user_name', session.user_name)
+          .eq('work_date', today)
+          .maybeSingle();
+        
+        if (existingData && existingData.last_location) {
+          if (typeof existingData.last_location === 'object') {
+            existingLocObj = { ...existingData.last_location };
+          } else {
+            try {
+              existingLocObj = JSON.parse(existingData.last_location) || {};
+            } catch (_) {
+              existingLocObj = {};
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching existing attendance for merge:', err);
+      }
+
+      const updatedLocation = {
+        ...existingLocObj,
+        ...(location ? { lat: location.lat, lng: location.lng } : {})
+      };
+
       // 1. Lógica de Upsert en Supabase para mantener un solo registro por día
       const payload: any = {
         user_name: session.user_name,
         user_role: session.user_role,
         work_date: today,
         [action]: timestamp,
-        last_location: location || null
+        last_location: updatedLocation
       };
 
       let result = await supabase

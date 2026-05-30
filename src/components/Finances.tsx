@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { exportToPDF } from '../utils/pdfExport';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabaseClient';
+import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -106,12 +107,6 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [customerFilter, setCustomerFilter] = useState('');
 
   const norm = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
-  const namesMatch = (n1?: string, n2?: string) => {
-    if (!n1 || !n2) return false;
-    const s1 = norm(n1);
-    const s2 = norm(n2);
-    return s1.includes(s2) || s2.includes(s1);
-  };
 
   const getFilteredCustomers = () => {
     let list = customersList.length > 0 ? customersList : CLIENT_MANAGEMENT;

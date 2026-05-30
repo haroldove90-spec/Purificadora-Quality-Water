@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { exportToPDF } from '../utils/pdfExport';
+import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
 
 interface CashFloatProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
@@ -63,14 +64,6 @@ export default function CashFloat({ userRole }: CashFloatProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [activeDriverSession, setActiveDriverSession] = useState<any>(null);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
-
-  // helper to match names exactly (case-insensitive, trimmed, and normalized double spaces)
-  const namesMatch = (name1?: string, name2?: string): boolean => {
-    if (!name1 || !name2) return false;
-    const n1 = name1.toLowerCase().replace(/\s+/g, ' ').trim();
-    const n2 = name2.toLowerCase().replace(/\s+/g, ' ').trim();
-    return n1 === n2;
-  };
 
   // Helper to safely parse JSON field to object
   const parseJsonFields = (val: any): any => {
@@ -172,7 +165,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         if (session.user_name) {
           const matchedRole = userRole || session.user_role || 'driver';
           setCurrentUser({
-            name: session.user_name,
+            name: normalizeEmployeeName(session.user_name),
             role: matchedRole
           });
           setViewMode(matchedRole === 'admin' ? 'admin' : 'personal');
@@ -186,7 +179,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
           if (backup.userName) {
             const matchedRole = userRole || backup.currentRoleView || 'driver';
             setCurrentUser({
-              name: backup.userName,
+              name: normalizeEmployeeName(backup.userName),
               role: matchedRole
             });
             setViewMode(matchedRole === 'admin' ? 'admin' : 'personal');

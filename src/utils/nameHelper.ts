@@ -1,0 +1,48 @@
+/**
+ * Helper to normalize and unify employee names across the system.
+ * Handles Name Inversion (Gomez Aleman Luis Alberto -> Luis Alberto Gomez Aleman)
+ * and Aliases (Juan Luis guerrero sanchez -> Gil).
+ */
+export const normalizeEmployeeName = (name?: string | null): string => {
+  if (!name) return '';
+  
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
+
+  // 1. Synonym / Alias Mapping for Gil
+  if (
+    lower === 'gil' || 
+    lower === 'juan luis guerrero sanchez' || 
+    lower === 'juan luis guerrero' || 
+    lower === 'guerrero sanchez juan luis' ||
+    lower.includes('guerrero sanchez') ||
+    (lower.includes('juan luis') && lower.includes('guerrero'))
+  ) {
+    return 'Gil';
+  }
+
+  // 2. Name Inversion checking for Luis Alberto Gomez Aleman
+  // Sort lowercase words to identify the same set of name components
+  const sortedWords = lower.split(' ').sort().filter(w => w.length > 1).join(' ');
+  const targetSortedGomez = 'luis alberto gomez aleman'.toLowerCase().split(' ').sort().filter(w => w.length > 1).join(' ');
+  
+  if (
+    sortedWords === targetSortedGomez ||
+    (lower.includes('gomez') && lower.includes('aleman') && lower.includes('luis'))
+  ) {
+    return 'Luis Alberto Gomez Aleman';
+  }
+
+  // Fallback return trimmed name
+  return trimmed;
+};
+
+/**
+ * Compare two names flexibly, normalising both first.
+ */
+export const namesMatch = (name1?: string | null, name2?: string | null): boolean => {
+  if (!name1 || !name2) return false;
+  const n1 = normalizeEmployeeName(name1).toLowerCase().replace(/\s+/g, ' ').trim();
+  const n2 = normalizeEmployeeName(name2).toLowerCase().replace(/\s+/g, ' ').trim();
+  return n1 === n2;
+};
