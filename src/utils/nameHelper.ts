@@ -1,3 +1,7 @@
+const removeAccents = (str: string): string => {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+};
+
 /**
  * Helper to normalize and unify employee names across the system.
  * Handles Name Inversion (Gomez Aleman Luis Alberto -> Luis Alberto Gomez Aleman)
@@ -7,28 +11,29 @@ export const normalizeEmployeeName = (name?: string | null): string => {
   if (!name) return '';
   
   const trimmed = name.trim();
-  const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
+  const cleanStr = removeAccents(trimmed);
+  const lowerClean = cleanStr.toLowerCase().replace(/\s+/g, ' ');
 
   // 1. Synonym / Alias Mapping: Resolve 'Gil' or variations to full correct name 'Juan Luis Guerrero Sanchez'
   if (
-    lower === 'gil' || 
-    lower === 'juan luis guerrero sanchez' || 
-    lower === 'juan luis guerrero' || 
-    lower === 'guerrero sanchez juan luis' ||
-    lower.includes('guerrero sanchez') ||
-    (lower.includes('juan luis') && lower.includes('guerrero')) ||
-    lower === 'g'
+    lowerClean === 'gil' || 
+    lowerClean === 'juan luis guerrero sanchez' || 
+    lowerClean === 'juan luis guerrero' || 
+    lowerClean === 'guerrero sanchez juan luis' ||
+    lowerClean.includes('guerrero sanchez') ||
+    (lowerClean.includes('juan luis') && lowerClean.includes('guerrero')) ||
+    lowerClean === 'g'
   ) {
     return 'Juan Luis Guerrero Sanchez';
   }
 
   // 2. Name Inversion checking for Luis Alberto Gomez Aleman
-  const sortedWords = lower.split(' ').sort().filter(w => w.length > 1).join(' ');
-  const targetSortedGomez = 'luis alberto gomez aleman'.toLowerCase().split(' ').sort().filter(w => w.length > 1).join(' ');
+  const sortedWords = lowerClean.split(' ').sort().filter(w => w.length > 1).join(' ');
+  const targetSortedGomez = 'luis alberto gomez aleman'.split(' ').sort().filter(w => w.length > 1).join(' ');
   
   if (
     sortedWords === targetSortedGomez ||
-    (lower.includes('gomez') && lower.includes('aleman') && lower.includes('luis'))
+    (lowerClean.includes('gomez') && lowerClean.includes('aleman') && lowerClean.includes('luis'))
   ) {
     return 'Luis Alberto Gomez Aleman';
   }
@@ -54,7 +59,7 @@ export const normalizeEmployeeName = (name?: string | null): string => {
  */
 export const namesMatch = (name1?: string | null, name2?: string | null): boolean => {
   if (!name1 || !name2) return false;
-  const n1 = normalizeEmployeeName(name1).toLowerCase().replace(/\s+/g, ' ').trim();
-  const n2 = normalizeEmployeeName(name2).toLowerCase().replace(/\s+/g, ' ').trim();
+  const n1 = removeAccents(normalizeEmployeeName(name1)).toLowerCase().replace(/\s+/g, ' ').trim();
+  const n2 = removeAccents(normalizeEmployeeName(name2)).toLowerCase().replace(/\s+/g, ' ').trim();
   return n1 === n2;
 };

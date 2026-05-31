@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
+import { normalizeEmployeeName } from '../utils/nameHelper';
 
 interface Employee {
   id: string;
@@ -110,7 +111,13 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
         .eq('role', 'driver')
         .eq('status', 'active');
       if (error) throw error;
-      if (data) setDrivers(data);
+      if (data) {
+        const normalized = data.map((d: any) => ({
+          ...d,
+          name: normalizeEmployeeName(d.name)
+        }));
+        setDrivers(normalized);
+      }
     } catch (err) {
       console.warn('Error fetching drivers:', err);
     }

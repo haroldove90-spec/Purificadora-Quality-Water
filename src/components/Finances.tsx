@@ -218,7 +218,11 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         .order('created_at', { ascending: false });
       
       if (!error && data) {
-        setEmployeesList(data);
+        const normalized = data.map((emp: any) => ({
+          ...emp,
+          name: normalizeEmployeeName(emp.name)
+        }));
+        setEmployeesList(normalized);
       }
     } catch (err) {
       console.warn('Error fetching employees:', err);

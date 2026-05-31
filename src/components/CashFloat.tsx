@@ -206,7 +206,10 @@ export default function CashFloat({ userRole }: CashFloatProps) {
         driversList = empData.filter(e => 
           e.role !== 'client' && 
           e.role !== 'customer'
-        );
+        ).map(e => ({
+          ...e,
+          name: normalizeEmployeeName(e.name)
+        }));
         setEmployees(driversList);
       }
 
@@ -218,6 +221,7 @@ export default function CashFloat({ userRole }: CashFloatProps) {
 
       const attendancesList = (attData || []).map((a: any) => ({
         ...a,
+        user_name: normalizeEmployeeName(a.user_name),
         last_location: parseJsonFields(a.last_location)
       })) as AttendanceRecord[];
       setAttendances(attendancesList);
@@ -250,8 +254,9 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       const localToday = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local format
       if (ordersData) {
         ordersData.forEach(o => {
-          const name = o.assigned_to_name;
-          if (name) {
+          const rawName = o.assigned_to_name;
+          if (rawName) {
+            const name = normalizeEmployeeName(rawName);
             // Match order date: either UTC matches or local format matches
             const orderUtcDate = o.created_at.split('T')[0];
             const orderLocalDate = new Date(o.created_at).toLocaleDateString('en-CA');
@@ -312,13 +317,13 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      // Find existing attendance
-      const { data: existing } = await supabase
+      // Find existing attendance by retrieving today's records and matching flexibly
+      const { data: todayAtt } = await supabase
         .from('daily_attendance')
         .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
-        .eq('user_name', employeeName)
-        .eq('work_date', today)
-        .maybeSingle();
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
 
       const existingLocation = parseJsonFields(existing?.last_location);
       const updatedLocation = {
@@ -666,12 +671,12 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      const { data: existing } = await supabase
+      const { data: todayAtt } = await supabase
         .from('daily_attendance')
         .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
-        .eq('user_name', employeeName)
-        .eq('work_date', today)
-        .maybeSingle();
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
 
       const existingLocation = parseJsonFields(existing?.last_location);
       const updatedLocation = {
@@ -734,15 +739,15 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-      // Find existing attendance
-      const { data: existing, error: findError } = await supabase
+      // Find existing attendance by retrieving today's records and matching flexibly
+      const { data: todayAtt, error: findError } = await supabase
         .from('daily_attendance')
         .select('*')
-        .eq('user_name', employeeName)
-        .eq('work_date', today)
-        .maybeSingle();
+        .eq('work_date', today);
 
       if (findError) throw findError;
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
 
       if (existing) {
         console.log(`Deleting row completely for ${employeeName}`);

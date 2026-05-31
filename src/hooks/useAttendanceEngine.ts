@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
 
 export type AttendanceAction = 'check_in' | 'break_start' | 'break_end' | 'check_out';
 
@@ -25,13 +26,12 @@ export function useAttendanceEngine() {
       // Fetch existing record to preserve other columns and last_location contents (e.g. cash_float)
       let existingRecord: any = {};
       try {
-        const { data: existingData } = await supabase
+        const { data: todayAtt } = await supabase
           .from('daily_attendance')
           .select('*')
-          .eq('user_name', session.user_name)
-          .eq('work_date', today)
-          .maybeSingle();
+          .eq('work_date', today);
         
+        const existingData = (todayAtt || []).find(a => namesMatch(a.user_name, session.user_name));
         if (existingData) {
           existingRecord = existingData;
         }
@@ -57,7 +57,7 @@ export function useAttendanceEngine() {
       // 1. Lógica de Upsert en Supabase para mantener un solo registro por día
       const payload: any = {
         ...existingRecord,
-        user_name: session.user_name,
+        user_name: existingRecord.user_name || normalizeEmployeeName(session.user_name),
         user_role: session.user_role,
         work_date: today,
         [action]: timestamp,
