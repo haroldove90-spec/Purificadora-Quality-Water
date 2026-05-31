@@ -372,28 +372,30 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {stats.map((stat, idx) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-            className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm overflow-hidden relative group"
-          >
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">{stat.label}</p>
-            <div className="flex items-baseline gap-2">
-              <p className={`text-3xl font-black ${stat.color}`}>{stat.value}</p>
-              <span className={`text-[10px] font-black uppercase ${stat.trendColor || 'text-slate-500/50'}`}>
-                {stat.subValue}
-              </span>
-            </div>
-            <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:scale-125 transition-transform">
-              <Package size={80} />
-            </div>
-          </motion.div>
-        ))}
-      </div>
+      {userRole === 'admin' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {stats.map((stat, idx) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              className="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm overflow-hidden relative group"
+            >
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">{stat.label}</p>
+              <div className="flex items-baseline gap-2">
+                <p className={`text-3xl font-black ${stat.color}`}>{stat.value}</p>
+                <span className={`text-[10px] font-black uppercase ${stat.trendColor || 'text-slate-500/50'}`}>
+                  {stat.subValue}
+                </span>
+              </div>
+              <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:scale-125 transition-transform">
+                <Package size={80} />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       {/* Table Area */}
       <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">

@@ -167,11 +167,13 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     }
     if (activeTab === 'driver_sales') {
       fetchEmployees();
+      fetchSales();
       
       const channel = supabase
         .channel('employees_sync')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
           fetchEmployees();
+          fetchSales();
         })
         .subscribe();
       return () => { supabase.removeChannel(channel); };
@@ -290,6 +292,115 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     }
   };
 
+  const handleClearEmployeeSalesHistory = async (empName: string) => {
+    const confirmMsg = `¿Deseas eliminar permanentemente el historial de ventas entregadas de "${empName}"?\n\nEsto vaciará su registro operativo para iniciar limpio su próximo turno sin arrastrar ventas del día anterior.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const matchedSales = salesList.filter(s => namesMatch(s.assigned_to_name, empName) && s.status === 'delivered');
+      if (matchedSales.length === 0) {
+        alert('Este empleado no tiene ningún registro de ventas entregadas para eliminar.');
+        return;
+      }
+
+      const idsToDelete = matchedSales.map(s => s.id);
+
+      const { error: deleteErr } = await supabase
+        .from('orders')
+        .delete()
+        .in('id', idsToDelete);
+
+      if (deleteErr) throw deleteErr;
+
+      alert(`Se han borrado exitosamente las ${matchedSales.length} ventas entregadas de "${empName}".`);
+      await fetchSales();
+    } catch (err: any) {
+      console.error('Error al vaciar ventas de un empleado:', err);
+      alert('Error al borrar el historial de ventas: ' + err.message);
+    }
+  };
+
+  const handleClearAllEmployeesSalesHistory = async () => {
+    const confirmMsg = `¡ATENCIÓN ADMINISTRADOR!\n\n¿Estás seguro de que deseas VACIAR EL HISTORIAL COMPLETO de ventas entregadas de TODOS los empleados?\n\nEste proceso es irreversible y se realiza clásicamente al final del turno para que todos inicien su nueva jornada con historial limpio y en ceros.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const deliveredSales = salesList.filter(s => s.status === 'delivered');
+      if (deliveredSales.length === 0) {
+        alert('No hay ventas entregadas registradas en el sistema para vaciar.');
+        return;
+      }
+
+      const idsToDelete = deliveredSales.map(s => s.id);
+
+      const { error: deleteErr } = await supabase
+        .from('orders')
+        .delete()
+        .in('id', idsToDelete);
+
+      if (deleteErr) throw deleteErr;
+
+      alert(`Historial Global Limpio: Se han eliminado las ${deliveredSales.length} ventas entregadas de todos los empleados correctamente.`);
+      await fetchSales();
+    } catch (err: any) {
+      console.error('Error al vaciar historial de ventas globales:', err);
+      alert('Error en el vaciado global: ' + err.message);
+    }
+  };
+
+  const handleExportIndividualEmployeeReport = (emp: any) => {
+    // Filter sales made by this employee
+    const employeeSales = salesList.filter(s => namesMatch(s.assigned_to_name, emp.name));
+    
+    const columns = ['Folio', 'Cliente', 'Artículos', 'Dirección', 'Medio', 'Total', 'Fecha / Hora'];
+    const data = employeeSales.map(s => [
+      s.id.slice(0, 8).toUpperCase(),
+      s.customer_name || 'Venta de Mostrador',
+      s.items || '',
+      s.address || '-',
+      s.source === 'local' ? 'Planta' : s.source === 'whatsapp' ? 'WhatsApp' : s.source === 'pos' ? 'Venta POS' : 'Teléfono',
+      `$${Number(s.total_price || 0).toFixed(2)}`,
+      new Date(s.created_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+    ]);
+
+    const totalCalculated = employeeSales.reduce((acc, s) => acc + Number(s.total_price || 0), 0);
+
+    data.push(['', '', '', '', '', '', '']); // spacing row
+    data.push(['CONSOLIDADO DE VENTAS INDIVIDUAL', '', '', '', '', '', '']);
+    data.push(['Total de Pedidos Entregados', '', '', '', '', '', `${employeeSales.length} pedidos`]);
+    data.push(['Monto Total Recaudado / Ventas', '', '', '', '', '', `$${totalCalculated.toFixed(2)}`]);
+
+    exportToPDF({
+      title: 'Reporte de Ventas Individual',
+      subtitle: `Empleado: ${emp.name} - Cargo: ${emp.role.toUpperCase()} - Estado: ${emp.status || 'active'}`.toUpperCase(),
+      columns,
+      data,
+      filename: `Reporte_Ventas_${emp.name.replace(/\s+/g, '_')}`
+    });
+
+    // Automatic clearing flow
+    if (employeeSales.length > 0) {
+      setTimeout(async () => {
+        const autoClear = confirm(`Reporte PDF individual para "${emp.name}" descargado con éxito.\n\n¿Deseas vaciar y limpiar automáticamente su historial de ${employeeSales.length} ventas entregadas ahora para que comience su próximo turno limpio?`);
+        if (autoClear) {
+          try {
+            const idsToDelete = employeeSales.map(s => s.id);
+            const { error: deleteErr } = await supabase
+              .from('orders')
+              .delete()
+              .in('id', idsToDelete);
+            
+            if (deleteErr) throw deleteErr;
+            alert(`Sincronización Automática Correcta: Se ha vaciado el historial de ventas de "${emp.name}".`);
+            await fetchSales();
+          } catch (err: any) {
+            console.error('Error al vaciar de forma automática:', err);
+          }
+        }
+      }, 1000);
+    }
+  };
+
   const handleNewCustomerSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSavingCustomer(true);
@@ -392,8 +503,10 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     setIsSavingEmployee(true);
     
     const formData = new FormData(e.currentTarget);
+    const rawName = formData.get('name') as string;
+    const normalizedName = normalizeEmployeeName(rawName);
     const newEmployee = {
-      name: formData.get('name') as string,
+      name: normalizedName,
       role: formData.get('role') as string,
       phone: formData.get('phone') as string,
       status: 'active'
@@ -515,16 +628,18 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           </p>
         </div>
         
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
-          <button 
-            onClick={() => handleExport('Ventas Mensuales')}
-            disabled={isExporting}
-            className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] shadow-xl hover:bg-slate-800 transition-all active:scale-95 uppercase tracking-widest shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            PDF Mensual
-          </button>
-        </div>
+        {userRole === 'admin' && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+            <button 
+              onClick={() => handleExport('Ventas Mensuales')}
+              disabled={isExporting}
+              className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] shadow-xl hover:bg-slate-800 transition-all active:scale-95 uppercase tracking-widest shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              PDF Mensual
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabs handled by sidebar navigation */}
@@ -611,6 +726,36 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
           {activeTab === 'sales' && (
             <div className="space-y-6">
+              {userRole !== 'admin' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Mis Ventas del Día</p>
+                      <p className="text-3xl font-black text-slate-800 mt-3">
+                        ${getFilteredSales().reduce((acc, sale) => acc + Number(sale.total_price || 0), 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-2 font-bold italic">Total de efectivo y crédito recaudado hoy</span>
+                    <div className="absolute top-6 right-6 w-10 h-10 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center">
+                      <DollarSign size={20} />
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Mis Pedidos Entregados</p>
+                      <p className="text-3xl font-black text-slate-800 mt-3">
+                        {getFilteredSales().length}
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-2 font-bold italic">Registrados en tu sesión como {userName || 'Usuario'}</span>
+                    <div className="absolute top-6 right-6 w-10 h-10 bg-sky-50 text-sky-500 rounded-2xl flex items-center justify-center">
+                      <ShoppingBag size={20} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex flex-col">
@@ -852,6 +997,15 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     >
                       <Download size={14} /> Exportar
                     </button>
+                    {userRole === 'admin' && (
+                      <button 
+                        onClick={handleClearAllEmployeesSalesHistory}
+                        className="flex items-center gap-2 bg-rose-50 text-rose-600 border border-rose-100 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition-all shrink-0"
+                        title="Vacia el historial de ventas entregadas de todos los empleados"
+                      >
+                        <Trash2 size={12} /> Vaciar Todo Historial
+                      </button>
+                    )}
                     <button 
                       onClick={() => setShowNewEmployeeModal(true)}
                       className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all shrink-0"
@@ -917,6 +1071,26 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                               >
                                 {emp.status === 'active' ? 'Desactivar' : 'Activar'}
                               </button>
+
+                              <button 
+                                onClick={() => handleExportIndividualEmployeeReport(emp)}
+                                className="px-2.5 py-1 bg-sky-50 text-sky-600 border border-sky-100 rounded-lg transition-all hover:bg-sky-100 flex items-center gap-1 font-black"
+                                title="Generar Reporte de Ventas de este empleado"
+                              >
+                                <Download size={12} />
+                                Reporte Ventas
+                              </button>
+
+                              {userRole === 'admin' && (
+                                <button 
+                                  onClick={() => handleClearEmployeeSalesHistory(emp.name)}
+                                  className="px-2.5 py-1 bg-rose-50 text-rose-600 border border-rose-100 rounded-lg transition-all hover:bg-rose-100 flex items-center gap-1 font-black"
+                                  title="Borrar historial diario de ventas de este empleado"
+                                >
+                                  <Trash2 size={12} />
+                                  Vaciar Ventas
+                                </button>
+                              )}
 
                               {userRole === 'admin' && (
                                 <button 

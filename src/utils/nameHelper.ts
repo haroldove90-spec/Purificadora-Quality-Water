@@ -9,20 +9,20 @@ export const normalizeEmployeeName = (name?: string | null): string => {
   const trimmed = name.trim();
   const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
 
-  // 1. Synonym / Alias Mapping for Gil
+  // 1. Synonym / Alias Mapping: Resolve 'Gil' or variations to full correct name 'Juan Luis Guerrero Sanchez'
   if (
     lower === 'gil' || 
     lower === 'juan luis guerrero sanchez' || 
     lower === 'juan luis guerrero' || 
     lower === 'guerrero sanchez juan luis' ||
     lower.includes('guerrero sanchez') ||
-    (lower.includes('juan luis') && lower.includes('guerrero'))
+    (lower.includes('juan luis') && lower.includes('guerrero')) ||
+    lower === 'g'
   ) {
-    return 'Gil';
+    return 'Juan Luis Guerrero Sanchez';
   }
 
   // 2. Name Inversion checking for Luis Alberto Gomez Aleman
-  // Sort lowercase words to identify the same set of name components
   const sortedWords = lower.split(' ').sort().filter(w => w.length > 1).join(' ');
   const targetSortedGomez = 'luis alberto gomez aleman'.toLowerCase().split(' ').sort().filter(w => w.length > 1).join(' ');
   
@@ -33,8 +33,20 @@ export const normalizeEmployeeName = (name?: string | null): string => {
     return 'Luis Alberto Gomez Aleman';
   }
 
-  // Fallback return trimmed name
-  return trimmed;
+  // 3. Clean and generic name-first formatting for common other inversions if detected
+  // Title-casing general names
+  return trimmed
+    .split(' ')
+    .map(word => {
+      if (!word) return '';
+      const lowerWord = word.toLowerCase();
+      // Keep spanish prepositions/connectors lowercase
+      if (['de', 'la', 'del', 'y', 'los', 'las'].includes(lowerWord)) {
+        return lowerWord;
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
 };
 
 /**

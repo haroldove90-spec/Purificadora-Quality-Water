@@ -126,7 +126,12 @@ export default function POS({ userRole }: { userRole: string | null }) {
         const payload = pendingList[i];
         try {
           const { error } = await supabase.from('orders').insert([payload]);
-          if (!error) {
+          const isDuplicate = error && (
+            error.code === '23505' || 
+            error.message?.toLowerCase().includes('duplicate') ||
+            error.message?.toLowerCase().includes('already exists')
+          );
+          if (!error || isDuplicate) {
             successfulIndexes.push(i);
           } else {
             console.error('Error insertando venta offline:', error);
@@ -360,7 +365,22 @@ export default function POS({ userRole }: { userRole: string | null }) {
       return `${item.quantity}x ${item.name}`;
     }).join(', ');
 
+    // Generate reliable random UUID to prevent duplicate submissions via race-conditions or offline-sync retires
+    const generateOrderUUID = () => {
+      try {
+        if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+          return window.crypto.randomUUID();
+        }
+      } catch (_) {}
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    };
+
     const payload = {
+      id: generateOrderUUID(),
       customer_name: generatedTicket.customer_name || 'Venta Mostrador',
       address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
       items: itemsDescription,

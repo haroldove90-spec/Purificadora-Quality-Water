@@ -103,6 +103,7 @@ export default function App() {
   });
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
+  const [employeeDBId, setEmployeeDBId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Backup sync effect
@@ -298,6 +299,35 @@ export default function App() {
       }
     });
 
+    // 1.5. Suscripción en tiempo real a la tabla de empleados
+    console.log('Iniciando suscripción en tiempo real a cambios de empleados...');
+    const employeesChannel = supabase
+      .channel('employees-auth-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, async (payload) => {
+        const { data: { session: activeSession } } = await supabase.auth.getSession();
+        if (!activeSession) return;
+        
+        const userId = activeSession.user.id;
+        
+        if (payload.eventType === 'DELETE') {
+          // Si el registro eliminado coincide con nuestro auth_id o con nuestro id de DB
+          if (payload.old && (payload.old.auth_id === userId || payload.old.id === employeeDBId)) {
+            console.warn('Tu cuenta ha sido eliminada por el administrador. Cerrando sesión forzadamente...');
+            handleLogout();
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          if (payload.new && payload.new.auth_id === userId) {
+            if (payload.new.status === 'inactive') {
+              console.warn('Tu cuenta ha sido desactivada. Cerrando sesión...');
+              handleLogout();
+            } else {
+              fetchUserRole(userId);
+            }
+          }
+        }
+      })
+      .subscribe();
+
     // 2. Intento de carga inicial de sesión
     const init = async () => {
       console.log('Iniciando carga inicial de sesión...');
@@ -380,6 +410,7 @@ export default function App() {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       window.removeEventListener('error', handleGlobalError);
       subscription.unsubscribe();
+      employeesChannel.unsubscribe();
     };
   }, []);
 
@@ -396,7 +427,7 @@ export default function App() {
       // Timeout para la consulta a la base de datos (4 segundos máximo)
       const rolePromise = supabase
         .from('employees')
-        .select('role, name')
+        .select('id, role, name, status')
         .eq('auth_id', userId)
         .maybeSingle();
 
@@ -409,6 +440,16 @@ export default function App() {
       if (error) throw error;
 
       if (data) {
+        // Guardamos el id local de la base de datos para la sincronización RLS/Delete
+        setEmployeeDBId(data.id);
+
+        // Check if user is inactive
+        if (data.status === 'inactive') {
+          console.warn('Usuario inactivo detectado. Cerrando sesión...');
+          handleLogout();
+          return;
+        }
+
         let role = String(data.role || 'driver').toLowerCase();
         
         // Normalización de roles (Español -> English Interno)
@@ -440,16 +481,43 @@ export default function App() {
           }
         }
       } else {
-        const savedRoleView = localStorage.getItem('currentRoleView') as any;
-        setUserRole('driver');
-        setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
-        setUserName(normalizeEmployeeName(defaultName || 'Repartidor'));
-        
-        const savedActiveView = localStorage.getItem('activeView');
-        if (savedActiveView && savedActiveView !== 'lobby') {
-          setActiveView(savedActiveView as View);
-        } else if (activeView === 'lobby') {
-          setActiveView('pos');
+        // If data is null, they have an auth session but no entry in 'employees'
+        // Let's check how old their auth account is.
+        // If it was created more than 90 seconds ago, they were definitely deleted by the admin!
+        const userCreatedAt = session?.user?.created_at ? new Date(session.user.created_at).getTime() : 0;
+        const now = Date.now();
+        if (userCreatedAt > 0 && (now - userCreatedAt > 90 * 1000)) {
+          console.warn('Usuario eliminado detectado en base de datos. Cerrando sesión forzadamente...');
+          handleLogout();
+          return;
+        }
+
+        // If newly created, let's auto-create the employees row so they persist properly
+        console.log('Autocreando registro de empleado para nueva cuenta de auth...');
+        const newRecord = {
+          auth_id: userId,
+          name: normalizeEmployeeName(session?.user?.user_metadata?.full_name || defaultName || 'Nuevo Registro'),
+          email: session?.user?.email,
+          role: session?.user?.user_metadata?.role || 'driver',
+          status: 'active'
+        };
+
+        const { error: insError } = await supabase.from('employees').insert([newRecord]);
+        if (!insError) {
+          // Retry fetching
+          setTimeout(() => fetchUserRole(userId, defaultName), 1000);
+        } else {
+          const savedRoleView = localStorage.getItem('currentRoleView') as any;
+          setUserRole('driver');
+          setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
+          setUserName(normalizeEmployeeName(defaultName || 'Repartidor'));
+          
+          const savedActiveView = localStorage.getItem('activeView');
+          if (savedActiveView && savedActiveView !== 'lobby') {
+            setActiveView(savedActiveView as View);
+          } else if (activeView === 'lobby') {
+            setActiveView('pos');
+          }
         }
       }
     } catch (err) {
