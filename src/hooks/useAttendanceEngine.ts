@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
+import { namesMatch, normalizeEmployeeName, getLocalDateString } from '../utils/nameHelper';
 
 export type AttendanceAction = 'check_in' | 'break_start' | 'break_end' | 'check_out';
 
@@ -19,7 +19,7 @@ export function useAttendanceEngine() {
     location?: { lat: number; lng: number }
   ) => {
     setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     const timestamp = new Date().toISOString();
 
     try {

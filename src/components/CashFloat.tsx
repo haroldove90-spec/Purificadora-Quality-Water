@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { exportToPDF } from '../utils/pdfExport';
-import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
+import { namesMatch, normalizeEmployeeName, getLocalDateString } from '../utils/nameHelper';
 
 interface CashFloatProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
@@ -150,7 +150,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const [selectedDriverForClose, setSelectedDriverForClose] = useState<any | null>(null);
 
   // Get current date
-  const todayDate = new Date().toISOString().split('T')[0];
+  const todayDate = getLocalDateString();
 
   // Get current logger info
   const [currentUser, setCurrentUser] = useState({
@@ -205,7 +205,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   // Load all necessary info (employees, today's attendance, today's order sales)
   const loadData = async () => {
     setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     
     try {
       // 1. Fetch all staff members (excluding customers/clients)
@@ -327,7 +327,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   // Assign starting cash float to a driver (Upserts attendance entry with custom metadata)
   const handleAssignFloat = async (employeeName: string, amount: number) => {
     setActionLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     try {
       // Find existing attendance by retrieving today's records and matching flexibly
@@ -437,7 +437,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   // Close shift cash drawer
   const handleCloseCashDrawer = async (employeeName: string, floatAmount: number, salesAmount: number, ordersCount?: number) => {
     setActionLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     
     const cleanFloatAmount = isNaN(floatAmount) ? 0 : floatAmount;
     const cleanSalesAmount = isNaN(salesAmount) ? 0 : salesAmount;
@@ -542,7 +542,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     if (!confirm('¿Estás seguro de realizar el corte de caja GLOBAL de hoy? Esto cerrará y liquidará la sesión de todos los empleados y operadores que iniciaron jornada.')) return;
     
     setActionLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     
     try {
       // 1. Fetch all attendance logs of today
@@ -673,7 +673,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       subtitle: `QualityWater Purificadora - Consolidado Diario - Fecha: ${todayDate}`,
       columns,
       data,
-      filename: `Reporte_Global_Cortes_${new Date().toISOString().split('T')[0]}`
+      filename: `Reporte_Global_Cortes_${getLocalDateString()}`
     });
   };
 
@@ -681,7 +681,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const handleReopenCashDrawer = async (employeeName: string) => {
     if (!confirm(`¿Estás seguro de reabrir la caja de ${employeeName}?`)) return;
     setActionLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     try {
       const { data: todayAtt } = await supabase
@@ -749,7 +749,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const handleDeleteFloat = async (employeeName: string) => {
     if (!confirm(`¿Estás seguro de eliminar el fondo de caja asignado a ${employeeName}?`)) return;
     setActionLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     try {
       // Find existing attendance by retrieving today's records and matching flexibly
@@ -832,7 +832,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     if (!confirm(confirmMsg)) return;
 
     setActionLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     try {
       // 1. Fetch all selected attendance records in a single query
@@ -889,7 +889,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     if (!confirm(confirmMsg)) return;
 
     setActionLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     try {
       // Fetch all attendance for today in a single query

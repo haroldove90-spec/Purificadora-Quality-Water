@@ -63,3 +63,14 @@ export const namesMatch = (name1?: string | null, name2?: string | null): boolea
   const n2 = removeAccents(normalizeEmployeeName(name2)).toLowerCase().replace(/\s+/g, ' ').trim();
   return n1 === n2;
 };
+
+/**
+ * Returns the current local date of the user in YYYY-MM-DD format, avoiding timezone timezone shifts from UTC.
+ */
+export const getLocalDateString = (): string => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
