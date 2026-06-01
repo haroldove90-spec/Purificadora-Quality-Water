@@ -30,6 +30,7 @@ import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
 
 interface CashFloatProps {
   userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
+  userName?: string | null;
 }
 
 interface Employee {
@@ -56,7 +57,7 @@ interface OrderItemSummary {
   ordersCount: number;
 }
 
-export default function CashFloat({ userRole }: CashFloatProps) {
+export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
   const [todaySales, setTodaySales] = useState<Record<string, OrderItemSummary>>({});
@@ -188,6 +189,18 @@ export default function CashFloat({ userRole }: CashFloatProps) {
       }
     }
   }, [userRole]);
+
+  useEffect(() => {
+    if (userName || userRole) {
+      const finalRole = userRole || currentUser.role || 'driver';
+      const finalName = userName ? normalizeEmployeeName(userName) : currentUser.name;
+      setCurrentUser({
+        name: finalName,
+        role: finalRole
+      });
+      setViewMode(finalRole === 'admin' ? 'admin' : 'personal');
+    }
+  }, [userName, userRole]);
 
   // Load all necessary info (employees, today's attendance, today's order sales)
   const loadData = async () => {
@@ -432,12 +445,12 @@ export default function CashFloat({ userRole }: CashFloatProps) {
     const totalToDeliver = cleanFloatAmount + cleanSalesAmount;
 
     try {
-      const { data: existing } = await supabase
+      const { data: todayAtt } = await supabase
         .from('daily_attendance')
         .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
-        .eq('user_name', employeeName)
-        .eq('work_date', today)
-        .maybeSingle();
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
 
       const existingLocation = parseJsonFields(existing?.last_location);
       const updatedLocation = {

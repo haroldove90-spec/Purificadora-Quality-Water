@@ -40,7 +40,12 @@ interface CartItem {
   quantity: number;
 }
 
-export default function POS({ userRole }: { userRole: string | null }) {
+interface POSProps {
+  userRole: string | null;
+  userName?: string | null;
+}
+
+export default function POS({ userRole, userName: propUserName }: POSProps) {
   // Active logged-in user session
   const [userName, setUserName] = useState<string>('');
 
@@ -65,6 +70,12 @@ export default function POS({ userRole }: { userRole: string | null }) {
       console.warn('Error reading session inside POS:', e);
     }
   }, []);
+
+  useEffect(() => {
+    if (propUserName) {
+      setUserName(normalizeEmployeeName(propUserName));
+    }
+  }, [propUserName]);
 
   // Products & Customers from DB
   const [products, setProducts] = useState<Product[]>([]);

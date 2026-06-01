@@ -890,7 +890,7 @@ export default function App() {
               >
                 {activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
                  activeView === 'inventory' ? <Inventory userRole={currentRoleView} /> :
-                 activeView === 'pos' ? <POS userRole={currentRoleView} /> :
+                 activeView === 'pos' ? <POS userRole={currentRoleView} userName={userName} /> :
                  activeView === 'finances' ? <Finances userRole={currentRoleView} userName={userName} /> :
                  activeView === 'metrics' ? <Finances initialTab="metrics" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'sales' ? <Finances initialTab="sales" userRole={currentRoleView} userName={userName} /> :
@@ -898,7 +898,7 @@ export default function App() {
                  activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'attendance' ? <Attendance userRole={currentRoleView} userName={userName} /> :
-                 activeView === 'cash_float' ? <CashFloat userRole={currentRoleView} /> :
+                 activeView === 'cash_float' ? <CashFloat userRole={currentRoleView} userName={userName} /> :
                  activeView === 'quality' ? <QualityLog userRole={currentRoleView} /> :
                  activeView === 'route' ? <DeliveryRoute userRole={currentRoleView} /> :
                  activeView === 'client_status' ? <ClientStatus userRole={currentRoleView} /> :
