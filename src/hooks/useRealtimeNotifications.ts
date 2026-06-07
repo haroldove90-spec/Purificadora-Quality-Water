@@ -22,52 +22,74 @@ export function useRealtimeNotifications(userRole: string | null) {
   const shownIdsRef = useRef<Set<string>>(new Set());
 
   const playNotificationSound = () => {
-    console.log('--- SOUND PLACEHOLDER: Reproduciendo alerta fuerte y clara ---');
+    console.log('--- REPRODUCIENDO NOTIFICACIÓN FUERTE Y CLARA (PITCH SWEEP TRIPLE) ---');
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContext) return;
       const ctx = new AudioContext();
-      const now = ctx.currentTime;
+      
+      // Auto-resume context if browser suspended it
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
 
-      // Un timbre fuerte y claro (Double Chime) que simula una campana elegante de punto de venta
-      // Primer tono (agudo y resonante)
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      const gain2 = ctx.createGain();
+      const playBeep = (freq: number, startDelay: number, duration: number, type: 'sine' | 'square' | 'triangle' | 'sawtooth' = 'sine', volume = 0.5) => {
+        const now = ctx.currentTime + startDelay;
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, now);
+        
+        // Pitch sweep upwards (chirp) for maximum human ear sensitivity
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.3, now + duration);
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(volume, now + 0.015); // Fast attack
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration); // Smooth logarithmic decay
+        
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        osc.start(now);
+        osc.stop(now + duration);
+      };
 
-      // Oscilador 1 (Tono base fuerte - onda triangular para presencia)
-      osc1.type = 'triangle';
-      osc1.frequency.setValueAtTime(880, now); // La5
-      osc1.frequency.exponentialRampToValueAtTime(1320, now + 0.15); // desliza a Mi6
-
-      // Oscilador 2 (Harmónico agudo cristalino - onda senoidal para brillo)
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(1760, now + 0.08); // La6
-      osc2.frequency.exponentialRampToValueAtTime(2640, now + 0.25);
-
-      // Envolturas de volumen (fuerte: 0.4 de ganancia para sonar claro)
-      gain1.gain.setValueAtTime(0, now);
-      gain1.gain.linearRampToValueAtTime(0.4, now + 0.01); // ataque ultra rápido de 10ms
-      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.4); // decaimiento suave de 400ms
-
-      gain2.gain.setValueAtTime(0, now + 0.08);
-      gain2.gain.linearRampToValueAtTime(0.3, now + 0.09); 
-      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.55); // timbre de cola largo
-
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-
-      osc1.start(now);
-      osc1.stop(now + 0.45);
-      osc2.start(now + 0.08);
-      osc2.stop(now + 0.6);
+      // Triple energetic chime (upward major-chord sweep) with high volume (0.8 - 0.95)
+      playBeep(987.77, 0, 0.22, 'triangle', 0.85); // Tono 1: Si5 (Brillante y claro)
+      playBeep(1174.66, 0.10, 0.24, 'sine', 0.90);  // Tono 2: Re6 (Mayor claridad)
+      playBeep(1318.51, 0.20, 0.32, 'sine', 0.95);  // Tono 3: Mi6 (Resonancia sostenida y fuerte)
+      
     } catch (err) {
       console.warn('Web Audio synthesis failed, falling back:', err);
     }
   };
+
+  useEffect(() => {
+    // Prime the audio system on first user click or touch.
+    // This unlocks browser autoplay permissions beforehand so that real-time notifications ring immediately.
+    const primeAudio = () => {
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+          const tempCtx = new AudioContext();
+          if (tempCtx.state === 'suspended') {
+            tempCtx.resume();
+          }
+        }
+      } catch (_) {}
+      document.removeEventListener('click', primeAudio);
+      document.removeEventListener('touchstart', primeAudio);
+    };
+
+    document.addEventListener('click', primeAudio);
+    document.addEventListener('touchstart', primeAudio);
+
+    return () => {
+      document.removeEventListener('click', primeAudio);
+      document.removeEventListener('touchstart', primeAudio);
+    };
+  }, []);
 
   const addToast = (toast: any) => {
     const id = Math.random().toString(36).slice(2, 11);

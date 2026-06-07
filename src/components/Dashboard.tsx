@@ -22,7 +22,9 @@ import {
   Phone,
   Store,
   Save,
-  MessageSquare
+  MessageSquare,
+  Check,
+  CheckCircle
 } from 'lucide-react';
 import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
@@ -79,6 +81,14 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [isNewOrderPickup, setIsNewOrderPickup] = useState(false);
+  
+  // States for confirming/liquidating pickup-based orders (Wash & Return)
+  const [confirmingPickupOrder, setConfirmingPickupOrder] = useState<Order | null>(null);
+  const [pickupFinalItems, setPickupFinalItems] = useState('');
+  const [pickupFinalPrice, setPickupFinalPrice] = useState('');
+  const [pickupFinalPayment, setPickupFinalPayment] = useState<'cash' | 'card' | 'transfer'>('cash');
+  const [isSavingPickupConfirmation, setIsSavingPickupConfirmation] = useState(false);
 
   const [newOrder, setNewOrder] = useState({
     customer_name: '',
@@ -267,16 +277,17 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     
     try {
       const isAssigned = newOrder.source !== 'local' && newOrder.assigned_to !== '';
+      const isPickup = isNewOrderPickup;
       
       const { data: orderData, error } = await supabase
         .from('orders')
         .insert([{
-          customer_name: newOrder.customer_name,
+          customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
           address: newOrder.source === 'local' ? 'Venta en Planta' : newOrder.address,
-          items: newOrder.items,
-          total_price: parseFloat(newOrder.total_price) || 0,
+          items: isPickup ? `[RECOGER DE CLIENTE-LAVADO] ${newOrder.items}` : newOrder.items,
+          total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
           source: newOrder.source,
-          status: newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending'),
+          status: isPickup ? (isAssigned ? 'pickup_assigned' : 'pickup_pending') : (newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending')),
           assigned_to: isAssigned ? newOrder.assigned_to : null,
           assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
         }])
@@ -286,19 +297,19 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       if (error) throw error;
 
       // Notificación para todos los roles relevantes
-      const sourceType = newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono';
-      const notificationType = newOrder.source === 'local' ? 'sale' : 'order';
+      const sourceType = isPickup ? 'Pedido a Recoger' : (newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono');
+      const notificationType = isPickup ? 'order' : (newOrder.source === 'local' ? 'sale' : 'order');
       
       const notifications = [
         {
-          title: `Nuevo Registro: ${sourceType}`,
-          message: `${newOrder.customer_name} - ${newOrder.items}`,
+          title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
+          message: `${newOrder.customer_name} - ${newOrder.items} [Tipo: Recoger/Lavado]`,
           type: notificationType,
           user_role: 'admin'
         },
         {
-          title: `Nuevo Registro: ${sourceType}`,
-          message: `${newOrder.customer_name} - ${newOrder.items}`,
+          title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
+          message: `${newOrder.customer_name} - ${newOrder.items} [Tipo: Recoger/Lavado]`,
           type: notificationType,
           user_role: 'operator'
         }
@@ -307,8 +318,10 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       // Si se asignó un chofer directamente, notificarle
       if (isAssigned) {
         notifications.push({
-          title: 'Nuevo Pedido Asignado',
-          message: `Se te ha asignado el pedido de ${newOrder.customer_name}`,
+          title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
+          message: isPickup 
+            ? `Se te ha asignado recolección de garrafones vacíos para lavado de ${newOrder.customer_name}` 
+            : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
           type: 'order',
           user_role: `driver_${newOrder.assigned_to}`
         });
@@ -317,6 +330,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       await supabase.from('notifications_log').insert(notifications);
 
       setShowRegisterModal(false);
+      setIsNewOrderPickup(false);
       setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '' });
       fetchOrders();
     } catch (e: any) {
@@ -324,6 +338,45 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       alert('Error al registrar pedido: ' + (e.message || 'Verifica tu conexión'));
     } finally {
       setIsSavingOrder(false);
+    }
+  };
+
+  const handleSavePickupConfirmation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmingPickupOrder) return;
+    setIsSavingPickupConfirmation(true);
+    
+    try {
+      const finalPriceNumber = parseFloat(pickupFinalPrice) || 0;
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          items: pickupFinalItems || confirmingPickupOrder.items,
+          total_price: finalPriceNumber,
+          payment_method: pickupFinalPayment,
+          status: 'delivered' // Converted to final completed sale!
+        })
+        .eq('id', confirmingPickupOrder.id);
+        
+      if (error) throw error;
+      
+      // Log notification
+      await supabase.from('notifications_log').insert({
+        title: 'Venta de Lavado Confirmada ✨',
+        message: `Se confirmó entrega de ${confirmingPickupOrder.customer_name}: ${pickupFinalItems || confirmingPickupOrder.items} por $${finalPriceNumber}`,
+        type: 'sale',
+        user_role: 'admin'
+      });
+      
+      setConfirmingPickupOrder(null);
+      setPickupFinalItems('');
+      setPickupFinalPrice('');
+      fetchOrders();
+    } catch (e: any) {
+      console.error('Error confirming pickup order:', e);
+      alert('Error al confirmar: ' + (e.message || 'Verifica tu conexión'));
+    } finally {
+      setIsSavingPickupConfirmation(false);
     }
   };
 
@@ -465,15 +518,30 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                     <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-[0.1em] inline-flex items-center gap-2 ${
                       order.status === 'delivered' ? 'bg-emerald-100 text-emerald-700' :
                       order.status === 'assigned' ? 'bg-sky-100 text-sky-700' :
+                      order.status === 'pickup_pending' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
+                      order.status === 'pickup_assigned' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' :
+                      order.status === 'pickup_confirmed' ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse font-extrabold' :
                       'bg-slate-100 text-slate-500 animate-pulse'
                     }`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${order.status === 'delivered' ? 'bg-emerald-500' : 'bg-sky-500'}`} />
-                      {order.status === 'assigned' ? 'En Ruta' : order.status === 'delivered' ? (order.source === 'local' ? 'Venta Local' : 'Entregado') : 'Pendiente'}
+                      <div className={`w-1.5 h-1.5 rounded-full ${
+                        order.status === 'delivered' ? 'bg-emerald-500' : 
+                        order.status === 'assigned' ? 'bg-sky-500' : 
+                        order.status.startsWith('pickup_') ? 'bg-amber-500' :
+                        'bg-slate-400'
+                      }`} />
+                      {
+                        order.status === 'assigned' ? 'En Ruta' : 
+                        order.status === 'delivered' ? (order.source === 'local' ? 'Venta Local' : 'Entregado') : 
+                        order.status === 'pickup_pending' ? 'Recolección Pendiente' :
+                        order.status === 'pickup_assigned' ? 'En Recolección' :
+                        order.status === 'pickup_confirmed' ? 'Listo p/Liquidar' :
+                        'Pendiente'
+                      }
                     </span>
                   </td>
                   <td className="px-8 py-6 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button 
+                       <button 
                         onClick={(e) => { e.stopPropagation(); handleExportIndividual(order); }}
                         className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
                         title="Exportar Reporte Individual"
@@ -489,12 +557,23 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                           <Trash2 size={16} />
                         </button>
                       )}
-                      {order.status === 'pending' ? (
+                      {order.status === 'pending' || order.status === 'pickup_pending' ? (
                         <button 
                           onClick={() => setSelectedOrder(order)}
                           className="bg-sky-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-200 hover:bg-sky-600 transition-all active:scale-95 flex items-center gap-2"
                         >
                           <UserPlus size={14} /> Asignar
+                        </button>
+                      ) : order.status === 'pickup_confirmed' ? (
+                        <button 
+                          onClick={() => {
+                            setConfirmingPickupOrder(order);
+                            setPickupFinalItems(order.items.replace('[RECOGER DE CLIENTE-LAVADO] ', ''));
+                            setPickupFinalPrice('');
+                          }}
+                          className="bg-gradient-to-r from-amber-500 to-amber-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-amber-200 hover:from-amber-600 hover:to-amber-700 transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <Check size={14} strokeWidth={3} /> Liquidar
                         </button>
                       ) : (
                         <button className="text-slate-300 hover:text-sky-500 p-2 transition-colors">
@@ -579,6 +658,113 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                   Cancelar Operación
                 </button>
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      
+      {/* Liquidation (Wash & Return) Confirmation Modal */}
+      <AnimatePresence>
+        {confirmingPickupOrder && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setConfirmingPickupOrder(null)}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed inset-x-4 bottom-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-md w-full bg-white dark:bg-slate-950 rounded-3xl overflow-hidden shadow-2xl border border-slate-100 dark:border-slate-800 z-[101]"
+            >
+              <form onSubmit={handleSavePickupConfirmation}>
+                <div className="p-8 border-b border-slate-100 dark:border-slate-900 bg-amber-50/50 dark:bg-amber-950/15 flex items-center justify-between">
+                  <div className="flex items-center gap-3 text-left">
+                    <div className="w-10 h-10 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
+                      <CheckCircle size={20} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest leading-none">Liquidar Garrafones</p>
+                      <h3 className="font-black text-sm text-slate-800 dark:text-white uppercase italic leading-tight mt-1">{confirmingPickupOrder.customer_name.replace('🔄 [RECOGER] ', '')}</h3>
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setConfirmingPickupOrder(null)}
+                    className="p-1 px-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg text-slate-400 font-bold text-xs"
+                  >
+                    X
+                  </button>
+                </div>
+
+                <div className="p-8 space-y-6">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1 text-left">Concepto final de Entrega</label>
+                    <input 
+                      required
+                      type="text"
+                      value={pickupFinalItems}
+                      onChange={(e) => setPickupFinalItems(e.target.value)}
+                      placeholder="Ej. 5 Garrafones Lavados (Completados)"
+                      className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl font-bold focus:ring-2 focus:ring-amber-500 outline-none text-sm text-slate-850 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1 text-left">Precio Cobrado Final ($)</label>
+                    <div className="relative">
+                      <DollarSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" />
+                      <input 
+                        required
+                        type="number"
+                        step="0.01"
+                        value={pickupFinalPrice}
+                        onChange={(e) => setPickupFinalPrice(e.target.value)}
+                        placeholder="Monto total recibido"
+                        className="w-full p-4 pl-10 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl font-bold focus:ring-2 focus:ring-amber-500 outline-none text-xl text-slate-850 dark:text-white border border-slate-100 dark:border-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1 text-left">Método de Pago</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['cash', 'card', 'transfer'] as const).map((method) => (
+                        <button
+                          key={method}
+                          type="button"
+                          onClick={() => setPickupFinalPayment(method)}
+                          className={`py-3 rounded-xl border-2 transition-all text-[10px] font-bold uppercase tracking-wider ${
+                            pickupFinalPayment === method 
+                              ? 'bg-amber-500 border-amber-500 text-white font-black' 
+                              : 'bg-slate-55 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-800 hover:border-amber-300'
+                          }`}
+                        >
+                          {method === 'cash' ? 'Efectivo' : method === 'card' ? 'Tarjeta' : 'Transf'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-8 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex gap-4">
+                  <button 
+                    type="button"
+                    onClick={() => setConfirmingPickupOrder(null)}
+                    className="flex-1 p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest text-slate-450 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isSavingPickupConfirmation}
+                    className="flex-1 bg-gradient-to-r from-amber-500 to-amber-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:from-amber-600 hover:to-amber-750 transition-all shadow-lg shadow-amber-200"
+                  >
+                    {isSavingPickupConfirmation ? 'Guardando...' : 'Finalizar Venta'}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </>
         )}
@@ -746,6 +932,26 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                     onChange={(e) => setNewOrder({...newOrder, items: e.target.value})}
                     placeholder="Ej. 1x Garrafón 20L"
                     className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none h-20 resize-none"
+                  />
+                </div>
+
+                <div className="col-span-2 bg-amber-50/70 border border-amber-100 rounded-2xl p-4 flex items-center justify-between">
+                  <div className="space-y-0.5 text-left">
+                    <p className="text-xs font-black text-amber-805 uppercase tracking-wide">🔄 ¿ES PEDIDO A RECOGER (LAVADO)?</p>
+                    <p className="text-[10px] text-amber-600 font-bold leading-normal">
+                      Rigoberto toma pedidos telefónicos de lavado con garrafones variables. Al activar esta opción, no sumará al corte de caja hasta que el repartidor regrese de ruta y se confirme la cantidad final.
+                    </p>
+                  </div>
+                  <input 
+                    type="checkbox"
+                    checked={isNewOrderPickup}
+                    onChange={(e) => {
+                      setIsNewOrderPickup(e.target.checked);
+                      if (e.target.checked) {
+                        setNewOrder(prev => ({ ...prev, total_price: '0.00' }));
+                      }
+                    }}
+                    className="w-5 h-5 text-sky-500 border-amber-200 rounded focus:ring-sky-400 cursor-pointer ml-3 shrink-0"
                   />
                 </div>
 

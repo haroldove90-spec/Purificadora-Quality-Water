@@ -76,7 +76,7 @@ export default function DeliveryRoute() {
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .in('status', ['assigned', 'pending', 'delivered']) 
+        .in('status', ['assigned', 'pending', 'delivered', 'pickup_assigned', 'pickup_confirmed']) 
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -165,6 +165,47 @@ export default function DeliveryRoute() {
     setCompleting(false);
   };
 
+  const handleCompletePickup = async () => {
+    if (!selectedDelivery || !currentDelivery) return;
+    setCompleting(true);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          items: `${jugsReceived} Garrafones p/Lavado (Recogidos por ${currentDelivery.assigned_to_name || 'Repartidor'})`,
+          status: 'pickup_confirmed' // Transferred to pickup_confirmed state
+        })
+        .eq('id', selectedDelivery);
+        
+      if (error) throw error;
+
+      // Log notifications to plant/admin
+      await supabase.from('notifications_log').insert([
+        {
+          title: 'Garrafones Recogidos 🔄',
+          message: `${currentDelivery.assigned_to_name || 'Repartidor'} recogió ${jugsReceived} garrafones vacíos de ${currentDelivery.customer_name} y va de regreso a planta.`,
+          type: 'order',
+          user_role: 'admin'
+        },
+        {
+          title: 'Garrafones Recogidos 🔄',
+          message: `${currentDelivery.assigned_to_name || 'Repartidor'} recogió ${jugsReceived} garrafones vacíos de ${currentDelivery.customer_name} y va de regreso a planta.`,
+          type: 'order',
+          user_role: 'operator'
+        }
+      ]);
+
+      await fetchDeliveries();
+      setStep(1);
+      setSelectedDelivery(null);
+    } catch (err: any) {
+      console.error('Error confirming pickup:', err);
+      alert('Error al confirmar recolección: ' + (err.message || 'Verifica tu conexión'));
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   if (loading && !deliveries.length) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -199,7 +240,7 @@ export default function DeliveryRoute() {
             </button>
             <div>
               <p className="text-2xl font-black text-sky-400">
-                {deliveries.filter(d => d.status === 'delivered').length}/{deliveries.length}
+                {deliveries.filter(d => d.status === 'delivered' || d.status === 'pickup_confirmed').length}/{deliveries.length}
               </p>
               <p className="text-[10px] font-bold text-slate-400 uppercase">Entregas</p>
             </div>
@@ -207,7 +248,10 @@ export default function DeliveryRoute() {
         </div>
         
         <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-          <div className="bg-sky-500 h-full w-[48%]" />
+          <div 
+            className="bg-sky-500 h-full transition-all duration-500" 
+            style={{ width: `${(deliveries.filter(d => d.status === 'delivered' || d.status === 'pickup_confirmed').length / Math.max(1, deliveries.length)) * 100}%` }}
+          />
         </div>
       </div>
 
@@ -220,30 +264,31 @@ export default function DeliveryRoute() {
           <div className="flex items-center justify-between px-2">
             <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">Próximas Paradas</h2>
             <span className="flex items-center gap-1 text-[10px] font-bold bg-sky-100 text-sky-700 px-2 py-1 rounded-lg">
-              {deliveries.filter(d => d.status !== 'delivered').length} PENDIENTES
+              {deliveries.filter(d => d.status !== 'delivered' && d.status !== 'pickup_confirmed').length} PENDIENTES
             </span>
           </div>
 
           <div className="space-y-3">
             {deliveries.map((delivery) => {
-              const clientMatch = customersList.find(c => c.name === delivery.customer_name);
+              const clientMatch = customersList.find(c => c.name === delivery.customer_name || delivery.customer_name.endsWith(c.name));
+              const isCompleted = delivery.status === 'delivered' || delivery.status === 'pickup_confirmed';
               return (
                 <div 
                   key={delivery.id}
                   onClick={() => {
-                    if (delivery.status !== 'delivered') {
+                    if (!isCompleted) {
                       setSelectedDelivery(delivery.id);
                       setStep(2);
                     }
                   }}
                   className={`bg-white p-5 rounded-3xl border border-slate-200 shadow-sm transition-all cursor-pointer group ${
-                    delivery.status === 'delivered' ? 'opacity-50 grayscale pointer-events-none' : 'hover:border-sky-500'
+                    isCompleted ? 'opacity-50 grayscale pointer-events-none' : 'hover:border-sky-505'
                   }`}
                 >
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-black text-slate-800 leading-none">{delivery.customer_name}</h3>
+                        <h3 className="text-lg font-black text-slate-805 leading-none">{delivery.customer_name.replace('🔄 [RECOGER] ', '')}</h3>
                         {clientMatch?.alias && (
                           <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider shadow-sm border border-amber-200 shrink-0">
                             {clientMatch.alias}
@@ -252,19 +297,24 @@ export default function DeliveryRoute() {
                       </div>
                       <p className="text-slate-400 font-bold mt-2 flex items-center gap-1 text-xs italic">
                         <MapPin size={12} className="text-rose-500 shrink-0" /> 
-                        <span className="truncate w-40">{delivery.address}</span>
+                        <span className="truncate w-40 text-left">{delivery.address}</span>
                       </p>
                     </div>
                   <div className="text-right">
                     <p className="text-xs font-black text-sky-600 uppercase">
                       {new Date(delivery.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg uppercase ${
-                      delivery.status === 'assigned' ? 'bg-sky-100 text-sky-600' : 
+                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg uppercase tracking-wider ${
                       delivery.status === 'delivered' ? 'bg-emerald-100 text-emerald-600' :
-                      'bg-slate-100 text-slate-500'
+                      delivery.status === 'pickup_assigned' ? 'bg-indigo-150 text-indigo-700 bg-indigo-50 border border-indigo-200 animate-pulse' :
+                      delivery.status === 'pickup_confirmed' ? 'bg-amber-100 text-amber-700' :
+                      'bg-sky-100 text-sky-600'
                     }`}>
-                      {delivery.status}
+                      {
+                        delivery.status === 'pickup_assigned' ? 'Recoger' :
+                        delivery.status === 'pickup_confirmed' ? 'Recogido ✔' :
+                        'Entrega'
+                      }
                     </span>
                   </div>
                 </div>
@@ -275,7 +325,7 @@ export default function DeliveryRoute() {
                       {delivery.items}
                     </span>
                   </div>
-                  {delivery.status !== 'delivered' && (
+                  {!isCompleted && (
                     <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-sky-500 group-hover:text-white transition-colors">
                       <ArrowLeft size={16} className="rotate-180" />
                     </div>
@@ -371,12 +421,15 @@ export default function DeliveryRoute() {
           </button>
 
           <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
-            <CheckCircle2 className="text-emerald-500" /> Finalizar Entrega
+            <CheckCircle2 className={currentDelivery?.status === 'pickup_assigned' ? "text-indigo-500" : "text-emerald-500"} /> 
+            {currentDelivery?.status === 'pickup_assigned' ? 'Confirmar Recogida' : 'Finalizar Entrega'}
           </h3>
 
           <div className="space-y-6">
             <div className="text-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Envases Recibidos</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+                {currentDelivery?.status === 'pickup_assigned' ? 'Cantidad de Garrafones Recogidos' : 'Envases Recibidos'}
+              </p>
               <div className="flex items-center justify-center gap-6">
                 <button 
                   onClick={() => setJugsReceived(Math.max(0, jugsReceived - 1))}
@@ -387,84 +440,107 @@ export default function DeliveryRoute() {
                 <span className="text-4xl font-black text-slate-950 w-12">{jugsReceived}</span>
                 <button 
                   onClick={() => setJugsReceived(jugsReceived + 1)}
-                  className="w-12 h-12 bg-sky-500 rounded-xl flex items-center justify-center text-white active:bg-sky-600 shadow-lg shadow-sky-500/20 min-h-[44px]"
+                  className={currentDelivery?.status === 'pickup_assigned' ? "w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white active:bg-indigo-700 shadow-lg shadow-indigo-500/20 min-h-[44px]" : "w-12 h-12 bg-sky-500 rounded-xl flex items-center justify-center text-white active:bg-sky-600 shadow-lg shadow-sky-500/20 min-h-[44px]"}
                 >
                   <Plus size={20} />
                 </button>
               </div>
             </div>
 
-            {/* Preparation of sale */}
-            <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-3">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Concepto de la Venta / Productos</label>
-              
-              {/* Catalogue items buttons */}
-              <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-1 custom-scrollbar">
-                {products.map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      const prefix = deliveryItems ? ', ' : '';
-                      setDeliveryItems(prev => prev + prefix + '1x ' + p.name);
-                      setDeliveryTotal(prev => prev + p.price);
-                    }}
-                    className="bg-white hover:bg-sky-50 border border-slate-200 hover:border-sky-300 text-slate-700 hover:text-sky-600 px-3 py-2 rounded-xl text-[10px] font-extrabold transition-all text-left flex justify-between items-center"
-                  >
-                    <span className="truncate">{p.name}</span>
-                    <span className="text-emerald-500 font-mono shrink-0">${p.price}</span>
-                  </button>
-                ))}
-              </div>
-
-              <textarea 
-                value={deliveryItems}
-                onChange={(e) => setDeliveryItems(e.target.value)}
-                placeholder="Ej. 1x Garrafón 20L, 1x Botella 1.5L"
-                className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-xs focus:ring-2 focus:ring-sky-500 outline-none h-16 resize-none"
-              />
-
-              <div className="flex justify-between items-center pt-2">
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setDeliveryItems('');
-                    setDeliveryTotal(0);
-                  }}
-                  className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:bg-rose-50 px-2 py-1 rounded-lg"
-                >
-                  Limpiar Venta
-                </button>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total ($):</span>
-                  <input 
-                    type="number"
-                    step="0.01"
-                    value={deliveryTotal}
-                    onChange={(e) => setDeliveryTotal(parseFloat(e.target.value) || 0)}
-                    className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-right focus:ring-2 focus:ring-sky-500 outline-none"
-                  />
+            {currentDelivery?.status === 'pickup_assigned' ? (
+              <div className="space-y-6">
+                <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-150 p-5 rounded-3xl text-left">
+                  <p className="text-xs font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                    💡 Control de Envases
+                  </p>
+                  <p className="text-[11px] text-indigo-600 dark:text-indigo-300 font-bold leading-normal">
+                    Se registrarán estos envases bajo el estado <strong className="font-extrabold text-indigo-800 dark:text-indigo-400">Listo p/Liquidar</strong>. Al regresar a planta, administración podrá confirmar el lavado y liquidar la venta exacta sin alterar el inventario ni el corte prematuramente.
+                  </p>
                 </div>
+                
+                <button 
+                  onClick={handleCompletePickup}
+                  disabled={completing}
+                  className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 active:scale-95 transition-all flex items-center justify-center gap-3 min-h-[44px]"
+                >
+                  {completing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle2 size={24} /> Confirmar Custodia y Regresar</>}
+                </button>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Preparation of sale */}
+                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Concepto de la Venta / Productos</label>
+                  
+                  {/* Catalogue items buttons */}
+                  <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-1 custom-scrollbar">
+                    {products.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          const prefix = deliveryItems ? ', ' : '';
+                          setDeliveryItems(prev => prev + prefix + '1x ' + p.name);
+                          setDeliveryTotal(prev => prev + p.price);
+                        }}
+                        className="bg-white hover:bg-sky-50 border border-slate-200 hover:border-sky-300 text-slate-700 hover:text-sky-600 px-3 py-2 rounded-xl text-[10px] font-extrabold transition-all text-left flex justify-between items-center"
+                      >
+                        <span className="truncate">{p.name}</span>
+                        <span className="text-emerald-500 font-mono shrink-0">${p.price}</span>
+                      </button>
+                    ))}
+                  </div>
 
-            <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex justify-between items-center">
-              <div>
-                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Monto Final</span>
-                <span className="text-xs text-emerald-600 font-bold font-sans">Cobrar al cliente</span>
-              </div>
-              <span className="text-3xl font-black text-emerald-600 font-sans">
-                ${deliveryTotal.toFixed(2)}
-              </span>
-            </div>
+                  <textarea 
+                    value={deliveryItems}
+                    onChange={(e) => setDeliveryItems(e.target.value)}
+                    placeholder="Ej. 1x Garrafón 20L, 1x Botella 1.5L"
+                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-xs focus:ring-2 focus:ring-sky-500 outline-none h-16 resize-none"
+                  />
 
-            <button 
-              onClick={handleComplete}
-              disabled={completing}
-              className="w-full bg-emerald-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-3 min-h-[44px]"
-            >
-              {completing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle2 size={24} /> Confirmar Pago y Entrega</>}
-            </button>
+                  <div className="flex justify-between items-center pt-2">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setDeliveryItems('');
+                        setDeliveryTotal(0);
+                      }}
+                      className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:bg-rose-50 px-2 py-1 rounded-lg"
+                    >
+                      Limpiar Venta
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total ($):</span>
+                      <input 
+                        type="number"
+                        step="0.01"
+                        value={deliveryTotal}
+                        onChange={(e) => setDeliveryTotal(parseFloat(e.target.value) || 0)}
+                        className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-right focus:ring-2 focus:ring-sky-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Monto Final</span>
+                    <span className="text-xs text-emerald-600 font-bold font-sans">Cobrar al cliente</span>
+                  </div>
+                  <span className="text-3xl font-black text-emerald-600 font-sans">
+                    ${deliveryTotal.toFixed(2)}
+                  </span>
+                </div>
+
+                <button 
+                  onClick={handleComplete}
+                  disabled={completing}
+                  className="w-full bg-emerald-500 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-3 min-h-[44px]"
+                >
+                  {completing ? <Loader2 size={24} className="animate-spin" /> : <><CheckCircle2 size={24} /> Confirmar Pago y Entrega</>}
+                </button>
+              </>
+            )}
           </div>
         </motion.div>
       )}

@@ -121,6 +121,12 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     phone?: string;
   } | null>(null);
 
+  // Pedidos a Recoger (Wash & Return) States
+  const [isPickupOrder, setIsPickupOrder] = useState(false);
+  const [drivers, setDrivers] = useState<any[]>([]);
+  const [assignedDriverId, setAssignedDriverId] = useState('');
+  const [assignedDriverName, setAssignedDriverName] = useState('');
+
   // Background Auto Sychronization for Offline Sales
   const syncOfflineSales = async () => {
     try {
@@ -206,6 +212,16 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         try {
           localStorage.setItem('pos_cache_customers', JSON.stringify(custData));
         } catch (_) {}
+      }
+
+      // Fetch Drivers from employees
+      const { data: empData, error: empError } = await supabase
+        .from('employees')
+        .select('*')
+        .order('name');
+      
+      if (empData) {
+        setDrivers(empData.filter((e: any) => e.role === 'driver' || e.role === 'repartidor'));
       }
     } catch (e: any) {
       console.error('Error cargando catálogo POS:', e);
@@ -335,6 +351,11 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       return;
     }
 
+    if (isPickupOrder && !assignedDriverId) {
+      setNotification({ type: 'error', message: 'Por favor, selecciona un repartidor registrado para el Pedido a Recoger.' });
+      return;
+    }
+
     setNotification(null);
     const total = getCartTotal();
     
@@ -392,13 +413,14 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
     const payload = {
       id: generateOrderUUID(),
-      customer_name: generatedTicket.customer_name || 'Venta Mostrador',
+      customer_name: isPickupOrder ? `🔄 [RECOGER] ${generatedTicket.customer_name}` : (generatedTicket.customer_name || 'Venta Mostrador'),
       address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
-      items: itemsDescription,
-      total_price: generatedTicket.total,
-      status: 'delivered', // Immediate delivery
-      source: 'pos', // Source tracking
-      assigned_to_name: userRole === 'driver' ? (userName || 'Repartidor') : (userName || 'Mostrador'),
+      items: isPickupOrder ? `[RECOGER DE CLIENTE-LAVADO] ${itemsDescription}` : itemsDescription,
+      total_price: isPickupOrder ? 0.00 : generatedTicket.total,
+      status: isPickupOrder ? 'pickup_assigned' : 'delivered',
+      source: isPickupOrder ? 'phone' : 'pos',
+      assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
+      assigned_to_name: isPickupOrder && assignedDriverName ? assignedDriverName : (userRole === 'driver' ? (userName || 'Repartidor') : (userName || 'Mostrador')),
       created_at: new Date().toISOString()
     };
 
@@ -413,6 +435,9 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         // Simular éxito para liberar la interfaz del chofer inmediatamente
         clearCart();
         setShowTicketModal(false);
+        setIsPickupOrder(false);
+        setAssignedDriverId('');
+        setAssignedDriverName('');
         setNotification({ 
           type: 'success', 
           message: '📶 Venta guardada en tu dispositivo (Modo Offline). Se subirá a la nube automáticamente cuando recuperes señal.' 
@@ -452,7 +477,13 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       // Clear operational states on success
       clearCart();
       setShowTicketModal(false);
-      setNotification({ type: 'success', message: '¡Venta registrada con éxito en la base de datos!' });
+      setIsPickupOrder(false);
+      setAssignedDriverId('');
+      setAssignedDriverName('');
+      setNotification({ 
+        type: 'success', 
+        message: isPickupOrder ? '¡Pedido a recoger registrado y asignado con éxito!' : '¡Venta registrada con éxito en la base de datos!' 
+      });
 
       if (!selectedCustomer) {
         handleClearCustomer();
@@ -886,6 +917,51 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                   );
                 })}
               </div>
+            </div>
+            
+            {/* Pedidos a Recoger (Wash & Return) Option */}
+            <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={isPickupOrder}
+                  onChange={(e) => {
+                    setIsPickupOrder(e.target.checked);
+                    if (!e.target.checked) {
+                      setAssignedDriverId('');
+                      setAssignedDriverName('');
+                    }
+                  }}
+                  className="rounded border-slate-300 dark:border-slate-800 text-sky-500 focus:ring-sky-450 w-4 h-4 cursor-pointer"
+                />
+                <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wide group-hover:text-amber-500 transition-colors">
+                  🔄 Pedido a Recoger (Lavado)
+                </span>
+              </label>
+              
+              {isPickupOrder && (
+                <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-200/50 space-y-2 animate-fade-in text-left">
+                  <p className="text-[10px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider leading-tight">
+                    El valor de este pedido ($0.00 / variable) no sumará al corte de caja hasta que el repartidor regrese a planta y se corroboren las entregas.
+                  </p>
+                  <select
+                    value={assignedDriverId}
+                    onChange={(e) => {
+                      const drv = drivers.find(d => d.id === e.target.value);
+                      setAssignedDriverId(e.target.value);
+                      setAssignedDriverName(drv ? drv.name : '');
+                    }}
+                    className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-sky-500 focus:outline-none cursor-pointer"
+                  >
+                    <option value="">-- Seleccionar Repartidor --</option>
+                    {drivers.map(drv => (
+                      <option key={drv.id} value={drv.id}>
+                        {drv.name.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             
           </div>
