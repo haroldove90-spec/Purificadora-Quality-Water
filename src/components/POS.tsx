@@ -127,6 +127,10 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   const [assignedDriverId, setAssignedDriverId] = useState('');
   const [assignedDriverName, setAssignedDriverName] = useState('');
 
+  // Soportes de Adeudos / Ventas con saldo pendiente
+  const [posIsDebt, setPosIsDebt] = useState(false);
+  const [posAmountPaidToday, setPosAmountPaidToday] = useState(0);
+
   // Background Auto Sychronization for Offline Sales
   const syncOfflineSales = async () => {
     try {
@@ -411,13 +415,33 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       });
     };
 
+    const isActuallyDebt = posIsDebt && !isPickupOrder;
+    const debtAmount = isActuallyDebt ? Number(generatedTicket.total) - Number(posAmountPaidToday) : 0;
+    
+    let orderStatus = isPickupOrder ? 'pickup_assigned' : 'delivered';
+    let savePrice = isPickupOrder ? 0.00 : generatedTicket.total;
+    let saveItems = isPickupOrder ? `[RECOGER DE CLIENTE-LAVADO] ${itemsDescription}` : itemsDescription;
+    
+    if (isActuallyDebt) {
+      if (debtAmount <= 0) {
+        orderStatus = 'delivered';
+      } else if (Number(posAmountPaidToday) <= 0) {
+        orderStatus = 'pending_payment';
+        saveItems = `${itemsDescription} (Se debe)`;
+      } else {
+        orderStatus = 'delivered';
+        savePrice = Number(posAmountPaidToday);
+        saveItems = `${itemsDescription} [PAGO PARCIAL]`;
+      }
+    }
+
     const payload = {
       id: generateOrderUUID(),
       customer_name: isPickupOrder ? `🔄 [RECOGER] ${generatedTicket.customer_name}` : (generatedTicket.customer_name || 'Venta Mostrador'),
       address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
-      items: isPickupOrder ? `[RECOGER DE CLIENTE-LAVADO] ${itemsDescription}` : itemsDescription,
-      total_price: isPickupOrder ? 0.00 : generatedTicket.total,
-      status: isPickupOrder ? 'pickup_assigned' : 'delivered',
+      items: saveItems,
+      total_price: savePrice,
+      status: orderStatus,
       source: isPickupOrder ? 'phone' : 'pos',
       assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
       assigned_to_name: isPickupOrder && assignedDriverName ? assignedDriverName : (userRole === 'driver' ? (userName || 'Repartidor') : (userName || 'Mostrador')),
@@ -429,6 +453,25 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         const pendingStr = localStorage.getItem('pending_offline_sales');
         const pendingList = pendingStr ? JSON.parse(pendingStr) : [];
         pendingList.push(payload);
+        
+        // If there's partial debt split, save the second portion offline too
+        if (isActuallyDebt && debtAmount > 0 && Number(posAmountPaidToday) > 0) {
+          pendingList.push({
+            id: 'xxxx-xxxx-4xxx-yxxx'.replace(/[xy]/g, function(c) {
+              const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+            }),
+            customer_name: payload.customer_name,
+            address: payload.address,
+            items: `${itemsDescription} [SALDO PENDIENTE]`,
+            total_price: debtAmount,
+            status: 'pending_payment',
+            source: payload.source,
+            assigned_to: payload.assigned_to,
+            assigned_to_name: payload.assigned_to_name,
+            created_at: new Date().toISOString()
+          });
+        }
+
         localStorage.setItem('pending_offline_sales', JSON.stringify(pendingList));
         setOfflineSalesCount(pendingList.length);
         
@@ -473,6 +516,28 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       const { error }: any = await Promise.race([savePromise, timeoutPromise]);
 
       if (error) throw error;
+
+      // If online and there was a split debt, insert the second pending_payment order as well
+      if (isActuallyDebt && debtAmount > 0 && Number(posAmountPaidToday) > 0) {
+        const { error: insertErr } = await supabase
+          .from('orders')
+          .insert([
+            {
+              customer_name: payload.customer_name,
+              address: payload.address,
+              items: `${itemsDescription} [SALDO PENDIENTE]`,
+              total_price: debtAmount,
+              status: 'pending_payment',
+              source: payload.source,
+              assigned_to: payload.assigned_to,
+              assigned_to_name: payload.assigned_to_name,
+              created_at: new Date().toISOString()
+            }
+          ]);
+        if (insertErr) {
+          console.warn('Error inserting secondary pending_payment split in POS:', insertErr);
+        }
+      }
 
       // Clear operational states on success
       clearCart();
@@ -1090,6 +1155,60 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                   --- ¡Gracias por su preferencia! ---
                 </div>
               </div>
+
+              {/* Control de Adeudos (Cuentas por cobrar) */}
+              {!isPickupOrder && (
+                <div className="mx-6 my-2 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-800 uppercase tracking-wide">¿A Adeudo? (Cuentas por Cobrar)</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase">Marcar si el cliente queda a deber ("se debe")</p>
+                    </div>
+                    <input 
+                      type="checkbox"
+                      checked={posIsDebt}
+                      onChange={(e) => {
+                        setPosIsDebt(e.target.checked);
+                        if (e.target.checked) {
+                          setPosAmountPaidToday(0);
+                        }
+                      }}
+                      className="w-4 h-4 text-sky-500 accent-sky-500 rounded border-slate-300 focus:ring-sky-500 cursor-pointer h-[44px]"
+                    />
+                  </div>
+
+                  {posIsDebt && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-2 pt-2 border-t border-slate-200"
+                    >
+                      <div className="flex justify-between items-center text-xs">
+                        <label className="text-[9px] font-black text-slate-500 uppercase">Monto Cobrado Hoy ($):</label>
+                        <input 
+                          type="number"
+                          min="0"
+                          max={generatedTicket.total}
+                          step="0.01"
+                          value={posAmountPaidToday}
+                          onChange={(e) => setPosAmountPaidToday(Math.min(generatedTicket.total, parseFloat(e.target.value) || 0))}
+                          className="w-24 p-1.5 bg-white border border-slate-200 rounded-lg font-black text-xs text-right focus:ring-2 focus:ring-sky-500 outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[10px] font-black bg-amber-50 p-2 rounded-xl text-amber-800 border border-amber-100/50">
+                        <div>
+                          <span>COBROS HOY:</span>
+                          <span className="block text-xs font-black">${posAmountPaidToday.toFixed(2)}</span>
+                        </div>
+                        <div className="text-right">
+                          <span>PENDIENTE:</span>
+                          <span className="block text-xs font-black text-rose-600">${(generatedTicket.total - posAmountPaidToday).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              )}
 
               {/* Action utilities */}
               <div className="p-4 bg-slate-50 flex flex-col gap-2">

@@ -95,6 +95,13 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [isExporting, setIsExporting] = useState(false);
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
+
+  // Control de Adeudos (Cuentas por cobrar)
+  const [debtCustomer, setDebtCustomer] = useState<any | null>(null);
+  const [showDebtModal, setShowDebtModal] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [processingPayment, setProcessingPayment] = useState(false);
+
   const [showNewEmployeeModal, setShowNewEmployeeModal] = useState(false);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
@@ -255,6 +262,99 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   const norm = (s?: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
 
+  const getCustomerDebt = (clientName: string) => {
+    if (!clientName) return 0;
+    const matched = salesList.filter(s => 
+      s.status === 'pending_payment' && 
+      s.customer_name && 
+      namesMatch(s.customer_name, clientName)
+    );
+    return matched.reduce((acc, order) => acc + (Number(order.total_price) || 0), 0);
+  };
+
+  const getCustomerDebtOrders = (clientName: string) => {
+    if (!clientName) return [];
+    return salesList
+      .filter(s => s.status === 'pending_payment' && s.customer_name && namesMatch(s.customer_name, clientName))
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  };
+
+  const handleApplyDebtPayment = async () => {
+    if (!debtCustomer) return;
+    setProcessingPayment(true);
+    try {
+      const debtOrders = getCustomerDebtOrders(debtCustomer.name);
+      let remainingPayment = Number(paymentAmount);
+      
+      if (remainingPayment <= 0) {
+        alert('Por favor introduce un monto de pago válido.');
+        setProcessingPayment(false);
+        return;
+      }
+
+      for (const order of debtOrders) {
+        if (remainingPayment <= 0) break;
+
+        const orderTotal = Number(order.total_price || 0);
+
+        if (remainingPayment >= orderTotal) {
+          const { error } = await supabase
+            .from('orders')
+            .update({
+              status: 'delivered',
+              items: `${order.items} [ADEUDO LIQUIDADO]`
+            })
+            .eq('id', order.id);
+          
+          if (error) throw error;
+          remainingPayment -= orderTotal;
+        } else {
+          const { error: updateErr } = await supabase
+            .from('orders')
+            .update({
+              status: 'delivered',
+              total_price: remainingPayment,
+              items: `${order.items} [ADEUDO PARCIALMENTE RECAUDADO]`
+            })
+            .eq('id', order.id);
+            
+          if (updateErr) throw updateErr;
+
+          const remainder = orderTotal - remainingPayment;
+          const { error: insertErr } = await supabase
+            .from('orders')
+            .insert([
+              {
+                customer_name: order.customer_name,
+                address: order.address,
+                items: `${order.items} [SALDO RESTANTE DEL ADEUDO]`,
+                total_price: remainder,
+                status: 'pending_payment',
+                source: order.source || 'pos',
+                assigned_to: order.assigned_to,
+                assigned_to_name: order.assigned_to_name,
+                created_at: new Date().toISOString()
+              }
+            ]);
+
+          if (insertErr) throw insertErr;
+          
+          remainingPayment = 0;
+        }
+      }
+
+      alert('¡Pago registrado con éxito! El saldo del cliente ha sido actualizado en el historial.');
+      await fetchSales();
+      setShowDebtModal(false);
+      setDebtCustomer(null);
+    } catch (err: any) {
+      console.error('Error applying debt payment:', err);
+      alert('Error al aplicar el pago: ' + err.message);
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
   const getFilteredCustomers = () => {
     let list = customersList.length > 0 ? customersList : CLIENT_MANAGEMENT;
     if (customerFilter.trim()) {
@@ -340,7 +440,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .eq('status', 'delivered')
+        .in('status', ['delivered', 'pending_payment'])
         .order('created_at', { ascending: false });
       
       if (!error && data) {
@@ -1046,7 +1146,14 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             <p className="text-[10px] text-slate-400 font-bold">{new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                           </td>
                           <td className="px-6 py-4">
-                            <p className="text-xs font-black text-slate-800 uppercase italic leading-none">{sale.customer_name}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-black text-slate-800 uppercase italic leading-none">{sale.customer_name}</p>
+                              {sale.status === 'pending_payment' && (
+                                <span className="bg-rose-100 text-rose-800 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shrink-0 animate-pulse border border-rose-200">
+                                  Adeudo
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4">
                             <p className="text-[10px] font-black uppercase text-slate-600 italic">
@@ -1144,6 +1251,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     <tr>
                       <th className="px-6 py-4">Nombre / Zona / Alias</th>
                       <th className="px-6 py-4">Suscripción</th>
+                      <th className="px-6 py-4">Saldo Pendiente</th>
                       <th className="px-6 py-4">Acumulado</th>
                       <th className="px-6 py-4">Ultimo Pedido</th>
                       <th className="px-6 py-4 text-right">Acción</th>
@@ -1172,6 +1280,20 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             {client.tier || 'Frecuente'}
                           </span>
                         </td>
+                        <td className="px-6 py-4">
+                          {getCustomerDebt(client.name) > 0 ? (
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="bg-rose-50 text-rose-700 hover:bg-rose-100 px-2 py-0.5 rounded-xl text-[11px] font-black border border-rose-100 inline-flex items-center gap-1 shadow-sm">
+                                <DollarSign size={10} />{getCustomerDebt(client.name).toFixed(2)}
+                              </span>
+                              <span className="text-[8px] text-rose-400 font-extrabold uppercase select-none tracking-tight">Adeudo activo</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 text-xs font-semibold uppercase italic">
+                              $0.00
+                            </span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-xs font-black text-slate-800">
                           {client.totalOrders || '0'} Entregas
                         </td>
@@ -1180,9 +1302,22 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {getCustomerDebt(client.name) > 0 && (
+                              <button 
+                                onClick={() => {
+                                  setDebtCustomer(client);
+                                  setPaymentAmount(getCustomerDebt(client.name));
+                                  setShowDebtModal(true);
+                                }}
+                                className="p-2 text-rose-500 hover:text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"
+                                title="Cobrar / Abonar Adeudo"
+                              >
+                                <DollarSign size={16} />
+                              </button>
+                            )}
                             <button 
                               onClick={() => handleStartEditCustomer(client)}
-                              className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
+                              className="p-2 text-slate-300 hover:text-sky-500 hover:bg-slate-100 rounded-xl transition-all"
                               title="Ver / Editar"
                             >
                               <Edit3 size={16} />
@@ -1190,7 +1325,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             {userRole === 'admin' && (
                               <button 
                                 onClick={() => handleDeleteCustomer(client.id, client.name)}
-                                className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
                                 title="Eliminar"
                               >
                                 <Trash2 size={16} />
@@ -1659,7 +1794,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   </p>
                 </div>
 
-                <button 
+                 <button 
                   type="submit"
                   disabled={isSavingCustomer}
                   className="w-full bg-sky-500 text-white py-5 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl shadow-sky-500/20 hover:bg-sky-600 transition-all active:scale-95 mt-4 flex items-center justify-center gap-2 disabled:opacity-50"
@@ -1674,6 +1809,118 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   )}
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+        {showDebtModal && debtCustomer && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !processingPayment && setShowDebtModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8 max-h-[90vh] flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-black text-slate-800 uppercase italic">
+                    Cobro de <span className="text-rose-500">Adeudo</span>
+                  </h3>
+                  <button 
+                    onClick={() => setShowDebtModal(false)}
+                    disabled={processingPayment}
+                    className="p-2 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-0"
+                  >
+                    <X size={20} className="text-slate-400" />
+                  </button>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 mb-4 text-left">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente Seleccionado</p>
+                  <p className="text-base font-black text-slate-800 uppercase italic mt-1">{debtCustomer.name}</p>
+                  <p className="text-xs text-slate-500 font-bold mt-1 uppercase">{debtCustomer.address || 'Sin dirección registrada'}</p>
+                  <div className="flex justify-between items-center bg-rose-50 border border-rose-100 p-3 rounded-2xl mt-3">
+                    <span className="text-xs font-black text-rose-800 uppercase font-sans">Adeudo Pendiente:</span>
+                    <span className="text-lg font-black text-rose-600 font-sans">${getCustomerDebt(debtCustomer.name).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left mb-2">
+                  Historial a Cobrar (Se jala automáticamente)
+                </h4>
+                
+                <div className="overflow-y-auto max-h-48 space-y-2 mb-4 pr-1 text-left scrollbar-thin">
+                  {getCustomerDebtOrders(debtCustomer.name).length > 0 ? (
+                    getCustomerDebtOrders(debtCustomer.name).map((order) => (
+                      <div key={order.id} className="p-3 bg-white border border-slate-200 rounded-2xl flex justify-between items-center shadow-sm">
+                        <div>
+                          <p className="text-[10px] font-black text-sky-500">#{order.id.slice(0, 8).toUpperCase()}</p>
+                          <p className="text-[10px] text-slate-600 font-bold uppercase mt-1">{order.items}</p>
+                          <p className="text-[8px] text-slate-400 font-bold">
+                            {new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                        <span className="text-xs font-black text-rose-600 shrink-0 bg-rose-50 px-2.5 py-1 rounded-xl font-mono">
+                          ${Number(order.total_price || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-4 text-slate-400 text-xs text-left">
+                      No hay historial pendiente de cobro.
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2 text-left mb-4">
+                  <label htmlFor="paymentInput" className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                    Monto a Cobrar e Ingresar a Caja ($):
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-lg">$</span>
+                    <input 
+                      type="number"
+                      id="paymentInput"
+                      min="0.01"
+                      step="0.01"
+                      max={getCustomerDebt(debtCustomer.name)}
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(Math.min(getCustomerDebt(debtCustomer.name), parseFloat(e.target.value) || 0))}
+                      className="w-full pl-8 pr-16 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg focus:ring-2 focus:ring-sky-500 outline-none placeholder-slate-400"
+                    />
+                    <button 
+                      onClick={() => setPaymentAmount(getCustomerDebt(debtCustomer.name))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded-lg uppercase"
+                    >
+                      Completo
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleApplyDebtPayment}
+                disabled={processingPayment || paymentAmount <= 0}
+                className="w-full bg-emerald-500 text-white py-4 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-500/20 hover:bg-emerald-600 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 min-h-[44px]"
+              >
+                {processingPayment ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Registrando Pago...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} />
+                    <span>Confirmar Cobro y Liquidar</span>
+                  </>
+                )}
+              </button>
             </motion.div>
           </div>
         )}

@@ -31,6 +31,8 @@ export default function DeliveryRoute() {
   const [completing, setCompleting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'active' | 'history'>('active');
+  const [isDebt, setIsDebt] = useState(false);
+  const [amountPaidToday, setAmountPaidToday] = useState(0);
 
   const handleExportPDF = () => {
     setIsExporting(true);
@@ -173,23 +175,86 @@ export default function DeliveryRoute() {
     if (step === 3 && currentDelivery) {
       setDeliveryItems(currentDelivery.items || '');
       setDeliveryTotal(currentDelivery.total_price || 0);
+      setIsDebt(false);
+      setAmountPaidToday(0);
     }
   }, [step, selectedDelivery]);
 
   const handleComplete = async () => {
-    if (!selectedDelivery) return;
+    if (!selectedDelivery || !currentDelivery) return;
     setCompleting(true);
     
-    const result = await handleCompleteDelivery(selectedDelivery, deliveryItems, deliveryTotal);
-    
-    if (result.success) {
-      await fetchDeliveries();
-      setStep(1);
-      setSelectedDelivery(null);
-    } else {
-      alert('Error al confirmar entrega: ' + result.error);
+    try {
+      if (isDebt) {
+        const debtAmount = Number(deliveryTotal) - Number(amountPaidToday);
+        if (debtAmount <= 0) {
+          // No debt in practice
+          const result = await handleCompleteDelivery(selectedDelivery, deliveryItems, deliveryTotal, 'delivered');
+          if (result.success) {
+            await fetchDeliveries();
+            setStep(1);
+            setSelectedDelivery(null);
+          } else {
+            alert('Error al confirmar entrega: ' + result.error);
+          }
+        } else if (Number(amountPaidToday) <= 0) {
+          // Fully pending payment
+          const result = await handleCompleteDelivery(selectedDelivery, `${deliveryItems} (Se debe)`, deliveryTotal, 'pending_payment');
+          if (result.success) {
+            await fetchDeliveries();
+            setStep(1);
+            setSelectedDelivery(null);
+          } else {
+            alert('Error al registrar saldo pendiente: ' + result.error);
+          }
+        } else {
+          // Split into paid portion and unpaid portion (debt)
+          const result = await handleCompleteDelivery(selectedDelivery, `${deliveryItems} [PAGO PARCIAL]`, Number(amountPaidToday), 'delivered');
+          if (result.success) {
+            // Write cumulative debt remainder order
+            const { error: insertErr } = await supabase
+              .from('orders')
+              .insert([
+                {
+                  customer_name: currentDelivery.customer_name,
+                  address: currentDelivery.address,
+                  items: `${deliveryItems} [SALDO PENDIENTE]`,
+                  total_price: debtAmount,
+                  status: 'pending_payment',
+                  source: currentDelivery.source || 'pos',
+                  assigned_to: currentDelivery.assigned_to || null,
+                  assigned_to_name: currentDelivery.assigned_to_name || null,
+                  created_at: new Date().toISOString()
+                }
+              ]);
+            
+            if (insertErr) {
+              console.warn('Error inserting pending_payment Order partition:', insertErr);
+            }
+            
+            await fetchDeliveries();
+            setStep(1);
+            setSelectedDelivery(null);
+          } else {
+            alert('Error al registrar pago parcial: ' + result.error);
+          }
+        }
+      } else {
+        const result = await handleCompleteDelivery(selectedDelivery, deliveryItems, deliveryTotal, 'delivered');
+        if (result.success) {
+          await fetchDeliveries();
+          setStep(1);
+          setSelectedDelivery(null);
+        } else {
+          alert('Error al confirmar entrega: ' + result.error);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error in handleComplete:', err);
+      alert('Error inesperado: ' + err.message);
+    } finally {
+      setCompleting(false);
     }
-    setCompleting(false);
   };
 
   const handleCompletePickup = async () => {
@@ -610,6 +675,60 @@ export default function DeliveryRoute() {
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Control de Adeudos (Cuentas por cobrar) */}
+                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-4 text-left">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-black text-slate-800 uppercase tracking-wider">¿Tiene Saldo Pendiente? (Adeudo)</p>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase">Marcar si el cliente queda a deber ("se debe")</p>
+                    </div>
+                    <input 
+                      type="checkbox"
+                      id="isDebtCheckbox"
+                      checked={isDebt}
+                      onChange={(e) => {
+                        setIsDebt(e.target.checked);
+                        if (e.target.checked) {
+                          setAmountPaidToday(0); // Default unpaid full amount
+                        }
+                      }}
+                      className="w-5 h-5 text-sky-500 accent-sky-500 rounded border-slate-300 focus:ring-sky-500 h-[44px]"
+                    />
+                  </div>
+
+                  {isDebt && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-3 pt-2 border-t border-slate-200"
+                    >
+                      <div className="flex justify-between items-center">
+                        <label htmlFor="amountPaidInput" className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Monto Cobrado Hoy ($):</label>
+                        <input 
+                          type="number"
+                          id="amountPaidInput"
+                          min="0"
+                          max={deliveryTotal}
+                          step="0.01"
+                          value={amountPaidToday}
+                          onChange={(e) => setAmountPaidToday(Math.min(deliveryTotal, parseFloat(e.target.value) || 0))}
+                          className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-right focus:ring-2 focus:ring-sky-500 outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-2xl border border-amber-100 text-[11px] font-bold text-amber-800">
+                        <div>
+                          <p className="text-[10px] opacity-75 uppercase">Cobro Hoy:</p>
+                          <p className="text-sm font-black">${amountPaidToday.toFixed(2)}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] opacity-75 uppercase">Adeudo acumulado:</p>
+                          <p className="text-sm font-black text-rose-600">${(deliveryTotal - amountPaidToday).toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
 
                 <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex justify-between items-center">

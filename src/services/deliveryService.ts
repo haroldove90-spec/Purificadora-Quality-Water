@@ -6,10 +6,10 @@ import { Order } from '../lib/types.supabase';
  * handleCompleteDelivery
  * Actualiza el estado del pedido y genera el mensaje para el ticket de WhatsApp.
  */
-export async function handleCompleteDelivery(orderId: string, customItems?: string, customTotalPrice?: number) {
+export async function handleCompleteDelivery(orderId: string, customItems?: string, customTotalPrice?: number, customStatus?: string) {
   try {
     const updateBody: any = {
-      status: 'delivered'
+      status: customStatus || 'delivered'
     };
     if (customItems !== undefined) {
       updateBody.items = customItems;
