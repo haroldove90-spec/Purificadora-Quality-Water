@@ -102,6 +102,14 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   // Toggle for admins and operators to view either the master list or personal drawer
   const [viewMode, setViewMode] = useState<'admin' | 'personal'>('personal');
 
+  // States for Route Trips and loads
+  const [activeTabTruck, setActiveTabTruck] = useState<'trips' | 'info'>('trips');
+  const [tripLoadedQty, setTripLoadedQty] = useState<number>(20);
+  const [tripUnsoldQty, setTripUnsoldQty] = useState<number>(0);
+  const [tripEmptyQty, setTripEmptyQty] = useState<number>(20);
+  const [dispatchDriverName, setDispatchDriverName] = useState<string>('');
+  const [dispatchLoadedQty, setDispatchLoadedQty] = useState<number>(20);
+
   // New assignment form state
   const [formEmployeeName, setFormEmployeeName] = useState('');
   const [formFloatAmount, setFormFloatAmount] = useState('600');
@@ -169,7 +177,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
             name: normalizeEmployeeName(session.user_name),
             role: matchedRole
           });
-          setViewMode(matchedRole === 'admin' ? 'admin' : 'personal');
+          const isManager = matchedRole === 'admin' || matchedRole === 'operator';
+          setViewMode(isManager ? 'admin' : 'personal');
         }
       } catch (e) {}
     } else {
@@ -183,7 +192,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
               name: normalizeEmployeeName(backup.userName),
               role: matchedRole
             });
-            setViewMode(matchedRole === 'admin' ? 'admin' : 'personal');
+            const isManager = matchedRole === 'admin' || matchedRole === 'operator';
+            setViewMode(isManager ? 'admin' : 'personal');
           }
         } catch (_) {}
       }
@@ -198,7 +208,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         name: finalName,
         role: finalRole
       });
-      setViewMode(finalRole === 'admin' ? 'admin' : 'personal');
+      const isManager = finalRole === 'admin' || finalRole === 'operator';
+      setViewMode(isManager ? 'admin' : 'personal');
     }
   }, [userName, userRole]);
 
@@ -821,6 +832,170 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     }
   };
 
+  // Helper to assign a new vehicle cargo trip/load of garrafones to a driver
+  const handleAddDriverTrip = async (employeeName: string, loadedQty: number) => {
+    setActionLoading(true);
+    const today = getLocalDateString();
+    try {
+      const { data: todayAtt } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
+      const existingLocation = parseJsonFields(existing?.last_location);
+      
+      const trips = existingLocation.trips || [];
+      const newTrip = {
+        id: 'T-' + Math.floor(10000 + Math.random() * 90000),
+        trip_number: trips.length + 1,
+        loaded_qty: Number(loadedQty) || 20,
+        returned_unsold_qty: 0,
+        returned_empty_qty: 0,
+        sold_qty: 0,
+        status: 'active',
+        loaded_at: new Date().toISOString()
+      };
+
+      const updatedLocation = {
+        ...existingLocation,
+        trips: [...trips, newTrip]
+      };
+
+      const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
+      let targetUserRole = targetEmp?.role || 'driver';
+      const normRole = targetUserRole.toLowerCase().trim();
+      if (normRole === 'administrador' || normRole === 'admin') {
+        targetUserRole = 'driver';
+      } else if (normRole === 'operador' || normRole === 'planta' || normRole === 'operator') {
+        targetUserRole = 'operator';
+      } else {
+        targetUserRole = 'driver';
+      }
+
+      const { error } = await supabase
+        .from('daily_attendance')
+        .upsert({
+          ...(existing || {}),
+          user_name: employeeName,
+          work_date: today,
+          user_role: targetUserRole,
+          last_location: updatedLocation
+        }, { onConflict: 'user_name, work_date' });
+
+      if (error) throw error;
+      
+      // Send notification alert
+      await supabase.from('notifications_log').insert([{
+        title: '🚚 Carga de Inventario registrada',
+        message: `Se despachó un viaje de carga con ${loadedQty} garrafones a ${employeeName}.`,
+        type: 'delivery',
+        user_role: targetUserRole,
+        is_read: false
+      }]);
+
+      await loadData();
+      alert(`¡Carga de ${loadedQty} garrafones asignada con éxito a ${employeeName}!`);
+    } catch (e: any) {
+      alert('Error al asignar carga de viaje: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Helper to reconcile/liquidate a route load trip when returning (calculates sold amount, registers wash returns)
+  const handleReconcileDriverTrip = async (employeeName: string, tripId: string, unsoldQty: number, emptyQty: number) => {
+    setActionLoading(true);
+    const today = getLocalDateString();
+    try {
+      const { data: todayAtt } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
+      if (!existing) throw new Error('No se encontró el registro de turno de hoy');
+
+      const existingLocation = parseJsonFields(existing?.last_location);
+      const trips = existingLocation.trips || [];
+      
+      const updatedTrips = trips.map((t: any) => {
+        if (t.id === tripId) {
+          const sold = Math.max(0, t.loaded_qty - Number(unsoldQty));
+          return {
+            ...t,
+            returned_unsold_qty: Number(unsoldQty),
+            returned_empty_qty: Number(emptyQty),
+            sold_qty: sold,
+            status: 'closed',
+            closed_at: new Date().toISOString()
+          };
+        }
+        return t;
+      });
+
+      const updatedLocation = {
+        ...existingLocation,
+        trips: updatedTrips
+      };
+
+      const { error } = await supabase
+        .from('daily_attendance')
+        .upsert({
+          ...existing,
+          last_location: updatedLocation
+        }, { onConflict: 'user_name, work_date' });
+
+      if (error) throw error;
+
+      await loadData();
+      alert('¡Viaje en ruta liquidado con éxito! Se cuadraron los garrafones.');
+    } catch (e: any) {
+      alert('Error al liquidar viaje: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Helper to delete/cancel a route trip log
+  const handleDeleteDriverTrip = async (employeeName: string, tripId: string) => {
+    if (!confirm('¿Estás seguro de eliminar este viaje de carga de la lista?')) return;
+    setActionLoading(true);
+    const today = getLocalDateString();
+    try {
+      const { data: todayAtt } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
+      if (!existing) throw new Error('No se encontró el registro');
+
+      const existingLocation = parseJsonFields(existing?.last_location);
+      const trips = existingLocation.trips || [];
+      const updatedTrips = trips.filter((t: any) => t.id !== tripId);
+
+      const updatedLocation = {
+        ...existingLocation,
+        trips: updatedTrips
+      };
+
+      const { error } = await supabase
+        .from('daily_attendance')
+        .upsert({
+          ...existing,
+          last_location: updatedLocation
+        }, { onConflict: 'user_name, work_date' });
+
+      if (error) throw error;
+      await loadData();
+    } catch (e: any) {
+      alert('Error al eliminar viaje: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Bulk delete/reset selected cash float / entries
   const handleBulkDeleteFloat = async () => {
     if (selectedEmployees.length === 0) {
@@ -991,6 +1166,20 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         ? Number(lastLoc.cash_orders_count)
         : sales.ordersCount;
 
+      const trips = lastLoc.trips || [];
+      const activeTripsCount = trips.filter((t: any) => t.status === 'active').length;
+      const closedTripsCount = trips.filter((t: any) => t.status === 'closed').length;
+      
+      const totalLoadedJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0);
+      const totalSoldJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.sold_qty) || 0), 0);
+      const totalReturnedUnsoldJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.returned_unsold_qty) || 0), 0);
+      const totalReturnedEmptyJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.returned_empty_qty) || 0), 0);
+
+      // Active load on vehicle is simply what was loaded on active trips
+      const currentVehicleInventory = trips
+        .filter((t: any) => t.status === 'active')
+        .reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0);
+
       return {
         id: emp.id,
         name: emp.name,
@@ -1004,7 +1193,16 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         is_closed: isClosed,
         closed_at: closedAt,
         closed_by_name: closedByName,
-        total_to_deliver: floatVal !== null ? floatVal + salesTotal : salesTotal
+        total_to_deliver: floatVal !== null ? floatVal + salesTotal : salesTotal,
+        // Route Trips indicators
+        trips,
+        active_trips_count: activeTripsCount,
+        closed_trips_count: closedTripsCount,
+        total_loaded_jugs: totalLoadedJugs,
+        total_sold_jugs: totalSoldJugs,
+        total_returned_unsold: totalReturnedUnsoldJugs,
+        total_returned_empty: totalReturnedEmptyJugs,
+        current_vehicle_inventory: currentVehicleInventory
       };
     });
   };
@@ -1018,6 +1216,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const activeInPlayTotal = driversStatusData.filter(d => !d.is_closed).reduce((acc, d) => acc + d.total_to_deliver, 0);
 
   const isAdmin = currentUser.role === 'admin';
+  const isPlantOrAdmin = currentUser.role === 'admin' || currentUser.role === 'operator';
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
@@ -1028,7 +1227,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
             Módulo <span className="text-sky-500">Fondo de Caja</span>
           </h2>
           <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest leading-none">
-            {isAdmin 
+            {isPlantOrAdmin 
               ? 'Control de capital diario, flotantes y liquidación de personal' 
               : 'Detalle de fondo flotante asignado y balance de liquidación diario'}
           </p>
@@ -1043,8 +1242,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         </button>
       </div>
 
-      {/* View Switcher Pill (Interactive toggle only for Admin role) */}
-      {isAdmin && (
+      {/* View Switcher Pill (Interactive toggle only for Admin and Operator roles) */}
+      {isPlantOrAdmin && (
         <div className="flex bg-slate-100 p-1.5 rounded-2xl max-w-sm border border-slate-200/50 shadow-inner">
           <button
             onClick={() => setViewMode('admin')}
@@ -1079,7 +1278,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       ) : (
         <>
           {/* ROL ADMIN / PLANTA PANEL */}
-          {isAdmin && viewMode === 'admin' ? (
+          {isPlantOrAdmin && viewMode === 'admin' ? (
             <div className="space-y-8">
               {/* Metrics KPIs Dashboard */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1286,6 +1485,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                         <th className="px-8 py-4">Asistencia</th>
                         <th className="px-8 py-4 text-center">Fondo Inicial</th>
                         <th className="px-8 py-4 text-center">Ventas Hoy</th>
+                        <th className="px-8 py-4 text-center">Inventario de Ruta</th>
                         <th className="px-8 py-4 text-center">Total a Cobrar</th>
                         <th className="px-8 py-4">Estado Caja</th>
                         <th className="px-8 py-4 text-right">Caja / Acciones</th>
@@ -1355,6 +1555,24 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                               <span className="font-bold text-xs text-slate-500">${drv.sales_total.toFixed(2)}</span>
                               <span className="text-[9px] font-bold text-slate-400 block mt-0.5">{drv.orders_count} pedidos</span>
                             </td>
+                            <td className="px-8 py-5 text-center whitespace-nowrap">
+                              {drv.role !== 'client' && drv.role !== 'customer' ? (
+                                <div className="flex flex-col items-center">
+                                  <span className={`font-black text-xs px-2 py-1.5 rounded-xl block ${
+                                    drv.current_vehicle_inventory > 0 
+                                      ? 'bg-sky-50 text-sky-600 border border-sky-100 font-extrabold' 
+                                      : 'bg-slate-50 text-slate-400 font-bold'
+                                  }`}>
+                                    {drv.current_vehicle_inventory} g. en ruta
+                                  </span>
+                                  <span className="text-[8px] font-extrabold text-slate-400 block mt-1 uppercase tracking-tighter">
+                                    {drv.trips?.length || 0} viajes | {drv.total_sold_jugs} g. vend.
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 font-bold">-</span>
+                              )}
+                            </td>
                             <td className="px-8 py-5 text-center">
                               <span className="font-black text-sm text-slate-800">
                                 ${drv.total_to_deliver.toFixed(2)}
@@ -1375,8 +1593,29 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                 <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg uppercase inline-block">SIN INICIAR</span>
                               )}
                             </td>
-                            <td className="px-8 py-5 text-right">
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="px-8 py-5 text-right font-semibold">
+                              <div className="flex items-center justify-end flex-wrap gap-2">
+                                {/* Dispatch additional cargo trip */}
+                                {!drv.is_closed && drv.role !== 'client' && drv.role !== 'customer' && (
+                                  <button
+                                    onClick={() => {
+                                      const numStr = prompt(`Registrar salida de Garrafones (Viaje de Carga) para ${drv.name}.\n\n¿Con cuántos garrafones sale el repartidor en este viaje? (Ejem: 20)`, '20');
+                                      if (numStr !== null) {
+                                        const qty = Number(numStr);
+                                        if (isNaN(qty) || qty <= 0) {
+                                          alert('Error: Por favor ingresa una cantidad numérica válida mayor a 0.');
+                                        } else {
+                                          handleAddDriverTrip(drv.name, qty);
+                                        }
+                                      }
+                                    }}
+                                    className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 border border-emerald-600/10 text-white rounded-xl font-black text-[9px] uppercase tracking-widest transition-all shadow-sm active:scale-95 flex items-center gap-1 shrink-0"
+                                    title="Despachar un nuevo viaje de carga con garrafones en ruta"
+                                  >
+                                    <Plus size={10} /> + Cargar Garrafones
+                                  </button>
+                                )}
+
                                 {/* Assign or Edit Float */}
                                 {!drv.is_closed && (
                                   <button
@@ -1384,7 +1623,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                       setSelectedDriverForFloat(drv);
                                       setCustomFloatAmount(drv.cash_float !== null ? String(drv.cash_float) : '600');
                                     }}
-                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-[9px] uppercase tracking-widest transition-all"
+                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/45 rounded-xl font-bold text-[9px] uppercase tracking-widest transition-all whitespace-nowrap shrink-0"
                                   >
                                     {drv.cash_float !== null ? 'Modif. Fondo' : '+ Dar Fondo'}
                                   </button>
@@ -1570,6 +1809,164 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       <span className="text-[8px] text-slate-400 block mt-1 uppercase">
                         {getDriverSalesObj(currentUser.name).ordersCount} pedidos confirmados
                       </span>
+                    </div>
+                  </div>
+
+                  {/* CONTROL DE INVENTARIO Y VIAJES EN RUTA */}
+                  <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-md space-y-6">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-800 uppercase italic">🚚 Control de Inventario y Viajes</h4>
+                        <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tight">Registro de salida y retorno de garrafones para corte cuadratura</p>
+                      </div>
+                      <span className="text-xs font-mono font-black py-1 px-3 bg-slate-100 text-slate-600 rounded-xl">
+                        {(activeDriverSession?.last_location?.trips || []).length} Viajes
+                      </span>
+                    </div>
+
+                    {/* Quick Stats of Jugs */}
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="p-3 bg-slate-50 border border-slate-100/60 rounded-2xl">
+                        <span className="text-[8px] font-black text-slate-400 block uppercase">Total Cargados</span>
+                        <span className="text-base font-black text-slate-700 block mt-1">
+                          {(activeDriverSession?.last_location?.trips || []).reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0)}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-emerald-50/50 border border-emerald-100/30 rounded-2xl">
+                        <span className="text-[8px] font-black text-emerald-600 block uppercase">Total Vendidos</span>
+                        <span className="text-base font-black text-emerald-600 block mt-1">
+                          {(activeDriverSession?.last_location?.trips || []).reduce((acc: number, t: any) => acc + (Number(t.sold_qty) || 0), 0)}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-sky-50/60 border border-sky-100/35 rounded-2xl">
+                        <span className="text-[8px] font-black text-sky-600 block uppercase">Stock en Camión</span>
+                        <span className="text-base font-black text-sky-600 block mt-1">
+                          {(activeDriverSession?.last_location?.trips || []).filter((t: any) => t.status === 'active').reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* NEW TRIP BUTTON / DISPATCH SELF */}
+                    <div className="pt-2">
+                      <button
+                        onClick={() => {
+                          const numStr = prompt('Registrar Salida de Planta (Nuevo Viaje)\n\n¿Con cuántos garrafones llenos sales de planta en este viaje?', '20');
+                          if (numStr !== null) {
+                            const qty = Number(numStr);
+                            if (isNaN(qty) || qty <= 0) {
+                              alert('Error: Por favor ingresa un número válido mayor a 0');
+                            } else {
+                              handleAddDriverTrip(currentUser.name, qty);
+                            }
+                          }
+                        }}
+                        className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100/85 text-emerald-600 border border-emerald-200 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-sm"
+                      >
+                        <Plus size={14} /> Registrar Salida de Planta (Nuevo Viaje)
+                      </button>
+                    </div>
+
+                    {/* TRIPS LIST */}
+                    <div className="space-y-3">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Lista de Viajes de Hoy</p>
+                      {(activeDriverSession?.last_location?.trips || []).length === 0 ? (
+                        <p className="text-[10px] text-slate-400 uppercase italic font-bold text-center py-4 bg-slate-50 rounded-2xl">No has registrado ningún viaje hoy.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                          {(activeDriverSession?.last_location?.trips || []).map((t: any) => (
+                            <div key={t.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-extrabold text-slate-600 uppercase">Viaje #{t.trip_number}</span>
+                                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                                  t.status === 'active' 
+                                    ? 'bg-amber-100 text-amber-700 animate-pulse' 
+                                    : 'bg-slate-200 text-slate-600'
+                                }`}>
+                                  {t.status === 'active' ? 'En ruta (Activo)' : 'Retornado / Liquidado'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-mono">
+                                <div className="bg-white p-1.5 rounded-lg">
+                                  <span className="text-[7px] text-slate-400 uppercase font-sans">Cargado</span>
+                                  <span className="block font-black text-slate-800">{t.loaded_qty}</span>
+                                </div>
+                                <div className="bg-white p-1.5 rounded-lg">
+                                  <span className="text-[7px] text-slate-400 uppercase font-sans font-medium">Dev. Llenos</span>
+                                  <span className="block font-black text-slate-800">{t.status === 'active' ? '-' : t.returned_unsold_qty}</span>
+                                </div>
+                                <div className="bg-white p-1.5 rounded-lg">
+                                  <span className="text-[7px] text-slate-400 uppercase font-sans font-medium">Dev. Vacíos</span>
+                                  <span className="block font-black text-slate-800">{t.status === 'active' ? '-' : t.returned_empty_qty}</span>
+                                </div>
+                                <div className="bg-white p-1.5 rounded-lg">
+                                  <span className="text-[7px] text-slate-400 uppercase font-sans font-medium">Vendidos</span>
+                                  <span className="block font-black text-emerald-600 font-bold">{t.status === 'active' ? '-' : t.sold_qty}</span>
+                                </div>
+                              </div>
+
+                              {/* ACTIVE TRIP LIQUIDATION FORM */}
+                              {t.status === 'active' ? (
+                                <div className="p-3 bg-white border border-slate-200/60 rounded-xl space-y-3">
+                                  <p className="text-[8px] font-black text-slate-500 uppercase tracking-wider">📦 Registrar Retorno de Viaje (Regreso a Planta)</p>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                      <label className="text-[7px] font-black uppercase text-slate-400 block">Llenos Regresados (No vendidos)</label>
+                                      <input 
+                                        type="number"
+                                        min="0"
+                                        max={t.loaded_qty}
+                                        defaultValue={0}
+                                        id={`unsold-${t.id}`}
+                                        className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-black text-slate-800 outline-none"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[7px] font-black uppercase text-slate-400 block">Envases Vacíos devueltos</label>
+                                      <input 
+                                        type="number"
+                                        min="0"
+                                        defaultValue={t.loaded_qty}
+                                        id={`empty-${t.id}`}
+                                        className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-black text-slate-800 outline-none"
+                                      />
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      const unsoldInp = document.getElementById(`unsold-${t.id}`) as HTMLInputElement;
+                                      const emptyInp = document.getElementById(`empty-${t.id}`) as HTMLInputElement;
+                                      const unsold = Number(unsoldInp?.value || 0);
+                                      const empties = Number(emptyInp?.value || 0);
+                                      if (unsold < 0 || unsold > t.loaded_qty) {
+                                        alert(`Error: Los garrafones devueltos llenos deben ser entre 0 y ${t.loaded_qty}`);
+                                        return;
+                                      }
+                                      if (empties < 0) {
+                                        alert('Error: Los envases vacíos no pueden ser negativos.');
+                                        return;
+                                      }
+                                      handleReconcileDriverTrip(currentUser.name, t.id, unsold, empties);
+                                    }}
+                                    className="w-full bg-sky-500 hover:bg-sky-600 text-white text-[9px] font-black uppercase py-2.5 rounded-xl transition-all shadow-sm active:scale-95"
+                                  >
+                                    Liquidación Retorno (Fin de Viaje)
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleDeleteDriverTrip(currentUser.name, t.id)}
+                                    className="text-[8px] font-black uppercase tracking-wider text-rose-500 hover:text-rose-700 bg-rose-50/50 hover:bg-rose-50 px-2 py-1 rounded transition-colors"
+                                  >
+                                    Eliminar Registro
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 

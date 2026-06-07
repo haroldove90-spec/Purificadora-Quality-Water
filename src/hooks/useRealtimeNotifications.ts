@@ -22,13 +22,12 @@ export function useRealtimeNotifications(userRole: string | null) {
   const shownIdsRef = useRef<Set<string>>(new Set());
 
   const playNotificationSound = () => {
-    console.log('--- REPRODUCIENDO NOTIFICACIÓN FUERTE Y CLARA (PITCH SWEEP TRIPLE) ---');
+    console.log('--- REPRODUCIENDO NOTIFICACIÓN EXTRAMÁXIMA Y PIERCING (SAWTOOTH DUAL LAYER) ---');
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContext) return;
       const ctx = new AudioContext();
       
-      // Auto-resume context if browser suspended it
       if (ctx.state === 'suspended') {
         ctx.resume();
       }
@@ -36,29 +35,37 @@ export function useRealtimeNotifications(userRole: string | null) {
       const playBeep = (freq: number, startDelay: number, duration: number, type: 'sine' | 'square' | 'triangle' | 'sawtooth' = 'sine', volume = 0.5) => {
         const now = ctx.currentTime + startDelay;
         const osc = ctx.createOscillator();
+        const subOsc = ctx.createOscillator(); // Subharmonic body layer to make sound heavy
         const gainNode = ctx.createGain();
         
         osc.type = type;
         osc.frequency.setValueAtTime(freq, now);
-        
-        // Pitch sweep upwards (chirp) for maximum human ear sensitivity
-        osc.frequency.exponentialRampToValueAtTime(freq * 1.3, now + duration);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.25, now + duration);
+
+        subOsc.type = 'triangle';
+        subOsc.frequency.setValueAtTime(freq / 2, now);
+        subOsc.frequency.exponentialRampToValueAtTime((freq / 2) * 1.25, now + duration);
         
         gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volume, now + 0.015); // Fast attack
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration); // Smooth logarithmic decay
+        gainNode.gain.linearRampToValueAtTime(volume, now + 0.012); // Instant acoustic attack
+        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration); // Resonated decay
         
         osc.connect(gainNode);
+        subOsc.connect(gainNode);
         gainNode.connect(ctx.destination);
         
         osc.start(now);
+        subOsc.start(now);
         osc.stop(now + duration);
+        subOsc.stop(now + duration);
       };
 
-      // Triple energetic chime (upward major-chord sweep) with high volume (0.8 - 0.95)
-      playBeep(987.77, 0, 0.22, 'triangle', 0.85); // Tono 1: Si5 (Brillante y claro)
-      playBeep(1174.66, 0.10, 0.24, 'sine', 0.90);  // Tono 2: Re6 (Mayor claridad)
-      playBeep(1318.51, 0.20, 0.32, 'sine', 0.95);  // Tono 3: Mi6 (Resonancia sostenida y fuerte)
+      // Dual piercing sweeps: Group 1 (Do-Mi major) + Group 2 (Sol-Si) with extreme high gains
+      playBeep(880.00, 0.0, 0.25, 'sawtooth', 0.95);  // Energetic lead pitch
+      playBeep(1109.73, 0.05, 0.28, 'triangle', 0.95); // Bright secondary chime
+      
+      playBeep(1318.51, 0.25, 0.35, 'sawtooth', 1.0);  // High scale climax
+      playBeep(1661.22, 0.30, 0.40, 'triangle', 1.0);  // Golden high frequency
       
     } catch (err) {
       console.warn('Web Audio synthesis failed, falling back:', err);
