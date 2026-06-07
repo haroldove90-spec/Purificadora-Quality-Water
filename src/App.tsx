@@ -579,6 +579,7 @@ export default function App() {
     if (currentRoleView === 'admin') {
       items = [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
+        { id: 'pos', label: 'Venta POS', icon: CreditCard },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },

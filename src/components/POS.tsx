@@ -39,6 +39,7 @@ interface Customer {
 interface CartItem {
   product: Product;
   quantity: number;
+  giftQuantity?: number;
 }
 
 interface POSProps {
@@ -115,7 +116,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   const [generatedTicket, setGeneratedTicket] = useState<{
     id: string;
     customer_name: string;
-    items: { name: string; quantity: number; price: number }[];
+    items: { name: string; quantity: number; price: number; giftQuantity?: number }[];
     total: number;
     payment_method: string;
     date: string;
@@ -309,14 +310,27 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         if (existing.quantity <= 1) {
           return prevCart.filter(item => item.product.id !== product.id);
         }
-        return prevCart.map(item => 
-          item.product.id === product.id 
-            ? { ...item, quantity: item.quantity - 1 } 
-            : item
-        );
+        return prevCart.map(item => {
+          if (item.product.id === product.id) {
+            const newQty = item.quantity - 1;
+            const newGiftQty = Math.min(item.giftQuantity || 0, newQty);
+            return { ...item, quantity: newQty, giftQuantity: newGiftQty };
+          }
+          return item;
+        });
       }
       return prevCart;
     });
+  };
+
+  const updateGiftQuantity = (productId: string, giftQuantity: number) => {
+    setCart(prevCart => 
+      prevCart.map(item => 
+        item.product.id === productId 
+          ? { ...item, giftQuantity: Math.min(giftQuantity, item.quantity) } 
+          : item
+      )
+    );
   };
 
   const getCartCount = (productId: string): number => {
@@ -329,7 +343,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   };
 
   const getCartTotal = () => {
-    return cart.reduce((total, item) => total + (item.product.price * item.quantity), 0);
+    return cart.reduce((total, item) => total + (item.product.price * Math.max(0, item.quantity - (item.giftQuantity || 0))), 0);
   };
 
   const handleSelectCustomer = (customer: Customer) => {
@@ -365,11 +379,17 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     const total = getCartTotal();
     
     // Structure for generating virtual ticket
-    const ticketItems = cart.map(item => ({
-      name: item.product.name,
-      quantity: item.quantity,
-      price: item.product.price
-    }));
+    const ticketItems = cart.map(item => {
+      const isGiftPart = item.giftQuantity && item.giftQuantity > 0;
+      return {
+        name: isGiftPart 
+          ? `${item.product.name} (incluye ${item.giftQuantity} de Obsequio)` 
+          : item.product.name,
+        quantity: item.quantity,
+        price: item.product.price,
+        giftQuantity: item.giftQuantity || 0
+      };
+    });
 
     // Ensure fallback is Venta Mostrador
     let finalCustomerName = manualCustomerName.trim();
@@ -776,7 +796,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
             )}
           </div>
 
-          <div className="flex-1 p-6 space-y-5 overflow-y-auto max-h-[300px] xl:max-h-none">
+          <div className="flex-1 p-6 space-y-5 overflow-y-auto max-h-[520px] lg:max-h-[60vh] xl:max-h-none">
             {/* Customer Lookup and Assignment */}
             <div className="space-y-2 relative">
               <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider block">
@@ -927,7 +947,33 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                         </p>
                         <p className="text-[10px] font-black text-sky-500 tracking-tight font-mono">
                           {item.quantity} x ${item.product.price.toFixed(2)}
+                          {item.giftQuantity && item.giftQuantity > 0 ? (
+                            <span className="ml-1.5 text-emerald-600 dark:text-emerald-400 font-extrabold uppercase bg-emerald-50 dark:bg-emerald-950/50 px-1 py-0.5 rounded text-[8px]">
+                              ({item.quantity - item.giftQuantity} Cobrado)
+                            </span>
+                          ) : null}
                         </p>
+
+                        {/* Selector de Obsequio */}
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-wider flex items-center gap-0.5">
+                            <Gift size={10} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+                            Regalo:
+                          </span>
+                          <select
+                            id={`gift-select-${item.product.id}`}
+                            value={item.giftQuantity || 0}
+                            onChange={(e) => {
+                              const gQty = parseInt(e.target.value) || 0;
+                              updateGiftQuantity(item.product.id, gQty);
+                            }}
+                            className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded font-black text-[9px] text-emerald-700 dark:text-emerald-300 px-1 py-0.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none cursor-pointer h-5"
+                          >
+                            {Array.from({ length: item.quantity + 1 }).map((_, idx) => (
+                              <option key={idx} value={idx}>{idx} Unid.</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
@@ -1141,9 +1187,14 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                         <div key={idx} className="flex justify-between items-center">
                           <div className="truncate max-w-[200px]">
                             <p className="font-bold text-slate-800 truncate">{item.name}</p>
-                            <p className="text-[10px] text-slate-400 font-medium">{item.quantity} x ${item.price.toFixed(2)}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">
+                              {item.quantity} x ${item.price.toFixed(2)}
+                              {item.giftQuantity ? ` (${item.quantity - item.giftQuantity} Cobra.)` : ''}
+                            </p>
                           </div>
-                          <span className="font-bold text-slate-950 shrink-0">${(item.quantity * item.price).toFixed(2)}</span>
+                          <span className="font-bold text-slate-950 shrink-0">
+                            ${(((item.quantity || 0) - (item.giftQuantity || 0)) * item.price).toFixed(2)}
+                          </span>
                         </div>
                       ))}
                     </div>
