@@ -1825,23 +1825,25 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8 max-h-[90vh] flex flex-col justify-between"
+              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-6 sm:p-8 max-h-[92vh] md:max-h-[90vh] flex flex-col justify-between"
             >
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-black text-slate-800 uppercase italic">
-                    Cobro de <span className="text-rose-500">Adeudo</span>
-                  </h3>
-                  <button 
-                    onClick={() => setShowDebtModal(false)}
-                    disabled={processingPayment}
-                    className="p-2 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-0"
-                  >
-                    <X size={20} className="text-slate-400" />
-                  </button>
-                </div>
+              {/* Header */}
+              <div className="flex justify-between items-center mb-4 shrink-0">
+                <h3 className="text-xl font-black text-slate-800 uppercase italic">
+                  Cobro de <span className="text-rose-500">Adeudo</span>
+                </h3>
+                <button 
+                  onClick={() => setShowDebtModal(false)}
+                  disabled={processingPayment}
+                  className="p-2 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-0"
+                >
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
 
-                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 mb-4 text-left">
+              {/* Scrollable Container */}
+              <div className="flex-1 overflow-y-auto scrollbar-thin pr-1 text-left space-y-4">
+                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 text-left">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente Seleccionado</p>
                   <p className="text-base font-black text-slate-800 uppercase italic mt-1">{debtCustomer.name}</p>
                   <p className="text-xs text-slate-500 font-bold mt-1 uppercase">{debtCustomer.address || 'Sin dirección registrada'}</p>
@@ -1851,17 +1853,17 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   </div>
                 </div>
 
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left mb-2">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">
                   Historial a Cobrar (Se jala automáticamente)
                 </h4>
                 
-                <div className="overflow-y-auto max-h-48 space-y-2 mb-4 pr-1 text-left scrollbar-thin">
+                <div className="overflow-y-auto max-h-40 space-y-2 mb-4 text-left scrollbar-thin">
                   {getCustomerDebtOrders(debtCustomer.name).length > 0 ? (
                     getCustomerDebtOrders(debtCustomer.name).map((order) => (
                       <div key={order.id} className="p-3 bg-white border border-slate-200 rounded-2xl flex justify-between items-center shadow-sm">
-                        <div>
+                        <div className="min-w-0 flex-1 pr-2">
                           <p className="text-[10px] font-black text-sky-500">#{order.id.slice(0, 8).toUpperCase()}</p>
-                          <p className="text-[10px] text-slate-600 font-bold uppercase mt-1">{order.items}</p>
+                          <p className="text-[10px] text-slate-600 font-bold uppercase mt-1 truncate">{order.items}</p>
                           <p className="text-[8px] text-slate-400 font-bold">
                             {new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
@@ -1872,13 +1874,13 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-4 text-slate-400 text-xs text-left">
+                    <div className="text-center py-4 text-slate-400 text-xs">
                       No hay historial pendiente de cobro.
                     </div>
                   )}
                 </div>
 
-                <div className="space-y-2 text-left mb-4">
+                <div className="space-y-2 text-left">
                   <label htmlFor="paymentInput" className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                     Monto a Cobrar e Ingresar a Caja ($):
                   </label>
@@ -1904,23 +1906,26 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 </div>
               </div>
 
-              <button
-                onClick={handleApplyDebtPayment}
-                disabled={processingPayment || paymentAmount <= 0}
-                className="w-full bg-emerald-500 text-white py-4 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-500/20 hover:bg-emerald-600 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 min-h-[44px]"
-              >
-                {processingPayment ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    Registrando Pago...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={16} />
-                    <span>Confirmar Cobro y Liquidar</span>
-                  </>
-                )}
-              </button>
+              {/* Footer */}
+              <div className="mt-4 shrink-0">
+                <button
+                  onClick={handleApplyDebtPayment}
+                  disabled={processingPayment || paymentAmount <= 0}
+                  className="w-full bg-emerald-500 text-white py-4 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-500/20 hover:bg-emerald-600 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 min-h-[44px]"
+                >
+                  {processingPayment ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Registrando Pago...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>Confirmar Cobro y Liquidar</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

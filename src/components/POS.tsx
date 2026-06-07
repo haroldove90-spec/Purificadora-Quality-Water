@@ -1088,10 +1088,10 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
               initial={{ scale: 0.9, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 15 }}
-              className="relative bg-white border border-slate-200 max-w-sm w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col z-50 text-slate-800"
+              className="relative bg-white border border-slate-200 max-w-sm w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col z-50 text-slate-800 max-h-[92vh] md:max-h-[88vh]"
             >
               {/* Header */}
-              <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center">
+              <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center shrink-0">
                 <span className="text-[10px] font-black uppercase text-sky-500 tracking-wider">COMPROBANTE DE VENTA (SISTEMA)</span>
                 <button 
                   onClick={() => setShowTicketModal(false)}
@@ -1101,117 +1101,120 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                 </button>
               </div>
 
-              {/* Pure White Background Plain Ticket */}
-              <div className="p-6 space-y-6 bg-white select-all font-sans text-xs text-slate-800 border-b border-dashed border-slate-200">
-                <div className="text-center space-y-1 pb-4 border-b border-slate-100">
-                  <div className="w-12 h-12 bg-sky-500/10 text-sky-600 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <ShoppingBag size={24} />
+              {/* Scrollable Container */}
+              <div className="flex-1 overflow-y-auto scrollbar-thin">
+                {/* Pure White Background Plain Ticket */}
+                <div className="p-6 space-y-6 bg-white select-all font-sans text-xs text-slate-800 border-b border-dashed border-slate-200">
+                  <div className="text-center space-y-1 pb-4 border-b border-slate-100">
+                    <div className="w-12 h-12 bg-sky-500/10 text-sky-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <ShoppingBag size={24} />
+                    </div>
+                    <h3 className="font-extrabold text-lg text-slate-950 uppercase tracking-tight">QUALITY WATER</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase">Purificación de Agua de Calidad 💧</p>
+                    <p className="text-[10px] text-emerald-600 font-bold uppercase">¡Venta Registrada con Éxito!</p>
                   </div>
-                  <h3 className="font-extrabold text-lg text-slate-950 uppercase tracking-tight">QUALITY WATER</h3>
-                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Purificación de Agua de Calidad 💧</p>
-                  <p className="text-[10px] text-emerald-600 font-bold uppercase">¡Venta Registrada con Éxito!</p>
-                </div>
 
-                <div className="space-y-1.5 text-xs text-slate-700">
-                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">No. Ticket:</span> <span className="font-bold text-slate-900">#{generatedTicket.id}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Fecha:</span> <span className="text-slate-800 font-semibold">{generatedTicket.date}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Cliente:</span> <span className="font-bold text-slate-900 uppercase truncate max-w-[150px]">{generatedTicket.customer_name}</span></div>
-                  {generatedTicket.phone && (
-                    <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">WhatsApp:</span> <span className="text-slate-800 font-bold font-mono">{generatedTicket.phone}</span></div>
-                  )}
-                  <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Atendido por:</span> <span className="font-bold text-slate-800">{userRole === 'driver' ? 'Repartidor (Ruta)' : 'Operador (Planta Mostrador)'}</span></div>
-                </div>
-
-                <div className="space-y-2 pt-3 border-t border-slate-100">
-                  <div className="flex justify-between font-bold text-slate-900 text-xs pb-1 border-b border-slate-100">
-                    <span>CONCEPTO / CANT.</span>
-                    <span>IMPORTE</span>
+                  <div className="space-y-1.5 text-xs text-slate-700">
+                    <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">No. Ticket:</span> <span className="font-bold text-slate-900">#{generatedTicket.id}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Fecha:</span> <span className="text-slate-800 font-semibold">{generatedTicket.date}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Cliente:</span> <span className="font-bold text-slate-900 uppercase truncate max-w-[150px]">{generatedTicket.customer_name}</span></div>
+                    {generatedTicket.phone && (
+                      <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">WhatsApp:</span> <span className="text-slate-800 font-bold font-mono">{generatedTicket.phone}</span></div>
+                    )}
+                    <div className="flex justify-between"><span className="text-slate-400 font-bold uppercase text-[9px]">Atendido por:</span> <span className="font-bold text-slate-800">{userRole === 'driver' ? 'Repartidor (Ruta)' : 'Operador (Planta Mostrador)'}</span></div>
                   </div>
-                  <div className="space-y-2 text-xs">
-                    {generatedTicket.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center">
-                        <div className="truncate max-w-[200px]">
-                          <p className="font-bold text-slate-800 truncate">{item.name}</p>
-                          <p className="text-[10px] text-slate-400 font-medium">{item.quantity} x ${item.price.toFixed(2)}</p>
+
+                  <div className="space-y-2 pt-3 border-t border-slate-100">
+                    <div className="flex justify-between font-bold text-slate-900 text-xs pb-1 border-b border-slate-100">
+                      <span>CONCEPTO / CANT.</span>
+                      <span>IMPORTE</span>
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      {generatedTicket.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center">
+                          <div className="truncate max-w-[200px]">
+                            <p className="font-bold text-slate-800 truncate">{item.name}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{item.quantity} x ${item.price.toFixed(2)}</p>
+                          </div>
+                          <span className="font-bold text-slate-950 shrink-0">${(item.quantity * item.price).toFixed(2)}</span>
                         </div>
-                        <span className="font-bold text-slate-950 shrink-0">${(item.quantity * item.price).toFixed(2)}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-3 space-y-1">
+                    <div className="flex justify-between font-black text-slate-950 text-sm">
+                      <span>TOTAL:</span>
+                      <span>${generatedTicket.total.toFixed(2)} MXN</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-slate-500">
+                      <span>Método de Pago:</span>
+                      <span className="font-bold uppercase text-slate-800">{generatedTicket.payment_method}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-center font-bold text-[9px] text-slate-400 uppercase pt-4 border-t border-dashed border-slate-100">
+                    --- ¡Gracias por su preferencia! ---
+                  </div>
+                </div>
+
+                {/* Control de Adeudos (Cuentas por cobrar) */}
+                {!isPickupOrder && (
+                  <div className="mx-6 my-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-800 uppercase tracking-wide">¿A Adeudo? (Cuentas por Cobrar)</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase">Marcar si el cliente queda a deber ("se debe")</p>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <input 
+                        type="checkbox"
+                        checked={posIsDebt}
+                        onChange={(e) => {
+                          setPosIsDebt(e.target.checked);
+                          if (e.target.checked) {
+                            setPosAmountPaidToday(0);
+                          }
+                        }}
+                        className="w-4 h-4 text-sky-500 accent-sky-500 rounded border-slate-300 focus:ring-sky-500 cursor-pointer h-[44px]"
+                      />
+                    </div>
 
-                <div className="border-t border-slate-100 pt-3 space-y-1">
-                  <div className="flex justify-between font-black text-slate-950 text-sm">
-                    <span>TOTAL:</span>
-                    <span>${generatedTicket.total.toFixed(2)} MXN</span>
+                    {posIsDebt && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="space-y-2 pt-2 border-t border-slate-200"
+                      >
+                        <div className="flex justify-between items-center text-xs">
+                          <label className="text-[9px] font-black text-slate-500 uppercase">Monto Cobrado Hoy ($):</label>
+                          <input 
+                            type="number"
+                            min="0"
+                            max={generatedTicket.total}
+                            step="0.01"
+                            value={posAmountPaidToday}
+                            onChange={(e) => setPosAmountPaidToday(Math.min(generatedTicket.total, parseFloat(e.target.value) || 0))}
+                            className="w-24 p-1.5 bg-white border border-slate-200 rounded-lg font-black text-xs text-right focus:ring-2 focus:ring-sky-500 outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[10px] font-black bg-amber-50 p-2 rounded-xl text-amber-800 border border-amber-100/50">
+                          <div>
+                            <span>COBROS HOY:</span>
+                            <span className="block text-xs font-black">${posAmountPaidToday.toFixed(2)}</span>
+                          </div>
+                          <div className="text-right">
+                            <span>PENDIENTE:</span>
+                            <span className="block text-xs font-black text-rose-600">${(generatedTicket.total - posAmountPaidToday).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
-                  <div className="flex justify-between text-[11px] text-slate-500">
-                    <span>Método de Pago:</span>
-                    <span className="font-bold uppercase text-slate-800">{generatedTicket.payment_method}</span>
-                  </div>
-                </div>
-
-                <div className="text-center font-bold text-[9px] text-slate-400 uppercase pt-4 border-t border-dashed border-slate-100">
-                  --- ¡Gracias por su preferencia! ---
-                </div>
+                )}
               </div>
 
-              {/* Control de Adeudos (Cuentas por cobrar) */}
-              {!isPickupOrder && (
-                <div className="mx-6 my-2 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] font-black text-slate-800 uppercase tracking-wide">¿A Adeudo? (Cuentas por Cobrar)</p>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase">Marcar si el cliente queda a deber ("se debe")</p>
-                    </div>
-                    <input 
-                      type="checkbox"
-                      checked={posIsDebt}
-                      onChange={(e) => {
-                        setPosIsDebt(e.target.checked);
-                        if (e.target.checked) {
-                          setPosAmountPaidToday(0);
-                        }
-                      }}
-                      className="w-4 h-4 text-sky-500 accent-sky-500 rounded border-slate-300 focus:ring-sky-500 cursor-pointer h-[44px]"
-                    />
-                  </div>
-
-                  {posIsDebt && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="space-y-2 pt-2 border-t border-slate-200"
-                    >
-                      <div className="flex justify-between items-center text-xs">
-                        <label className="text-[9px] font-black text-slate-500 uppercase">Monto Cobrado Hoy ($):</label>
-                        <input 
-                          type="number"
-                          min="0"
-                          max={generatedTicket.total}
-                          step="0.01"
-                          value={posAmountPaidToday}
-                          onChange={(e) => setPosAmountPaidToday(Math.min(generatedTicket.total, parseFloat(e.target.value) || 0))}
-                          className="w-24 p-1.5 bg-white border border-slate-200 rounded-lg font-black text-xs text-right focus:ring-2 focus:ring-sky-500 outline-none"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-[10px] font-black bg-amber-50 p-2 rounded-xl text-amber-800 border border-amber-100/50">
-                        <div>
-                          <span>COBROS HOY:</span>
-                          <span className="block text-xs font-black">${posAmountPaidToday.toFixed(2)}</span>
-                        </div>
-                        <div className="text-right">
-                          <span>PENDIENTE:</span>
-                          <span className="block text-xs font-black text-rose-600">${(generatedTicket.total - posAmountPaidToday).toFixed(2)}</span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </div>
-              )}
-
               {/* Action utilities */}
-              <div className="p-4 bg-slate-50 flex flex-col gap-2">
+              <div className="p-4 bg-slate-50 border-t border-slate-150 flex flex-col gap-2 shrink-0">
                 <button
                   onClick={handleSaveTransaction}
                   disabled={isSubmitting}
