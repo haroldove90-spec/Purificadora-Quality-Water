@@ -16,6 +16,7 @@ export default function QualityLog({ userRole }: QualityLogProps) {
   const [showModal, setShowModal] = useState(false);
   const [success, setSuccess] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [customParams, setCustomParams] = useState<{ name: string; value: string; unit: string }[]>([]);
 
   // Determinar si es Admin (Monitor) o Planta (Registro)
   const isMonitorMode = userRole === 'admin';
@@ -106,7 +107,8 @@ export default function QualityLog({ userRole }: QualityLogProps) {
       ph: formData.get('ph') ? Number(formData.get('ph')) : 7.2,
       tds: formData.get('tds') ? Number(formData.get('tds')) : 150,
       maintenance: (formData.get('maintenance') as string) || 'Ninguno',
-      additional_notes: (formData.get('additional_notes') as string) || ''
+      additional_notes: (formData.get('additional_notes') as string) || '',
+      custom_params: customParams
     };
 
     const data = {
@@ -121,6 +123,7 @@ export default function QualityLog({ userRole }: QualityLogProps) {
     const res = await handleSaveQualityLog(data);
     if (res.success) {
       setSuccess(true);
+      setCustomParams([]);
       setTimeout(() => {
         setSuccess(false);
         setShowModal(false);
@@ -237,6 +240,11 @@ export default function QualityLog({ userRole }: QualityLogProps) {
                                 TDS: {parsedNotes.tds} ppm
                               </span>
                             )}
+                            {parsedNotes?.custom_params && Array.isArray(parsedNotes.custom_params) && parsedNotes.custom_params.map((p: any, idx: number) => (
+                              <span key={idx} className="bg-indigo-50 text-indigo-700 text-[9px] font-black px-1.5 py-0.5 rounded-lg uppercase tracking-wider border border-indigo-100">
+                                {p.name}: {p.value} {p.unit}
+                              </span>
+                            ))}
                           </div>
                           {parsedNotes?.maintenance && parsedNotes.maintenance !== 'Ninguno' && (
                             <p className="text-[10px] font-black text-indigo-600 uppercase flex items-center gap-1">
@@ -389,6 +397,83 @@ export default function QualityLog({ userRole }: QualityLogProps) {
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Observaciones o Notas</label>
                     <textarea name="additional_notes" placeholder="Escribe aquí observaciones técnicas..." className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold h-20" />
+                  </div>
+
+                  {/* Parámetros de Calidad Dinámicos */}
+                  <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        🚀 Parámetros Especiales / Adicionales
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCustomParams([...customParams, { name: '', value: '', unit: '' }])}
+                        className="text-[10px] font-black uppercase text-sky-500 flex items-center gap-1 hover:text-sky-600 transition-colors"
+                      >
+                        <Plus size={12} /> Agregar Parámetro
+                      </button>
+                    </div>
+
+                    {customParams.length > 0 ? (
+                      <div className="space-y-2">
+                        {customParams.map((param, index) => (
+                          <div key={index} className="grid grid-cols-12 gap-2 items-center">
+                            <div className="col-span-5">
+                              <input
+                                required
+                                placeholder="Nombre (ej. Turbidez)"
+                                value={param.name}
+                                onChange={(e) => {
+                                  const copy = [...customParams];
+                                  copy[index].name = e.target.value;
+                                  setCustomParams(copy);
+                                }}
+                                className="w-full bg-white border border-slate-150 p-2.5 rounded-xl text-xs outline-none focus:ring-1 focus:ring-sky-500 font-bold"
+                              />
+                            </div>
+                            <div className="col-span-3">
+                              <input
+                                required
+                                placeholder="Valor (ej. 1.2)"
+                                value={param.value}
+                                onChange={(e) => {
+                                  const copy = [...customParams];
+                                  copy[index].value = e.target.value;
+                                  setCustomParams(copy);
+                                }}
+                                className="w-full bg-white border border-slate-150 p-2.5 rounded-xl text-xs outline-none focus:ring-1 focus:ring-sky-500 font-bold"
+                              />
+                            </div>
+                            <div className="col-span-3">
+                              <input
+                                required
+                                placeholder="Unidad (ej. NTU)"
+                                value={param.unit}
+                                onChange={(e) => {
+                                  const copy = [...customParams];
+                                  copy[index].unit = e.target.value;
+                                  setCustomParams(copy);
+                                }}
+                                className="w-full bg-white border border-slate-150 p-2.5 rounded-xl text-xs outline-none focus:ring-1 focus:ring-sky-500 font-bold"
+                              />
+                            </div>
+                            <div className="col-span-1 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomParams(customParams.filter((_, i) => i !== index));
+                                }}
+                                className="text-rose-500 hover:text-rose-600 transition-colors p-1"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 italic">Haz clic en "Agregar Parámetro" para registrar métricas a tu gusto.</p>
+                    )}
                   </div>
 
                   <button 

@@ -344,12 +344,92 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         .order('created_at', { ascending: false });
       
       if (!error && data) {
-        setSalesList(data);
+        if (userRole === 'operator') {
+          const operatorSales = data.filter((s: any) => 
+            s.source === 'pos' || 
+            s.source === 'local' ||
+            (s.address && s.address.includes(' | Planta'))
+          );
+          setSalesList(operatorSales);
+        } else {
+          setSalesList(data);
+        }
       }
     } catch (err) {
       console.warn('Error fetching sales:', err);
     } finally {
       setLoadingSales(false);
+    }
+  };
+
+  const handleAddDriverTrip = async (employeeName: string, loadedQty: number) => {
+    const today = new Date().toLocaleDateString('en-CA');
+    try {
+      const { data: todayAtt } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => {
+        const n1 = a.user_name.toLowerCase().trim();
+        const n2 = employeeName.toLowerCase().trim();
+        return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+      });
+      
+      let existingLocation: any = {};
+      if (existing) {
+        if (existing.last_location) {
+          try {
+            existingLocation = typeof existing.last_location === 'string' 
+              ? JSON.parse(existing.last_location) 
+              : existing.last_location;
+          } catch (e) {
+            existingLocation = {};
+          }
+        }
+      }
+
+      const trips = existingLocation.trips || [];
+      const newTrip = {
+        id: 'T-' + Math.floor(10000 + Math.random() * 90000),
+        trip_number: trips.length + 1,
+        loaded_qty: Number(loadedQty) || 20,
+        returned_unsold_qty: 0,
+        returned_empty_qty: 0,
+        sold_qty: 0,
+        status: 'active',
+        loaded_at: new Date().toISOString()
+      };
+
+      const updatedLocation = {
+        ...existingLocation,
+        trips: [...trips, newTrip]
+      };
+
+      const { error } = await supabase
+        .from('daily_attendance')
+        .upsert({
+          ...(existing || {}),
+          user_name: employeeName,
+          work_date: today,
+          user_role: 'driver',
+          last_location: updatedLocation,
+          check_in: existing?.check_in || new Date().toISOString()
+        }, { onConflict: 'user_name, work_date' });
+
+      if (error) throw error;
+      
+      await supabase.from('notifications_log').insert([{
+        title: '🚚 Carga de Inventario registrada',
+        message: `Se despachó un viaje de carga con ${loadedQty} garrafones a ${employeeName}.`,
+        type: 'delivery',
+        user_role: 'driver',
+        is_read: false
+      }]);
+
+      alert(`¡Carga de ${loadedQty} garrafones asignada con éxito a ${employeeName}!`);
+    } catch (e: any) {
+      alert('Error al asignar carga de viaje: ' + e.message);
     }
   };
 
@@ -975,7 +1055,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                           </td>
                           <td className="px-6 py-4">
                             <p className="text-[10px] text-slate-500 font-black uppercase">{sale.items}</p>
-                            <p className="text-[9px] text-slate-400 font-bold italic truncate w-40">{sale.address}</p>
+                            <p className="text-[9px] text-slate-400 font-bold italic truncate w-40">{sale.address?.replace(' | Planta', '')}</p>
                           </td>
                           <td className="px-6 py-4">
                             <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
@@ -1223,6 +1303,26 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                               >
                                 {emp.status === 'active' ? 'Desactivar' : 'Activar'}
                               </button>
+
+                              {(emp.role === 'driver' || emp.role === 'repartidor') && (
+                                <button
+                                  onClick={() => {
+                                    const numStr = prompt(`Asignar Garrafones para el viaje en ruta de ${emp.name}.\n\n¿Con cuántos garrafones llenos sale hoy? (Ejem: 20)`, '20');
+                                    if (numStr !== null) {
+                                      const qty = Number(numStr);
+                                      if (isNaN(qty) || qty <= 0) {
+                                        alert('Error: Ingresa un número válido mayor a 0.');
+                                      } else {
+                                        handleAddDriverTrip(emp.name, qty);
+                                      }
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-all flex items-center gap-1 font-black shadow-sm"
+                                  title="Asignar y cargar garrafones para este repartidor en ruta"
+                                >
+                                  <Plus size={12} /> Cargar Garrafones
+                                </button>
+                              )}
 
                               <button 
                                 onClick={() => handleExportIndividualEmployeeReport(emp)}

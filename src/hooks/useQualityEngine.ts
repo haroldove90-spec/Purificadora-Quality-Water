@@ -18,10 +18,11 @@ export function useQualityEngine() {
     const timestamp = new Date().toISOString();
 
     try {
-      // 1. Guardar en Base de Datos
+      // 1. Guardar en Base de Datos (Exlcuyendo staff_id porque no existe en la columna de la tabla)
+      const { staff_id, ...insertData } = data as any;
       const { data: result, error } = await supabase
         .from('quality_logs')
-        .insert([data])
+        .insert([insertData])
         .select()
         .single();
 
