@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle, Download, Trash2 } from 'lucide-react';
+import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle, Download, Trash2, Settings, PenTool as Tool } from 'lucide-react';
 import { useQualityEngine } from '../hooks/useQualityEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 import { exportToPDF } from '../utils/pdfExport';
@@ -16,6 +15,7 @@ export default function QualityLog({ userRole }: QualityLogProps) {
   const [dbLogs, setDbLogs] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Determinar si es Admin (Monitor) o Planta (Registro)
   const isMonitorMode = userRole === 'admin';
@@ -24,18 +24,27 @@ export default function QualityLog({ userRole }: QualityLogProps) {
   const handleExportPDF = () => {
     setIsExporting(true);
     try {
-      const columns = ['Supervisor', 'Parámetro', 'Valor', 'Estatus', 'Fecha'];
-      const data = dbLogs.map(l => [
-        l.supervisor_name,
-        'Entrada de Agua',
-        `${l.volume_received}L / ${l.chlorine_dosage}g`,
-        l.pipeline_status === 'good' ? 'Óptimo' : 'Revisión',
-        new Date(l.created_at).toLocaleString()
-      ]);
+      const columns = ['Supervisor', 'Agua Cruda (L)', 'Cloro (ppm)', 'pH', 'TDS (ppm)', 'Mantenimiento', 'Estatus', 'Fecha'];
+      const data = dbLogs.map(l => {
+        let parsed = { ph: '-', tds: '-', maintenance: 'Ninguno' };
+        try {
+          if (l.notes) parsed = JSON.parse(l.notes);
+        } catch (_) {}
+        return [
+          l.supervisor_name,
+          `${l.volume_received}L`,
+          `${l.chlorine_dosage} ppm`,
+          parsed.ph || '-',
+          parsed.tds || '-',
+          parsed.maintenance || 'Ninguno',
+          l.pipeline_status === 'good' ? 'Óptimo' : 'Revisión',
+          new Date(l.created_at).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })
+        ];
+      });
 
       exportToPDF({
         title: 'Bitácora de Calidad QualityWater',
-        subtitle: `Reporte de auditoría generado el ${new Date().toLocaleDateString()}`,
+        subtitle: `Reporte de auditoría de variables físicas y químicas - Generado el ${new Date().toLocaleDateString()}`,
         columns,
         data,
         filename: 'Reporte_Calidad'
@@ -93,12 +102,20 @@ export default function QualityLog({ userRole }: QualityLogProps) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
+    const extraParams = {
+      ph: formData.get('ph') ? Number(formData.get('ph')) : 7.2,
+      tds: formData.get('tds') ? Number(formData.get('tds')) : 150,
+      maintenance: (formData.get('maintenance') as string) || 'Ninguno',
+      additional_notes: (formData.get('additional_notes') as string) || ''
+    };
+
     const data = {
       staff_id: session.user_id,
       supervisor_name: session.user_name,
       pipeline_status: formData.get('status') as string,
       volume_received: Number(formData.get('volume')),
-      chlorine_dosage: Number(formData.get('chlorine'))
+      chlorine_dosage: Number(formData.get('chlorine')),
+      notes: JSON.stringify(extraParams)
     };
 
     const res = await handleSaveQualityLog(data);
@@ -112,31 +129,44 @@ export default function QualityLog({ userRole }: QualityLogProps) {
     }
   };
 
-  const displayLogs = dbLogs.length > 0 ? dbLogs : [
-    { id: 1, type: 'Cloro', value: '0.8 ppm', status: 'optimal', time: '08:00 AM', tech: 'Juan P.' },
-    { id: 2, type: 'Dureza', value: '2 mg/L', status: 'optimal', time: '09:30 AM', tech: 'Maria S.' },
-  ];
+  const filteredLogs = dbLogs.filter(log => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    
+    let parsedNotes: any = {};
+    try {
+      if (log.notes) parsedNotes = JSON.parse(log.notes);
+    } catch (_) {}
+
+    return (
+      log.supervisor_name.toLowerCase().includes(q) ||
+      (parsedNotes.maintenance && parsedNotes.maintenance.toLowerCase().includes(q)) ||
+      log.pipeline_status.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="p-4 md:p-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
         <div>
           <h2 className="text-3xl font-black text-slate-800 italic uppercase">Bitácoras de <span className="text-sky-500">Calidad</span></h2>
-          <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest italic">Monitoreo Físico-Químico • NORMA-127-SSA1</p>
+          <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest italic font-mono">Monitoreo Físico-Químico • NORMA-127-SSA1</p>
         </div>
         <div className="flex items-center gap-3">
           <button 
+            type="button"
             onClick={handleExportPDF}
             disabled={isExporting || dbLogs.length === 0}
-            className="flex items-center gap-3 bg-slate-100 text-slate-600 px-6 py-4 rounded-3xl font-black uppercase tracking-widest text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
+            className="flex items-center gap-3 bg-slate-100 text-slate-600 px-6 py-4 rounded-3xl font-black uppercase tracking-widest text-[10px] hover:bg-slate-200 transition-all disabled:opacity-50"
           >
             {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
             PDF Auditoría
           </button>
           {!isMonitorMode && (
             <button 
+              type="button"
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all"
+              className="flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-3xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all"
             >
               <Plus size={18} /> Nuevo Registro
             </button>
@@ -155,57 +185,97 @@ export default function QualityLog({ userRole }: QualityLogProps) {
               </h3>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                <input type="text" placeholder="Buscar parámetro..." className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs outline-none focus:ring-2 focus:ring-sky-500/10 transition-all font-bold" />
+                <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar parámetro..." 
+                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs outline-none focus:ring-2 focus:ring-sky-500/10 transition-all font-bold" 
+                />
               </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest">
                   <tr>
-                    <th className="px-8 py-6">Parámetro / Supervisor</th>
-                    <th className="px-8 py-6">Valor / Auditoría</th>
+                    <th className="px-8 py-6">Parámetros / Supervisor</th>
+                    <th className="px-8 py-6">Mediciones (Agua • Cloro • pH • TDS)</th>
                     <th className="px-8 py-6">Estatus</th>
-                    <th className="px-8 py-6">Hora</th>
+                    <th className="px-8 py-6">Fecha y Hora</th>
                     {isMonitorMode && <th className="px-8 py-6 text-right">Acción</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {dbLogs.length === 0 ? (
+                  {filteredLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={isMonitorMode ? 5 : 4} className="px-8 py-12 text-center text-slate-300 font-bold italic">No hay registros dinámicos aún</td>
+                      <td colSpan={isMonitorMode ? 5 : 4} className="px-8 py-12 text-center text-slate-300 font-bold italic">No hay registros de calidad cargados</td>
                     </tr>
-                  ) : dbLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50 group transition-colors">
-                      <td className="px-8 py-6">
-                        <p className="font-black text-slate-800 text-sm italic">Entrada de Agua</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">{log.supervisor_name}</p>
-                      </td>
-                      <td className="px-8 py-6">
-                        <p className="font-black text-slate-900 text-sm">{log.volume_received}L</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">{log.chlorine_dosage}g Cloro</p>
-                      </td>
-                      <td className="px-8 py-6">
-                        <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
-                          log.pipeline_status === 'good' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {log.pipeline_status === 'good' ? 'Óptimo' : 'Revisión'}
-                        </span>
-                      </td>
-                      <td className="px-8 py-6 text-sm font-bold text-slate-500 italic">
-                        <div className="flex items-center justify-between gap-2">
-                          {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          {isMonitorMode && (
-                            <button 
-                              onClick={() => handleDeleteLog(log.id)}
-                              className="p-1.5 text-slate-200 hover:text-rose-500 transition-colors"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                  ) : filteredLogs.map((log) => {
+                    let parsedNotes: any = null;
+                    try {
+                      if (log.notes) parsedNotes = JSON.parse(log.notes);
+                    } catch (_) {}
+                    return (
+                      <tr key={log.id} className="hover:bg-slate-50 group transition-colors">
+                        <td className="px-8 py-6">
+                          <p className="font-black text-slate-800 text-sm italic">Entrada de Agua</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">{log.supervisor_name}</p>
+                        </td>
+                        <td className="px-8 py-6 space-y-1.5" translate="no">
+                          <p className="font-black text-slate-900 text-sm">{log.volume_received} Litros</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="bg-sky-50 text-sky-700 text-[9px] font-black px-1.5 py-0.5 rounded-lg uppercase tracking-wider border border-sky-100">
+                              Cloro: {log.chlorine_dosage} ppm
+                            </span>
+                            {parsedNotes?.ph && (
+                              <span className="bg-purple-100 text-purple-700 text-[9px] font-black px-1.5 py-0.5 rounded-lg uppercase tracking-wider border border-purple-200">
+                                pH: {parsedNotes.ph}
+                              </span>
+                            )}
+                            {parsedNotes?.tds && (
+                              <span className="bg-teal-100 text-teal-700 text-[9px] font-black px-1.5 py-0.5 rounded-lg uppercase tracking-wider border border-teal-200">
+                                TDS: {parsedNotes.tds} ppm
+                              </span>
+                            )}
+                          </div>
+                          {parsedNotes?.maintenance && parsedNotes.maintenance !== 'Ninguno' && (
+                            <p className="text-[10px] font-black text-indigo-600 uppercase flex items-center gap-1">
+                              🔧 Mant.: {parsedNotes.maintenance}
+                            </p>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          {parsedNotes?.additional_notes && (
+                            <p className="text-[9px] text-slate-400 font-bold italic">"{parsedNotes.additional_notes}"</p>
+                          )}
+                        </td>
+                        <td className="px-8 py-6">
+                          <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
+                            log.pipeline_status === 'good' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {log.pipeline_status === 'good' ? 'Óptimo' : 'Revisión'}
+                          </span>
+                        </td>
+                        <td className="px-8 py-6 text-sm font-bold text-slate-500 italic">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>
+                              {new Date(log.created_at).toLocaleString('es-MX', {
+                                dateStyle: 'short',
+                                timeStyle: 'short'
+                              })}
+                            </span>
+                            {isMonitorMode && (
+                              <button 
+                                type="button"
+                                onClick={() => handleDeleteLog(log.id)}
+                                className="p-1.5 text-slate-200 hover:text-rose-500 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -214,11 +284,11 @@ export default function QualityLog({ userRole }: QualityLogProps) {
 
         {/* Quick Stats */}
         <div className="space-y-6">
-          <div className="bg-sky-500 p-8 rounded-[40px] text-white shadow-2xl shadow-sky-500/20">
+          <div className="bg-gradient-to-br from-emerald-500 to-sky-500 p-8 rounded-[40px] text-white shadow-2xl shadow-sky-500/20">
             <h4 className="text-[10px] font-black uppercase tracking-widest mb-6 opacity-80">Cumplimiento Normativo</h4>
             <div className="flex items-center gap-6 mb-8">
               <div className="text-5xl font-black">100%</div>
-              <div className="text-[10px] font-black uppercase leading-tight opacity-80">Rendimiento<br/>Hoy</div>
+              <div className="text-[10px] font-black uppercase leading-tight opacity-80">Rendimiento e Inocuidad<br/>Hoy</div>
             </div>
             <div className="w-full bg-white/20 h-2 rounded-full overflow-hidden">
               <div className="bg-white h-full" style={{ width: '100%' }} />
@@ -255,11 +325,11 @@ export default function QualityLog({ userRole }: QualityLogProps) {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden p-8"
+              className="relative w-full max-w-lg bg-white rounded-[40px] shadow-2xl overflow-hidden p-8 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-black text-slate-800 uppercase italic">Auditoría <span className="text-sky-500">Producción</span></h2>
-                <button onClick={() => setShowModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                <h2 className="text-xl font-black text-slate-800 uppercase italic">Auditoría <span className="text-sky-500">Físico-Química</span></h2>
+                <button type="button" onClick={() => setShowModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
                   <X size={20} className="text-slate-400" />
                 </button>
               </div>
@@ -270,32 +340,60 @@ export default function QualityLog({ userRole }: QualityLogProps) {
                     <CheckCircle2 size={48} />
                   </div>
                   <p className="text-2xl font-black text-slate-800 uppercase italic">¡Bitácora <span className="text-emerald-500">Guardada!</span></p>
-                  <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Notificado al administrador</p>
+                  <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Registrada en base de datos real</p>
                 </div>
               ) : (
                 <form onSubmit={handleFormSubmit} className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Estatus de Entrada (Pipa/Red)</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Estatus General de Entrada</label>
                     <select name="status" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
-                      <option value="good">Óptimo (Transparente/Sin olor)</option>
-                      <option value="warning">Revisión (Turbiedad leve)</option>
+                      <option value="good">Óptimo (Agua clara/Inodora)</option>
+                      <option value="warning">Revisión (Turbiedad/Olor leve)</option>
                     </select>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Volumen (Litros)</label>
-                      <input required name="volume" type="number" placeholder="Ej. 10000" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Volumen Agua Cruda (Litros)</label>
+                      <input required name="volume" type="number" defaultValue="10000" placeholder="Ej. 10000" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dosificación Cloro (g)</label>
-                      <input required name="chlorine" type="number" step="0.1" placeholder="Ej. 50" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cloro Residual (ppm)</label>
+                      <input required name="chlorine" type="number" step="0.01" defaultValue="0.8" placeholder="Ej. 0.8" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">pH (Acidez/Alcalinidad)</label>
+                      <input required name="ph" type="number" step="0.1" min="0" max="14" defaultValue="7.2" placeholder="Ej. 7.2" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dureza / TDS (ppm)</label>
+                      <input required name="tds" type="number" defaultValue="150" placeholder="Ej. 150" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mantenimiento Preventivo (Hoy)</label>
+                    <select name="maintenance" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
+                      <option value="Ninguno">Ninguno / Operación Normal</option>
+                      <option value="Retrolavado de Filtro de Arena">Retrolavado de Filtro de Arena</option>
+                      <option value="Limpieza de Cama Carbón Activado">Limpieza de Cama Carbón Activado</option>
+                      <option value="Lavado de Suavizadores">Lavado de Suavizadores</option>
+                      <option value="Sanitización de Cisternas">Sanitización de Cisternas</option>
+                      <option value="Cambio de Filtro Pulidor">Cambio de Filtro de Micras/Pulidor</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Observaciones o Notas</label>
+                    <textarea name="additional_notes" placeholder="Escribe aquí observaciones técnicas..." className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold h-20" />
                   </div>
 
                   <button 
                     disabled={isSaving}
-                    className="w-full bg-sky-500 text-white py-5 rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl shadow-sky-500/20 hover:bg-sky-600 transition-all active:scale-95 mt-6 flex items-center justify-center gap-2"
+                    className="w-full bg-sky-500 text-white py-5 rounded-3xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-sky-500/20 hover:bg-sky-600 transition-all active:scale-95 mt-6 flex items-center justify-center gap-2"
                   >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Registrar Bitácora'}
                   </button>

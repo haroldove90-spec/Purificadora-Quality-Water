@@ -607,12 +607,9 @@ export default function App() {
     } else if (currentRoleView === 'operator') {
       items = [
         { id: 'pos', label: 'Rol Ventas (POS)', icon: CreditCard },
-        { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
-        { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
-        { id: 'inventory', label: 'Gestión de Productos', icon: Package },
-        { id: 'sales', label: 'Historial Ventas', icon: History },
-        { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'quality', label: 'Control de Calidad', icon: ShieldCheck },
         { id: 'cash_float', label: 'Fondo de Caja', icon: DollarSign },
+        { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];

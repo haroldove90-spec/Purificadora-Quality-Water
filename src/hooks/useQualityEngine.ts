@@ -7,6 +7,7 @@ export interface QualityData {
   pipeline_status: string;
   volume_received: number;
   chlorine_dosage: number;
+  notes?: string;
 }
 
 export function useQualityEngine() {

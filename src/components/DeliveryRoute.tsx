@@ -123,6 +123,31 @@ export default function DeliveryRoute() {
     };
   }, []);
 
+  const getDriverRouteName = () => {
+    const saved = localStorage.getItem('qw_session');
+    let driverName = '';
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        driverName = parsed.user_name || '';
+      } catch (_) {}
+    }
+
+    if (driverName) {
+      const nameNorm = driverName.toLowerCase();
+      if (nameNorm.includes('carlos') || nameNorm.includes('ruiz')) return 'Ruta Centro';
+      if (nameNorm.includes('mario') || nameNorm.includes('santos')) return 'Ruta Santa Cruz';
+      if (nameNorm.includes('ana') || nameNorm.includes('lopez')) return 'Ruta Norte / Altavista';
+    }
+
+    const activeNDs = deliveries.map(d => (d.neighborhood || '').trim()).filter(Boolean);
+    if (activeNDs.length > 0) {
+      return `Ruta ${activeNDs[0]}`;
+    }
+
+    return 'Ruta Centro';
+  };
+
   const currentDelivery = deliveries.find(d => d.id === selectedDelivery);
 
   const [products, setProducts] = useState<any[]>([]);
@@ -226,7 +251,7 @@ export default function DeliveryRoute() {
             </div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ruta Asignada</p>
-              <p className="text-lg font-black italic">Santa Fe / Poniente</p>
+              <p className="text-lg font-black italic">{getDriverRouteName()}</p>
             </div>
           </div>
           <div className="text-right flex flex-col items-end gap-2">
@@ -287,7 +312,7 @@ export default function DeliveryRoute() {
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2" translate="no">
                         <h3 className="text-lg font-black text-slate-805 leading-none">{delivery.customer_name.replace('🔄 [RECOGER] ', '')}</h3>
                         {clientMatch?.alias && (
                           <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider shadow-sm border border-amber-200 shrink-0">

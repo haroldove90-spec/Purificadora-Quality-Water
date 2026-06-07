@@ -19,6 +19,7 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [employeesList, setEmployeesList] = useState<any[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   
   const { registrarAsistencia, registrarSalidaComer, registrarRegresoComer, registrarSalidaDefinitiva, fetchHistory } = useAttendanceEngine();
@@ -27,6 +28,18 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
   useEffect(() => {
     if (isMonitorMode) {
       loadHistory();
+      
+      const fetchEmployees = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('employees')
+            .select('*');
+          if (!error && data) {
+            setEmployeesList(data);
+          }
+        } catch (_) {}
+      };
+      fetchEmployees();
 
       // Suscripción Realtime para actualizar la tabla histórica automáticamente
       const channel = supabase
@@ -455,25 +468,35 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
             <div className="absolute -top-12 -left-12 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl" />
           </div>
 
-          {isMonitorMode && (
-            <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Resumen del Día</h4>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-500 uppercase">En Turno</span>
-                  <span className="font-black text-slate-800">12</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-500 uppercase">En Comida</span>
-                  <span className="font-black text-amber-500">2</span>
-                </div>
-                <div className="flex justify-between items-center text-xs pt-4 border-t border-slate-50">
-                  <span className="font-bold text-slate-500 uppercase">Sin Marcar</span>
-                  <span className="font-black text-rose-500">1</span>
+          {isMonitorMode && (() => {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todayRecords = history.filter(h => h.work_date === todayStr);
+            const enComida = todayRecords.filter(h => h.break_start && !h.break_end && !h.check_out).length;
+            const enTurno = todayRecords.filter(h => h.check_in && !h.check_out && (!h.break_start || h.break_end)).length;
+            const activeWorkersCount = employeesList.filter(e => e.status !== 'inactive').length || 6;
+            const checkedInTodayCount = todayRecords.filter(h => h.check_in).length;
+            const sinMarcar = Math.max(0, activeWorkersCount - checkedInTodayCount);
+
+            return (
+              <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Resumen del Día</h4>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-500 uppercase">En Turno</span>
+                    <span className="font-black text-slate-800">{enTurno}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-500 uppercase">En Comida</span>
+                    <span className="font-black text-amber-500">{enComida}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs pt-4 border-t border-slate-50">
+                    <span className="font-bold text-slate-500 uppercase">Sin Marcar</span>
+                    <span className="font-black text-rose-500">{sinMarcar}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </div>
