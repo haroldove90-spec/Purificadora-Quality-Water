@@ -16,7 +16,8 @@ import {
   X, 
   Search,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Gift
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { normalizeEmployeeName } from '../utils/nameHelper';
@@ -104,7 +105,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     return 0;
   });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'gift'>('cash');
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -381,8 +382,8 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       id: `V-${Math.floor(1000 + Math.random() * 9000)}`,
       customer_name: finalCustomerName,
       items: ticketItems,
-      total: total,
-      payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
+      total: paymentMethod === 'gift' ? 0.00 : total,
+      payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'gift' ? 'Obsequio / Regalo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
       date: new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }),
       phone: manualCustomerPhone
     });
@@ -415,13 +416,17 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       });
     };
 
-    const isActuallyDebt = posIsDebt && !isPickupOrder;
+    const isActuallyDebt = posIsDebt && !isPickupOrder && generatedTicket.payment_method !== 'Obsequio / Regalo';
     const debtAmount = isActuallyDebt ? Number(generatedTicket.total) - Number(posAmountPaidToday) : 0;
     
     let orderStatus = isPickupOrder ? 'pickup_assigned' : 'delivered';
-    let savePrice = isPickupOrder ? 0.00 : generatedTicket.total;
+    let savePrice = isPickupOrder ? 0.00 : (generatedTicket.payment_method === 'Obsequio / Regalo' ? 0.00 : generatedTicket.total);
     let saveItems = isPickupOrder ? `[RECOGER DE CLIENTE-LAVADO] ${itemsDescription}` : itemsDescription;
     
+    if (generatedTicket.payment_method === 'Obsequio / Regalo') {
+      saveItems = `${itemsDescription} [OBSEQUIO/REGALO]`;
+    }
+
     if (isActuallyDebt) {
       if (debtAmount <= 0) {
         orderStatus = 'delivered';
@@ -955,9 +960,10 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
               <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider block">
                 Método de Pago
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-1.5">
                 {[
                   { id: 'cash', label: 'Efectivo', icon: DollarSign, disabled: false },
+                  { id: 'gift', label: 'Obsequio', icon: Gift, disabled: false },
                   { id: 'card', label: 'Tarjeta (No)', icon: CreditCard, disabled: true },
                   { id: 'transfer', label: 'Transf (No)', icon: Share2, disabled: true }
                 ].map((meth) => {
@@ -967,6 +973,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                     <button
                       key={meth.id}
                       disabled={meth.disabled}
+                      type="button"
                       onClick={() => !meth.disabled && setPaymentMethod(meth.id as any)}
                       className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 border-2 transition-all ${
                         meth.disabled
@@ -1159,7 +1166,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                 </div>
 
                 {/* Control de Adeudos (Cuentas por cobrar) */}
-                {!isPickupOrder && (
+                {!isPickupOrder && generatedTicket.payment_method !== 'Obsequio / Regalo' && (
                   <div className="mx-6 my-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-3">
                     <div className="flex items-center justify-between">
                       <div>

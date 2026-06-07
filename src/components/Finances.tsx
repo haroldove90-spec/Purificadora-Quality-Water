@@ -1153,6 +1153,11 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                                   Adeudo
                                 </span>
                               )}
+                              {sale.items && (sale.items.includes('[OBSEQUIO/REGALO]') || sale.items.includes('[OBSEQUIO]')) && (
+                                <span className="bg-emerald-100 text-emerald-700 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shrink-0 border border-emerald-200">
+                                  Obsequio
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -1174,7 +1179,11 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <p className="font-black text-slate-900">${sale.total_price.toFixed(2)}</p>
+                            {sale.total_price === 0 && (sale.items && (sale.items.includes('[OBSEQUIO/REGALO]') || sale.items.includes('[OBSEQUIO]'))) ? (
+                              <p className="font-black text-emerald-600 text-xs uppercase italic">Regalo ($0.00)</p>
+                            ) : (
+                              <p className="font-black text-slate-900">${sale.total_price.toFixed(2)}</p>
+                            )}
                           </td>
                           {userRole === 'admin' && (
                             <td className="px-6 py-4 text-right">

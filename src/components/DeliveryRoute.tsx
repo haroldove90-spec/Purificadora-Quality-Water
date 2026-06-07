@@ -12,7 +12,8 @@ import {
   Truck,
   ArrowLeft,
   Loader2,
-  Download
+  Download,
+  Gift
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Order } from '../lib/types.supabase';
@@ -33,6 +34,7 @@ export default function DeliveryRoute() {
   const [activeSubTab, setActiveSubTab] = useState<'active' | 'history'>('active');
   const [isDebt, setIsDebt] = useState(false);
   const [amountPaidToday, setAmountPaidToday] = useState(0);
+  const [isGift, setIsGift] = useState(false);
 
   const handleExportPDF = () => {
     setIsExporting(true);
@@ -176,6 +178,7 @@ export default function DeliveryRoute() {
       setDeliveryItems(currentDelivery.items || '');
       setDeliveryTotal(currentDelivery.total_price || 0);
       setIsDebt(false);
+      setIsGift(false);
       setAmountPaidToday(0);
     }
   }, [step, selectedDelivery]);
@@ -185,7 +188,16 @@ export default function DeliveryRoute() {
     setCompleting(true);
     
     try {
-      if (isDebt) {
+      if (isGift) {
+        const result = await handleCompleteDelivery(selectedDelivery, `${deliveryItems} [OBSEQUIO/REGALO]`, 0, 'delivered');
+        if (result.success) {
+          await fetchDeliveries();
+          setStep(1);
+          setSelectedDelivery(null);
+        } else {
+          alert('Error al confirmar obsequio: ' + result.error);
+        }
+      } else if (isDebt) {
         const debtAmount = Number(deliveryTotal) - Number(amountPaidToday);
         if (debtAmount <= 0) {
           // No debt in practice
@@ -677,67 +689,96 @@ export default function DeliveryRoute() {
                   </div>
                 </div>
 
-                {/* Control de Adeudos (Cuentas por cobrar) */}
-                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-4 text-left">
+                {/* Control de Obsequios */}
+                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 text-left space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs font-black text-slate-800 uppercase tracking-wider">¿Tiene Saldo Pendiente? (Adeudo)</p>
-                      <p className="text-[10px] text-slate-400 font-semibold uppercase">Marcar si el cliente queda a deber ("se debe")</p>
+                      <p className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Gift size={14} className="text-emerald-500" />
+                        ¿Es Obsequio / Regalo?
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase">Marcar si el garrafón es regalado al cliente o trabajador</p>
                     </div>
                     <input 
                       type="checkbox"
-                      id="isDebtCheckbox"
-                      checked={isDebt}
+                      id="isGiftCheckbox"
+                      checked={isGift}
                       onChange={(e) => {
-                        setIsDebt(e.target.checked);
+                        setIsGift(e.target.checked);
                         if (e.target.checked) {
-                          setAmountPaidToday(0); // Default unpaid full amount
+                          setIsDebt(false);
                         }
                       }}
-                      className="w-5 h-5 text-sky-500 accent-sky-500 rounded border-slate-300 focus:ring-sky-500 h-[44px]"
+                      className="w-5 h-5 text-emerald-500 accent-emerald-500 rounded border-slate-300 focus:ring-emerald-500 h-[44px] cursor-pointer"
                     />
                   </div>
-
-                  {isDebt && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="space-y-3 pt-2 border-t border-slate-200"
-                    >
-                      <div className="flex justify-between items-center">
-                        <label htmlFor="amountPaidInput" className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Monto Cobrado Hoy ($):</label>
-                        <input 
-                          type="number"
-                          id="amountPaidInput"
-                          min="0"
-                          max={deliveryTotal}
-                          step="0.01"
-                          value={amountPaidToday}
-                          onChange={(e) => setAmountPaidToday(Math.min(deliveryTotal, parseFloat(e.target.value) || 0))}
-                          className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-right focus:ring-2 focus:ring-sky-500 outline-none"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-2xl border border-amber-100 text-[11px] font-bold text-amber-800">
-                        <div>
-                          <p className="text-[10px] opacity-75 uppercase">Cobro Hoy:</p>
-                          <p className="text-sm font-black">${amountPaidToday.toFixed(2)}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] opacity-75 uppercase">Adeudo acumulado:</p>
-                          <p className="text-sm font-black text-rose-600">${(deliveryTotal - amountPaidToday).toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
                 </div>
+
+                {/* Control de Adeudos (Cuentas por cobrar) */}
+                {!isGift && (
+                  <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-4 text-left">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-black text-slate-800 uppercase tracking-wider">¿Tiene Saldo Pendiente? (Adeudo)</p>
+                        <p className="text-[10px] text-slate-400 font-semibold uppercase">Marcar si el cliente queda a deber ("se debe")</p>
+                      </div>
+                      <input 
+                        type="checkbox"
+                        id="isDebtCheckbox"
+                        checked={isDebt}
+                        onChange={(e) => {
+                          setIsDebt(e.target.checked);
+                          if (e.target.checked) {
+                            setAmountPaidToday(0); // Default unpaid full amount
+                          }
+                        }}
+                        className="w-5 h-5 text-sky-500 accent-sky-500 rounded border-slate-300 focus:ring-sky-500 h-[44px]"
+                      />
+                    </div>
+
+                    {isDebt && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="space-y-3 pt-2 border-t border-slate-200"
+                      >
+                        <div className="flex justify-between items-center">
+                          <label htmlFor="amountPaidInput" className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Monto Cobrado Hoy ($):</label>
+                          <input 
+                            type="number"
+                            id="amountPaidInput"
+                            min="0"
+                            max={deliveryTotal}
+                            step="0.01"
+                            value={amountPaidToday}
+                            onChange={(e) => setAmountPaidToday(Math.min(deliveryTotal, parseFloat(e.target.value) || 0))}
+                            className="w-24 p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm text-right focus:ring-2 focus:ring-sky-500 outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-2xl border border-amber-100 text-[11px] font-bold text-amber-800">
+                          <div>
+                            <p className="text-[10px] opacity-75 uppercase">Cobro Hoy:</p>
+                            <p className="text-sm font-black">${amountPaidToday.toFixed(2)}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] opacity-75 uppercase">Adeudo acumulado:</p>
+                            <p className="text-sm font-black text-rose-600">${(deliveryTotal - amountPaidToday).toFixed(2)}</p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
 
                 <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex justify-between items-center">
                   <div>
                     <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Monto Final</span>
-                    <span className="text-xs text-emerald-600 font-bold font-sans">Cobrar al cliente</span>
+                    <span className="text-xs text-emerald-600 font-bold font-sans">
+                      {isGift ? 'Entregado como Obsequio sin costo' : 'Cobrar al cliente'}
+                    </span>
                   </div>
                   <span className="text-3xl font-black text-emerald-600 font-sans">
-                    ${deliveryTotal.toFixed(2)}
+                    ${isGift ? '0.00' : deliveryTotal.toFixed(2)}
                   </span>
                 </div>
 
