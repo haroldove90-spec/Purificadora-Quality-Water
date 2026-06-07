@@ -82,6 +82,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
   const [isAssigning, setIsAssigning] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [isNewOrderPickup, setIsNewOrderPickup] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'all' | 'regular' | 'pickup'>('all');
   
   // States for confirming/liquidating pickup-based orders (Wash & Return)
   const [confirmingPickupOrder, setConfirmingPickupOrder] = useState<Order | null>(null);
@@ -195,10 +196,13 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     setIsAssigning(true);
     
     try {
+      const isPickupOrder = selectedOrder.status === 'pickup_pending';
+      const nextStatus = isPickupOrder ? 'pickup_assigned' : 'assigned';
+      
       const { error } = await supabase
         .from('orders')
         .update({ 
-          status: 'assigned',
+          status: nextStatus,
           assigned_to: driverId,
           assigned_to_name: driverName
         })
@@ -237,10 +241,23 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     { label: 'En Ruta', value: orders.filter(o => o.status === 'assigned').length.toString(), subValue: 'Activos', color: 'text-sky-600' },
   ];
 
-  const filteredOrders = orders.filter(order => 
-    order.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.address.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredOrders = orders.filter(order => {
+    const matchesSearch = 
+      order.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (order.address && order.address.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+    if (!matchesSearch) return false;
+    
+    if (activeSubTab === 'regular') {
+      const isPickup = order.customer_name.startsWith('🔄 [RECOGER]') || order.status?.startsWith('pickup');
+      return !isPickup;
+    }
+    if (activeSubTab === 'pickup') {
+      const isPickup = order.customer_name.startsWith('🔄 [RECOGER]') || order.status?.startsWith('pickup');
+      return isPickup;
+    }
+    return true;
+  });
 
   const handleExportGlobal = () => {
     const columns = ['ID / Referencia', 'Cliente', 'Dirección', 'Artículos', 'Repartidor', 'Estado', 'Fecha'];
@@ -489,6 +506,41 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
               {filteredOrders.length} Resultados
             </span>
           </div>
+        </div>
+
+        {/* Sub-tab selection for Admin / Operator */}
+        <div className="px-8 py-4 border-b border-slate-100 bg-slate-50/30 flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'all', label: 'Todos los Pedidos 📋' },
+              { id: 'regular', label: 'Ruta Regular 🚚' },
+              { id: 'pickup', label: 'Pedidos a Recoger (Lavado) 🔄' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveSubTab(tab.id as any)}
+                className={`px-4 py-2 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 ${
+                  activeSubTab === tab.id 
+                    ? 'bg-slate-900 text-white shadow-xl shadow-slate-900/10 scale-102 font-black' 
+                    : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-805'
+                }`}
+              >
+                {tab.label}
+                {tab.id === 'pickup' && orders.filter(o => o.status === 'pickup_pending' || o.status === 'pickup_confirmed').length > 0 && (
+                  <span className="ml-2 bg-rose-500 text-white px-2 py-0.5 rounded-full text-[9px] font-bold animate-pulse inline-block align-middle">
+                    {orders.filter(o => o.status === 'pickup_pending' || o.status === 'pickup_confirmed').length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          
+          <p className="text-[10px] font-bold text-slate-500 uppercase italic hidden sm:block">
+            {activeSubTab === 'pickup' 
+              ? '🔄 Registra pedidos de recogida, asigna chofer y liquida al regreso' 
+              : '🚚 Gestión y bitácora de logística diaria'}
+          </p>
         </div>
         
         <div className="overflow-x-auto">
