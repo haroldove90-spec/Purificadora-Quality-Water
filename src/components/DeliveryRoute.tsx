@@ -19,6 +19,7 @@ import { Order } from '../lib/types.supabase';
 import { useDriverRoute } from '../hooks/useDriverRoute';
 import { handleCompleteDelivery } from '../services/deliveryService';
 import { exportToPDF } from '../utils/pdfExport';
+import { namesMatch } from '../utils/nameHelper';
 
 export default function DeliveryRoute() {
   const [deliveries, setDeliveries] = useState<Order[]>([]);
@@ -29,6 +30,7 @@ export default function DeliveryRoute() {
   const [step, setStep] = useState(1); // 1: Route List, 2: Delivery Detail, 3: Completion
   const [completing, setCompleting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'active' | 'history'>('active');
 
   const handleExportPDF = () => {
     setIsExporting(true);
@@ -231,6 +233,43 @@ export default function DeliveryRoute() {
     }
   };
 
+  // Obtener nombre del chofer de la sesión para filtrar pedidos
+  const getLoggedInDriverName = () => {
+    try {
+      const saved = localStorage.getItem('qw_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.user_name || '';
+      }
+    } catch (_) {}
+    return '';
+  };
+
+  const loggedInDriver = getLoggedInDriverName();
+
+  // Filtrar primero si pertenece al chofer
+  const driverDeliveries = deliveries.filter(d => {
+    // Si no hay chofer logueado (sesión vacía o admin), se muestra todo para que lo puedan probar/ver
+    if (!loggedInDriver) return true;
+    
+    // Si d.assigned_to_name está vacío, puede ser una orden pendiente en general que todos pueden ver y auto-reclamar
+    if (!d.assigned_to_name) return true;
+
+    // Usamos namesMatch para comparar flexiblemente
+    return namesMatch(d.assigned_to_name, loggedInDriver);
+  });
+
+  // Dividir en Active (incluyendo pickup_assigned, assigned, pending, pickup_pending) vs Completed
+  const activeDeliveries = driverDeliveries.filter(d => 
+    d.status === 'assigned' || d.status === 'pending' || d.status === 'pickup_assigned' || d.status === 'pickup_pending'
+  );
+
+  const completedDeliveries = driverDeliveries.filter(d => 
+    d.status === 'delivered' || d.status === 'pickup_confirmed'
+  );
+
+  const displayedDeliveries = activeSubTab === 'active' ? activeDeliveries : completedDeliveries;
+
   if (loading && !deliveries.length) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -265,7 +304,7 @@ export default function DeliveryRoute() {
             </button>
             <div>
               <p className="text-2xl font-black text-sky-400">
-                {deliveries.filter(d => d.status === 'delivered' || d.status === 'pickup_confirmed').length}/{deliveries.length}
+                {completedDeliveries.length}/{driverDeliveries.length}
               </p>
               <p className="text-[10px] font-bold text-slate-400 uppercase">Entregas</p>
             </div>
@@ -275,7 +314,7 @@ export default function DeliveryRoute() {
         <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
           <div 
             className="bg-sky-500 h-full transition-all duration-500" 
-            style={{ width: `${(deliveries.filter(d => d.status === 'delivered' || d.status === 'pickup_confirmed').length / Math.max(1, deliveries.length)) * 100}%` }}
+            style={{ width: `${(completedDeliveries.length / Math.max(1, driverDeliveries.length)) * 100}%` }}
           />
         </div>
       </div>
@@ -286,15 +325,41 @@ export default function DeliveryRoute() {
           animate={{ opacity: 1 }}
           className="space-y-4"
         >
+          {/* Sub-Tabs Switcher para el repartidor */}
+          <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl mb-2">
+            <button
+              onClick={() => setActiveSubTab('active')}
+              className={`py-3 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${
+                activeSubTab === 'active'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              Solicitudes de Ruta 🚚 ({activeDeliveries.length})
+            </button>
+            <button
+              onClick={() => setActiveSubTab('history')}
+              className={`py-3 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${
+                activeSubTab === 'history'
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              Historial de Registros 📋 ({completedDeliveries.length})
+            </button>
+          </div>
+
           <div className="flex items-center justify-between px-2">
-            <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">Próximas Paradas</h2>
+            <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">
+              {activeSubTab === 'active' ? 'Próximas Paradas o Recojos' : 'Historial de Paradas'}
+            </h2>
             <span className="flex items-center gap-1 text-[10px] font-bold bg-sky-100 text-sky-700 px-2 py-1 rounded-lg">
-              {deliveries.filter(d => d.status !== 'delivered' && d.status !== 'pickup_confirmed').length} PENDIENTES
+              {activeDeliveries.length} PENDIENTES
             </span>
           </div>
 
           <div className="space-y-3">
-            {deliveries.map((delivery) => {
+            {displayedDeliveries.map((delivery) => {
               const clientMatch = customersList.find(c => c.name === delivery.customer_name || delivery.customer_name.endsWith(c.name));
               const isCompleted = delivery.status === 'delivered' || delivery.status === 'pickup_confirmed';
               return (

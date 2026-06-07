@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
@@ -66,6 +66,7 @@ interface Customer {
 }
 
 export default function Dashboard({ userRole }: { userRole: string | null }) {
+  const customerDropdownRef = useRef<HTMLDivElement>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [drivers, setDrivers] = useState<Employee[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -82,6 +83,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
   const [isAssigning, setIsAssigning] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [isNewOrderPickup, setIsNewOrderPickup] = useState(false);
+  const [pickupJugsCount, setPickupJugsCount] = useState<number>(1);
   const [activeSubTab, setActiveSubTab] = useState<'all' | 'regular' | 'pickup'>('all');
   
   // States for confirming/liquidating pickup-based orders (Wash & Return)
@@ -188,6 +190,18 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target as Node)) {
+        setShowCustomerDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
@@ -305,15 +319,16 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     setIsSavingOrder(true);
     
     try {
-      const isAssigned = newOrder.source !== 'local' && newOrder.assigned_to !== '';
       const isPickup = isNewOrderPickup;
+      const isAssigned = isPickup ? (newOrder.assigned_to !== '') : (newOrder.source !== 'local' && newOrder.assigned_to !== '');
+      const finalItems = isPickup ? `[RECOGER DE CLIENTE-LAVADO] ${pickupJugsCount} Garrafones` : newOrder.items;
       
       const { data: orderData, error } = await supabase
         .from('orders')
         .insert([{
           customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
-          address: (newOrder.source === 'local' ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
-          items: isPickup ? `[RECOGER DE CLIENTE-LAVADO] ${newOrder.items}` : newOrder.items,
+          address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
+          items: finalItems,
           total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
           source: newOrder.source,
           status: isPickup ? (isAssigned ? 'pickup_assigned' : 'pickup_pending') : (newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending')),
@@ -332,13 +347,13 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       const notifications = [
         {
           title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
-          message: `${newOrder.customer_name} - ${newOrder.items} [Tipo: Recoger/Lavado]`,
+          message: `${newOrder.customer_name} - ${isPickup ? `${pickupJugsCount} Garrafones` : newOrder.items} [Tipo: Recoger/Lavado]`,
           type: notificationType,
           user_role: 'admin'
         },
         {
           title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
-          message: `${newOrder.customer_name} - ${newOrder.items} [Tipo: Recoger/Lavado]`,
+          message: `${newOrder.customer_name} - ${isPickup ? `${pickupJugsCount} Garrafones` : newOrder.items} [Tipo: Recoger/Lavado]`,
           type: notificationType,
           user_role: 'operator'
         }
@@ -346,6 +361,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
 
       // Si se asignó un chofer directamente, notificarle
       if (isAssigned) {
+        // Enviar al canal individual del chofer
         notifications.push({
           title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
           message: isPickup 
@@ -354,12 +370,22 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           type: 'order',
           user_role: `driver_${newOrder.assigned_to}`
         });
+        // Enviar al canal general de 'driver' para redundancia y cobertura
+        notifications.push({
+          title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
+          message: isPickup 
+            ? `Se te ha asignado recolección de garrafones vacíos para lavado de ${newOrder.customer_name} (${pickupJugsCount} pzs)` 
+            : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
+          type: 'order',
+          user_role: 'driver'
+        });
       }
 
       await supabase.from('notifications_log').insert(notifications);
 
       setShowRegisterModal(false);
       setIsNewOrderPickup(false);
+      setPickupJugsCount(1);
       setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '' });
       fetchOrders();
     } catch (e: any) {
@@ -857,153 +883,12 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
               </div>
 
               <form onSubmit={handleRegisterOrder} className="p-8 pt-4 grid grid-cols-2 gap-6">
-                <div className="col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Fuente del Registro</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'local', label: 'Local', icon: Store, color: 'bg-emerald-500', disabled: false },
-                      { id: 'phone', label: 'Teléfono', icon: Phone, color: 'bg-sky-500', disabled: false },
-                      { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'bg-green-500', disabled: true }
-                    ].map(btn => (
-                      <button
-                        key={btn.id}
-                        type="button"
-                        disabled={btn.disabled}
-                        onClick={() => setNewOrder({...newOrder, source: btn.id as any})}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
-                          btn.disabled 
-                            ? 'opacity-40 cursor-not-allowed border-slate-50 bg-slate-50 text-slate-300'
-                            : newOrder.source === btn.id 
-                              ? `border-transparent text-white ${btn.color}` 
-                              : 'border-slate-50 text-slate-400 bg-slate-50 hover:bg-slate-100'
-                        }`}
-                      >
-                        <btn.icon size={20} />
-                        <span className="text-[9px] font-black uppercase tracking-widest">{btn.disabled ? 'Inactivo' : btn.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className={`${newOrder.source === 'local' ? 'col-span-2' : 'col-span-1'} relative`}>
-                  <div className="flex justify-between items-center mb-2 px-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Nombre del Cliente</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowNewCustomerModal(true)}
-                      className="text-[10px] font-black text-sky-500 hover:text-sky-600 uppercase tracking-wider flex items-center gap-1 transition-colors"
-                    >
-                      <UserPlus size={12} /> + Nuevo Cliente
-                    </button>
-                  </div>
-                  <input 
-                    required
-                    type="text"
-                    value={newOrder.customer_name}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setNewOrder({...newOrder, customer_name: val});
-                      setCustomerSearchQuery(val);
-                      setShowCustomerDropdown(true);
-                    }}
-                    onFocus={() => {
-                      setCustomerSearchQuery(newOrder.customer_name);
-                      setShowCustomerDropdown(true);
-                    }}
-                    placeholder="Escribe para buscar o ingresar..."
-                    className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
-                  />
-                  
-                  {showCustomerDropdown && (
-                    <div className="absolute left-0 right-0 z-[110] mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
-                      <div className="p-2 border-b border-slate-50 text-[9px] font-black uppercase text-slate-400 tracking-wider">
-                        Clientes Registrados
-                      </div>
-                      {customers
-                        .filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase()))
-                        .map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => {
-                              setNewOrder({
-                                ...newOrder,
-                                customer_name: c.name,
-                                address: c.address || ''
-                              });
-                              setShowCustomerDropdown(false);
-                            }}
-                            className="w-full text-left p-3 hover:bg-slate-50 flex flex-col transition-colors border-b border-slate-50 last:border-none"
-                          >
-                            <span className="font-bold text-xs text-slate-800">{c.name}</span>
-                            <span className="text-[10px] font-medium text-slate-400">{c.address || 'Sin dirección'}</span>
-                          </button>
-                        ))}
-                      {customers.filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase())).length === 0 && (
-                        <div className="p-4 text-center text-xs text-slate-400 font-bold">
-                          Sin coincidencias. Haz clic en "+ Nuevo Cliente" arriba.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {showCustomerDropdown && (
-                    <div 
-                      className="fixed inset-0 z-[109]" 
-                      onClick={() => setShowCustomerDropdown(false)}
-                    />
-                  )}
-                </div>
-
-                {newOrder.source !== 'local' && (
-                  <div className="col-span-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Dirección de Entrega</label>
-                    <input 
-                      required
-                      type="text"
-                      value={newOrder.address}
-                      onChange={(e) => setNewOrder({...newOrder, address: e.target.value})}
-                      placeholder="Calle, Colonia, CP"
-                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
-                    />
-                  </div>
-                )}
-
-                <div className="col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Detalle de Productos</label>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {products.map(p => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          const currentItems = newOrder.items ? newOrder.items + ', ' : '';
-                          const currentTotal = (parseFloat(newOrder.total_price) || 0) + p.price;
-                          setNewOrder({
-                            ...newOrder, 
-                            items: currentItems + '1x ' + p.name,
-                            total_price: currentTotal.toFixed(2)
-                          });
-                        }}
-                        className="bg-slate-100 hover:bg-sky-50 text-slate-600 hover:text-sky-600 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
-                      >
-                        + {p.name} (${p.price})
-                      </button>
-                    ))}
-                  </div>
-                  <textarea 
-                    required
-                    value={newOrder.items}
-                    onChange={(e) => setNewOrder({...newOrder, items: e.target.value})}
-                    placeholder="Ej. 1x Garrafón 20L"
-                    className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none h-20 resize-none"
-                  />
-                </div>
-
-                <div className="col-span-2 bg-amber-50/70 border border-amber-100 rounded-2xl p-4 flex items-center justify-between">
+                {/* Toggle: Pedido a recoger */}
+                <div className="col-span-2 bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center justify-between">
                   <div className="space-y-0.5 text-left">
-                    <p className="text-xs font-black text-amber-805 uppercase tracking-wide">🔄 ¿ES PEDIDO A RECOGER (LAVADO)?</p>
-                    <p className="text-[10px] text-amber-600 font-bold leading-normal">
-                      Rigoberto toma pedidos telefónicos de lavado con garrafones variables. Al activar esta opción, no sumará al corte de caja hasta que el repartidor regrese de ruta y se confirme la cantidad final.
+                    <p className="text-xs font-black text-slate-800 uppercase tracking-wide">Pedido a recoger</p>
+                    <p className="text-[10px] text-slate-500 font-bold leading-normal">
+                      Activa esta opción para programar que un repartidor recoja garrafones para lavado.
                     </p>
                   </div>
                   <input 
@@ -1012,52 +897,331 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                     onChange={(e) => {
                       setIsNewOrderPickup(e.target.checked);
                       if (e.target.checked) {
-                        setNewOrder(prev => ({ ...prev, total_price: '0.00' }));
+                        setNewOrder(prev => ({ 
+                          ...prev, 
+                          total_price: '0.00',
+                          source: 'local'
+                        }));
                       }
                     }}
-                    className="w-5 h-5 text-sky-500 border-amber-200 rounded focus:ring-sky-400 cursor-pointer ml-3 shrink-0"
+                    className="w-5 h-5 text-sky-500 border-slate-200 rounded focus:ring-sky-400 cursor-pointer ml-3 shrink-0"
                   />
                 </div>
 
-                <div className="col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Total ($)</label>
-                  <div className="relative">
-                    <DollarSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" />
-                    <input 
-                      required
-                      type="number"
-                      step="0.01"
-                      value={newOrder.total_price}
-                      onChange={(e) => setNewOrder({...newOrder, total_price: e.target.value})}
-                      placeholder="0.00"
-                      className="w-full p-4 pl-10 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none text-xl"
-                    />
-                  </div>
-                </div>
+                {isNewOrderPickup ? (
+                  // FORMULARIO DE RECOLECCIÓN
+                  <>
+                    {/* Nombre del Cliente: menu desplegable y opcion de nuevo cliente */}
+                    <div ref={customerDropdownRef} className="col-span-2 relative">
+                      <div className="flex justify-between items-center mb-2 px-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Nombre del Cliente</label>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewCustomerModal(true)}
+                          className="text-[10px] font-black text-sky-500 hover:text-sky-600 uppercase tracking-wider flex items-center gap-1 transition-colors"
+                        >
+                          <UserPlus size={12} /> + Nuevo Cliente
+                        </button>
+                      </div>
+                      <input 
+                        required
+                        type="text"
+                        value={newOrder.customer_name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewOrder({...newOrder, customer_name: val});
+                          setCustomerSearchQuery(val);
+                          setShowCustomerDropdown(true);
+                        }}
+                        onFocus={() => {
+                          setCustomerSearchQuery(newOrder.customer_name);
+                          setShowCustomerDropdown(true);
+                        }}
+                        placeholder="Busca o escribe el nombre del cliente..."
+                        className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                      />
+                      
+                      {showCustomerDropdown && (
+                        <div className="absolute left-0 right-0 z-[110] mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
+                          <div className="p-2 border-b border-slate-50 text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                            Clientes Registrados
+                          </div>
+                          {customers
+                            .filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase()))
+                            .map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setNewOrder({
+                                    ...newOrder,
+                                    customer_name: c.name,
+                                    address: c.address || ''
+                                  });
+                                  setShowCustomerDropdown(false);
+                                }}
+                                className="w-full text-left p-3 hover:bg-slate-50 flex flex-col transition-colors border-b border-slate-50 last:border-none"
+                              >
+                                <span className="font-bold text-xs text-slate-800">{c.name}</span>
+                                <span className="text-[10px] font-medium text-slate-400">{c.address || 'Sin dirección'}</span>
+                              </button>
+                            ))}
+                          {customers.filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase())).length === 0 && (
+                            <div className="p-4 text-center text-xs text-slate-400 font-bold">
+                              Sin coincidencias. Haz clic en "+ Nuevo Cliente" arriba.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                {newOrder.source !== 'local' && (
-                  <div className="col-span-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Asignar Repartidor (Opcional)</label>
-                    <select 
-                      value={newOrder.assigned_to}
-                      onChange={(e) => {
-                        const driver = drivers.find(d => d.id === e.target.value);
-                        setNewOrder({
-                          ...newOrder, 
-                          assigned_to: e.target.value,
-                          assigned_to_name: driver ? driver.name : ''
-                        });
-                      }}
-                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none appearance-none"
-                    >
-                      <option value="">Pendiente de Asignar</option>
-                      {drivers.map(driver => (
-                        <option key={driver.id} value={driver.id}>
-                          {driver.name.toUpperCase()}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    {/* Número de garrafones a recoger */}
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Número de Garrafones</label>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          type="button"
+                          onClick={() => setPickupJugsCount(Math.max(1, pickupJugsCount - 1))}
+                          className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-705 font-black rounded-xl flex items-center justify-center text-lg active:scale-95 transition-all"
+                        >
+                          -
+                        </button>
+                        <input 
+                          type="number"
+                          min="1"
+                          required
+                          value={pickupJugsCount}
+                          onChange={(e) => setPickupJugsCount(parseInt(e.target.value) || 1)}
+                          className="flex-1 w-12 text-center font-bold bg-slate-50 border-none p-3 rounded-xl focus:ring-2 focus:ring-sky-505 outline-none"
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => setPickupJugsCount(pickupJugsCount + 1)}
+                          className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-705 font-black rounded-xl flex items-center justify-center text-lg active:scale-95 transition-all"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Asignar a Repartidor */}
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Repartidor Asignado *</label>
+                      <select 
+                        required
+                        value={newOrder.assigned_to}
+                        onChange={(e) => {
+                          const driver = drivers.find(d => d.id === e.target.value);
+                          setNewOrder({
+                            ...newOrder, 
+                            assigned_to: e.target.value,
+                            assigned_to_name: driver ? driver.name : ''
+                          });
+                        }}
+                        className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                      >
+                        <option value="">Seleccionar...</option>
+                        {drivers.map(driver => (
+                          <option key={driver.id} value={driver.id}>
+                            {driver.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Dirección o Enlace de Ubicación */}
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Dirección o Enlace de Ubicación (Google Maps/Waze)</label>
+                      <input 
+                        required
+                        type="text"
+                        value={newOrder.address}
+                        onChange={(e) => setNewOrder({...newOrder, address: e.target.value})}
+                        placeholder="Calle, Colonia o URL de ubicación..."
+                        className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  // FORMULARIO DE ORDEN REGULAR
+                  <>
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Fuente del Registro</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'local', label: 'Local', icon: Store, color: 'bg-emerald-500', disabled: false },
+                          { id: 'phone', label: 'Teléfono', icon: Phone, color: 'bg-sky-500', disabled: false },
+                          { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'bg-green-500', disabled: true }
+                        ].map(btn => (
+                          <button
+                            key={btn.id}
+                            type="button"
+                            disabled={btn.disabled}
+                            onClick={() => setNewOrder({...newOrder, source: btn.id as any})}
+                            className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
+                              btn.disabled 
+                                ? 'opacity-40 cursor-not-allowed border-slate-50 bg-slate-50 text-slate-300'
+                                : newOrder.source === btn.id 
+                                  ? `border-transparent text-white ${btn.color}` 
+                                  : 'border-slate-50 text-slate-400 bg-slate-50 hover:bg-slate-100'
+                            }`}
+                          >
+                            <btn.icon size={20} />
+                            <span className="text-[9px] font-black uppercase tracking-widest">{btn.disabled ? 'Inactivo' : btn.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div ref={customerDropdownRef} className={`${newOrder.source === 'local' ? 'col-span-2' : 'col-span-1'} relative`}>
+                      <div className="flex justify-between items-center mb-2 px-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Nombre del Cliente</label>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewCustomerModal(true)}
+                          className="text-[10px] font-black text-sky-500 hover:text-sky-600 uppercase tracking-wider flex items-center gap-1 transition-colors"
+                        >
+                          <UserPlus size={12} /> + Nuevo Cliente
+                        </button>
+                      </div>
+                      <input 
+                        required
+                        type="text"
+                        value={newOrder.customer_name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewOrder({...newOrder, customer_name: val});
+                          setCustomerSearchQuery(val);
+                          setShowCustomerDropdown(true);
+                        }}
+                        onFocus={() => {
+                          setCustomerSearchQuery(newOrder.customer_name);
+                          setShowCustomerDropdown(true);
+                        }}
+                        placeholder="Escribe para buscar o ingresar..."
+                        className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                      />
+                      
+                      {showCustomerDropdown && (
+                        <div className="absolute left-0 right-0 z-[110] mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
+                          <div className="p-2 border-b border-slate-50 text-[9px] font-black uppercase text-slate-400 tracking-wider">
+                            Clientes Registrados
+                          </div>
+                          {customers
+                            .filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase()))
+                            .map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setNewOrder({
+                                    ...newOrder,
+                                    customer_name: c.name,
+                                    address: c.address || ''
+                                  });
+                                  setShowCustomerDropdown(false);
+                                }}
+                                className="w-full text-left p-3 hover:bg-slate-50 flex flex-col transition-colors border-b border-slate-50 last:border-none"
+                              >
+                                <span className="font-bold text-xs text-slate-800">{c.name}</span>
+                                <span className="text-[10px] font-medium text-slate-400">{c.address || 'Sin dirección'}</span>
+                              </button>
+                            ))}
+                          {customers.filter(c => c.name.toLowerCase().includes(customerSearchQuery.toLowerCase())).length === 0 && (
+                            <div className="p-4 text-center text-xs text-slate-400 font-bold">
+                              Sin coincidencias. Haz clic en "+ Nuevo Cliente" arriba.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {newOrder.source !== 'local' && (
+                      <div className="col-span-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Dirección de Entrega</label>
+                        <input 
+                          required
+                          type="text"
+                          value={newOrder.address}
+                          onChange={(e) => setNewOrder({...newOrder, address: e.target.value})}
+                          placeholder="Calle, Colonia, CP"
+                          className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                        />
+                      </div>
+                    )}
+
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Detalle de Productos</label>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {products.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              const currentItems = newOrder.items ? newOrder.items + ', ' : '';
+                              const currentTotal = (parseFloat(newOrder.total_price) || 0) + p.price;
+                              setNewOrder({
+                                ...newOrder, 
+                                items: currentItems + '1x ' + p.name,
+                                total_price: currentTotal.toFixed(2)
+                              });
+                            }}
+                            className="bg-slate-100 hover:bg-sky-50 text-slate-600 hover:text-sky-600 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                          >
+                            + {p.name} (${p.price})
+                          </button>
+                        ))}
+                      </div>
+                      <textarea 
+                        required
+                        value={newOrder.items}
+                        onChange={(e) => setNewOrder({...newOrder, items: e.target.value})}
+                        placeholder="Ej. 1x Garrafón 20L"
+                        className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none h-20 resize-none"
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Total ($)</label>
+                      <div className="relative">
+                        <DollarSign size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" />
+                        <input 
+                          required
+                          type="number"
+                          step="0.01"
+                          value={newOrder.total_price}
+                          onChange={(e) => setNewOrder({...newOrder, total_price: e.target.value})}
+                          placeholder="0.00"
+                          className="w-full p-4 pl-10 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none text-xl"
+                        />
+                      </div>
+                    </div>
+
+                    {newOrder.source !== 'local' && (
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Asignar Repartidor (Opcional)</label>
+                        <select 
+                          value={newOrder.assigned_to}
+                          onChange={(e) => {
+                            const driver = drivers.find(d => d.id === e.target.value);
+                            setNewOrder({
+                              ...newOrder, 
+                              assigned_to: e.target.value,
+                              assigned_to_name: driver ? driver.name : ''
+                            });
+                          }}
+                          className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none appearance-none"
+                        >
+                          <option value="">Pendiente de Asignar</option>
+                          {drivers.map(driver => (
+                            <option key={driver.id} value={driver.id}>
+                              {driver.name.toUpperCase()}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="col-span-2 pt-4 flex gap-4">
@@ -1071,7 +1235,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                   <button 
                     type="submit"
                     disabled={isSavingOrder}
-                    className="flex-[2] bg-sky-500 text-white p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-200 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    className="flex-[2] bg-gradient-to-r from-sky-500 to-indigo-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-sky-100/35 hover:from-sky-600 hover:to-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
                   >
                     {isSavingOrder ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
                     Finalizar Registro
