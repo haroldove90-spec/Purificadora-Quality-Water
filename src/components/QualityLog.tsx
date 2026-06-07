@@ -165,15 +165,13 @@ export default function QualityLog({ userRole }: QualityLogProps) {
             {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
             PDF Auditoría
           </button>
-          {!isMonitorMode && (
-            <button 
-              type="button"
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-3xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all"
-            >
-              <Plus size={18} /> Nuevo Registro
-            </button>
-          )}
+          <button 
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-3xl font-black uppercase tracking-widest text-[10px] shadow-xl active:scale-95 transition-all"
+          >
+            <Plus size={18} /> Nuevo Registro
+          </button>
         </div>
       </div>
 

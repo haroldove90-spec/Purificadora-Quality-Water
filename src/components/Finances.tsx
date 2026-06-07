@@ -1216,6 +1216,48 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
           {activeTab === 'driver_sales' && (
             <div className="space-y-6">
+              {/* Widgets de Acciones Rápidas para Administradores */}
+              <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent p-6 rounded-[32px] border border-emerald-500/20 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-sm">
+                <div>
+                  <h4 className="text-sm font-black text-emerald-800 uppercase italic flex items-center gap-2">🚚 Despacho Rápido de Garrafones (Viaje de Carga)</h4>
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase mt-1 tracking-wider">Carga e inicia viajes de reparto para cualquier chofer/repartidor en ruta</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex flex-col gap-1 min-w-[200px]">
+                    <span className="text-[9px] font-black uppercase text-emerald-700">Seleccionar Repartidor</span>
+                    <select id="quick-dispatch-driver" className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm">
+                      <option value="">-- Selecciona --</option>
+                      {employeesList.filter(e => e.role === 'driver' || e.role === 'repartidor').map(drv => (
+                        <option key={drv.id} value={drv.name}>{drv.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1 w-28">
+                    <span className="text-[9px] font-black uppercase text-emerald-700">Cantidad (Llenos)</span>
+                    <input id="quick-dispatch-qty" type="number" min="1" defaultValue="20" className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm" />
+                  </div>
+                  <button
+                    onClick={() => {
+                      const drvSelect = document.getElementById('quick-dispatch-driver') as HTMLSelectElement;
+                      const qtyInput = document.getElementById('quick-dispatch-qty') as HTMLInputElement;
+                      if (!drvSelect?.value) {
+                        alert('Por favor selecciona un repartidor registrado.');
+                        return;
+                      }
+                      const qty = Number(qtyInput?.value || 20);
+                      if (isNaN(qty) || qty <= 0) {
+                        alert('Por favor, ingresa una cantidad numérica válida mayor a ceno (0).');
+                        return;
+                      }
+                      handleAddDriverTrip(drvSelect.value, qty);
+                    }}
+                    className="self-end bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-all active:scale-95 cursor-pointer"
+                  >
+                    Asignar y Enviar Ruta
+                  </button>
+                </div>
+              </div>
+
               <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>

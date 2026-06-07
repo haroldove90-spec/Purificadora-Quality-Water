@@ -609,7 +609,6 @@ export default function App() {
         { id: 'pos', label: 'Rol Ventas (POS)', icon: CreditCard },
         { id: 'dashboard', label: 'Gestión de Pedidos', icon: LayoutDashboard },
         { id: 'sales', label: 'Historial Ventas', icon: History },
-        { id: 'quality', label: 'Control de Calidad', icon: ShieldCheck },
         { id: 'cash_float', label: 'Fondo de Caja', icon: DollarSign },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
