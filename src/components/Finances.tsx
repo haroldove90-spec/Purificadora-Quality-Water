@@ -209,6 +209,57 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     return list.length > 0 ? list : CHANNEL_DATA;
   };
 
+  const getPlantAndFieldSalesToday = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todaySales = salesList.filter(s => {
+      const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
+      return dStr === todayStr;
+    });
+
+    let plantSalesTotal = 0;
+    let plantSalesCount = 0;
+    let fieldSalesTotal = 0;
+    let fieldSalesCount = 0;
+
+    const employeePlantBreakdown: Record<string, { total: number; count: number }> = {};
+
+    todaySales.forEach(s => {
+      const isPlant = !s.assigned_to_name || 
+                      s.assigned_to_name.includes('Mostrador') || 
+                      s.assigned_to_name.includes('(Planta)') || 
+                      s.source === 'pos' || 
+                      s.source === 'local';
+      
+      const amount = Number(s.total_price || s.amount || 0);
+
+      if (isPlant) {
+        plantSalesTotal += amount;
+        plantSalesCount++;
+
+        let empName = s.assigned_to_name || 'Mostrador';
+        if (empName.endsWith(' (Planta)')) {
+          empName = empName.replace(' (Planta)', '');
+        }
+        if (!employeePlantBreakdown[empName]) {
+          employeePlantBreakdown[empName] = { total: 0, count: 0 };
+        }
+        employeePlantBreakdown[empName].total += amount;
+        employeePlantBreakdown[empName].count++;
+      } else {
+        fieldSalesTotal += amount;
+        fieldSalesCount++;
+      }
+    });
+
+    return {
+      plantSalesTotal,
+      plantSalesCount,
+      fieldSalesTotal,
+      fieldSalesCount,
+      employeePlantBreakdown
+    };
+  };
+
   const getPlantSalesToday = () => {
     const todayStr = new Date().toISOString().split('T')[0];
     const plantSales = salesList.filter(s => {
@@ -1009,6 +1060,115 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   </div>
                 ))}
               </div>
+
+              {/* Plant vs Field sales overview & detailed breakdown */}
+              {(() => {
+                const { plantSalesTotal, plantSalesCount, fieldSalesTotal, fieldSalesCount, employeePlantBreakdown } = getPlantAndFieldSalesToday();
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Global Comparison Card */}
+                    <div className="lg:col-span-1 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <h3 className="font-black text-slate-800 mb-4 uppercase text-[10px] tracking-widest">Comparativa de Canales de Venta (Hoy)</h3>
+                        
+                        <div className="space-y-4">
+                          {/* Campo */}
+                          <div className="p-4 rounded-2xl bg-sky-50/50 border border-sky-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black">
+                                <Truck size={18} />
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-slate-400">Ventas en Campo (Calle)</p>
+                                <p className="text-xl font-black text-slate-900">${fieldSalesTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] bg-sky-100 text-sky-600 font-black px-2 py-1 rounded-full uppercase">{fieldSalesCount} ped.</span>
+                          </div>
+
+                          {/* Planta */}
+                          <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black">
+                                <Store size={18} />
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-slate-400">Ventas en Planta (Local)</p>
+                                <p className="text-xl font-black text-slate-900">${plantSalesTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] bg-emerald-100 text-emerald-600 font-black px-2 py-1 rounded-full uppercase">{plantSalesCount} ped.</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Simple Horizontal Progress Ratio */}
+                      <div className="mt-6">
+                        <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase mb-1">
+                          <span>Campo (Calle)</span>
+                          <span>Planta</span>
+                        </div>
+                        {plantSalesTotal + fieldSalesTotal > 0 ? (
+                          <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden flex">
+                            <div 
+                              className="h-full bg-sky-500 transition-all" 
+                              style={{ width: `${(fieldSalesTotal / (plantSalesTotal + fieldSalesTotal)) * 100}%` }} 
+                            />
+                            <div 
+                              className="h-full bg-emerald-500 transition-all" 
+                              style={{ width: `${(plantSalesTotal / (plantSalesTotal + fieldSalesTotal)) * 100}%` }} 
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-full h-3 rounded-full bg-slate-100" />
+                        )}
+                        <span className="text-[8px] text-slate-400 block mt-2 font-black uppercase tracking-wider text-right">
+                          Proporción del día
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Employee Breakdown Card */}
+                    <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
+                          <h3 className="font-black text-slate-800 uppercase text-[10px] tracking-widest">Desglose de Ventas en Planta por Empleado</h3>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500 bg-emerald-50 px-2 py-1 rounded-md">Métricas de Hoy</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                          {Object.keys(employeePlantBreakdown).length > 0 ? (
+                            Object.entries(employeePlantBreakdown).map(([name, data]: any) => (
+                              <div key={name} className="flex items-center justify-between p-3.5 border border-slate-100 rounded-2xl hover:border-emerald-100 transition-colors">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-600 uppercase italic text-[11px]">
+                                    {name.substring(0, 2)}
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-black text-slate-700 uppercase">{name}</p>
+                                    <p className="text-xs font-semibold text-slate-500">{data.count} pedidos en planta</p>
+                                  </div>
+                                </div>
+                                <span className="text-xs font-black text-emerald-600">${data.total.toFixed(2)}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="col-span-2 flex flex-col items-center justify-center py-8 text-center text-slate-400">
+                              <Store size={24} className="mb-2 text-slate-305" />
+                              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">No hay ventas registradas en planta todavía hoy.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-50 flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        <span>Total Planta Recaudado:</span>
+                        <span className="text-emerald-500 text-sm font-black">${plantSalesTotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">

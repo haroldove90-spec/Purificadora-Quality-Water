@@ -635,6 +635,16 @@ export default function App() {
           { id: 'switch_to_admin', label: 'Ver Admin', icon: ShieldCheck, isShortcut: true }
         );
       }
+    } else if (userRole === 'driver') {
+      if (currentRoleView === 'driver') {
+        items.push(
+          { id: 'switch_to_operator', label: 'Cambiar a Planta', icon: Store, isShortcut: true }
+        );
+      } else if (currentRoleView === 'operator') {
+        items.push(
+          { id: 'switch_to_driver', label: 'Cambiar a Repartidor', icon: Truck, isShortcut: true }
+        );
+      }
     }
 
     return items;
@@ -736,6 +746,29 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-2">
+            {userRole === 'driver' && (
+              <button
+                onClick={() => {
+                  const targetView = currentRoleView === 'driver' ? 'operator' : 'driver';
+                  setCurrentRoleView(targetView);
+                  setActiveView('pos');
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-550 hover:bg-amber-500 hover:text-white transition-all text-[8px] font-black uppercase tracking-tight"
+                title="Cambiar de Rol"
+              >
+                {currentRoleView === 'driver' ? (
+                  <>
+                    <Store size={12} />
+                    <span>Planta</span>
+                  </>
+                ) : (
+                  <>
+                    <Truck size={12} />
+                    <span>Ruta</span>
+                  </>
+                )}
+              </button>
+            )}
             {isInstallable && (
               <button
                 onClick={installApp}
@@ -862,6 +895,29 @@ export default function App() {
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <div className="flex items-center gap-4">
+              {userRole === 'driver' && (
+                <button
+                  onClick={() => {
+                    const targetView = currentRoleView === 'driver' ? 'operator' : 'driver';
+                    setCurrentRoleView(targetView);
+                    setActiveView('pos');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 hover:bg-amber-500 hover:text-white transition-all text-[9px] font-black uppercase tracking-wider animate-pulse"
+                  title="Cambiar de Rol de Trabajo"
+                >
+                  {currentRoleView === 'driver' ? (
+                    <>
+                      <Store size={12} />
+                      <span>Cambiar a Planta</span>
+                    </>
+                  ) : (
+                    <>
+                      <Truck size={12} />
+                      <span>Cambiar a Ruta</span>
+                    </>
+                  )}
+                </button>
+              )}
               <div className="text-right hidden sm:block">
                 <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest leading-none mb-1">
                   {currentRoleView === 'admin' ? 'Administrador' : currentRoleView === 'operator' ? 'Planta' : currentRoleView === 'driver' ? 'Repartidor' : 'Cliente'}
