@@ -125,6 +125,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
   // Pedidos a Recoger (Wash & Return) States
   const [isPickupOrder, setIsPickupOrder] = useState(false);
+  const [pickupJugsCount, setPickupJugsCount] = useState<number>(1);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [assignedDriverId, setAssignedDriverId] = useState('');
   const [assignedDriverName, setAssignedDriverName] = useState('');
@@ -441,7 +442,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     
     let orderStatus = isPickupOrder ? 'pickup_assigned' : 'delivered';
     let savePrice = isPickupOrder ? 0.00 : (generatedTicket.payment_method === 'Obsequio / Regalo' ? 0.00 : generatedTicket.total);
-    let saveItems = isPickupOrder ? `[RECOGER DE CLIENTE-LAVADO] ${itemsDescription}` : itemsDescription;
+    let saveItems = isPickupOrder ? `[RECOGER DE CLIENTE-LAVADO] ${pickupJugsCount} Garrafones` : itemsDescription;
     
     if (generatedTicket.payment_method === 'Obsequio / Regalo') {
       saveItems = `${itemsDescription} [OBSEQUIO/REGALO]`;
@@ -468,6 +469,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       total_price: savePrice,
       status: orderStatus,
       source: isPickupOrder ? 'phone' : 'pos',
+      payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
       assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
       assigned_to_name: isPickupOrder && assignedDriverName ? assignedDriverName : (userRole === 'driver' ? (userName || 'Repartidor') : (userName || 'Mostrador')),
       created_at: new Date().toISOString()
@@ -491,6 +493,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
             total_price: debtAmount,
             status: 'pending_payment',
             source: payload.source,
+            payment_method: 'cash',
             assigned_to: payload.assigned_to,
             assigned_to_name: payload.assigned_to_name,
             created_at: new Date().toISOString()
@@ -554,6 +557,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
               total_price: debtAmount,
               status: 'pending_payment',
               source: payload.source,
+              payment_method: 'cash',
               assigned_to: payload.assigned_to,
               assigned_to_name: payload.assigned_to_name,
               created_at: new Date().toISOString()
@@ -568,6 +572,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       clearCart();
       setShowTicketModal(false);
       setIsPickupOrder(false);
+      setPickupJugsCount(1);
       setAssignedDriverId('');
       setAssignedDriverName('');
       setNotification({ 
@@ -1011,7 +1016,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                   { id: 'cash', label: 'Efectivo', icon: DollarSign, disabled: false },
                   { id: 'gift', label: 'Obsequio', icon: Gift, disabled: false },
                   { id: 'card', label: 'Tarjeta (No)', icon: CreditCard, disabled: true },
-                  { id: 'transfer', label: 'Transf (No)', icon: Share2, disabled: true }
+                  { id: 'transfer', label: 'Transferencia', icon: Share2, disabled: false }
                 ].map((meth) => {
                   const Icon = meth.icon;
                   const active = paymentMethod === meth.id;
@@ -1058,26 +1063,63 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
               </label>
               
               {isPickupOrder && (
-                <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-200/50 space-y-2 animate-fade-in text-left">
+                <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-200/50 space-y-3 animate-fade-in text-left">
                   <p className="text-[10px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider leading-tight">
                     El valor de este pedido ($0.00 / variable) no sumará al corte de caja hasta que el repartidor regrese a planta y se corroboren las entregas.
                   </p>
-                  <select
-                    value={assignedDriverId}
-                    onChange={(e) => {
-                      const drv = drivers.find(d => d.id === e.target.value);
-                      setAssignedDriverId(e.target.value);
-                      setAssignedDriverName(drv ? drv.name : '');
-                    }}
-                    className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-sky-500 focus:outline-none cursor-pointer"
-                  >
-                    <option value="">-- Seleccionar Repartidor --</option>
-                    {drivers.map(drv => (
-                      <option key={drv.id} value={drv.id}>
-                        {drv.name.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
+                  
+                  {/* Selector de cantidad de garrafones a recolectar */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-amber-800 dark:text-amber-300 uppercase tracking-widest block">
+                      Cant. Garrafones a Recolectar (Lavado)
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        type="button"
+                        onClick={() => setPickupJugsCount(Math.max(1, pickupJugsCount - 1))}
+                        className="w-8 h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-705 dark:text-slate-300 font-extrabold rounded-lg flex items-center justify-center text-sm active:scale-95 transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        -
+                      </button>
+                      <input 
+                        type="number"
+                        min="1"
+                        required
+                        value={pickupJugsCount}
+                        onChange={(e) => setPickupJugsCount(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="flex-1 text-center font-black bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1 h-8 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none text-xs text-slate-800 dark:text-white"
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setPickupJugsCount(pickupJugsCount + 1)}
+                        className="w-8 h-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-705 dark:text-slate-300 font-extrabold rounded-lg flex items-center justify-center text-sm active:scale-95 transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 pt-1.5 border-t border-amber-200/30 dark:border-amber-800/30">
+                    <label className="text-[10px] font-black text-amber-850 dark:text-amber-300 uppercase tracking-widest block">
+                      Seleccionar Repartidor Asignado
+                    </label>
+                    <select
+                      value={assignedDriverId}
+                      onChange={(e) => {
+                        const drv = drivers.find(d => d.id === e.target.value);
+                        setAssignedDriverId(e.target.value);
+                        setAssignedDriverName(drv ? drv.name : '');
+                      }}
+                      className="w-full p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-sky-500 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">-- Seleccionar Repartidor --</option>
+                      {drivers.map(drv => (
+                        <option key={drv.id} value={drv.id}>
+                          {drv.name.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
             </div>

@@ -1158,6 +1158,11 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                                   Obsequio
                                 </span>
                               )}
+                              {sale.payment_method === 'transfer' && (
+                                <span className="bg-blue-100 text-blue-700 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shrink-0 border border-blue-200">
+                                  Transferencia
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4">

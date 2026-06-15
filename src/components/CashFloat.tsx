@@ -259,7 +259,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
 
       const { data: ordersData } = await supabase
         .from('orders')
-        .select('total_price, assigned_to_name, status, created_at')
+        .select('total_price, assigned_to_name, status, created_at, payment_method')
         .eq('status', 'delivered')
         .gte('created_at', startOfYesterday)
         .lte('created_at', endOfTomorrow);
@@ -297,7 +297,9 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                 ordersCount: 0
               };
             }
-            salesSummary[name].salesTotal += Number(o.total_price || 0);
+            if (o.payment_method !== 'transfer') {
+              salesSummary[name].salesTotal += Number(o.total_price || 0);
+            }
             salesSummary[name].ordersCount += 1;
           }
         });
