@@ -63,7 +63,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const [todaySales, setTodaySales] = useState<Record<string, OrderItemSummary>>({});
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [activeDriverSession, setActiveDriverSession] = useState<any>(null);
+  const [rawActiveDriverSession, setRawActiveDriverSession] = useState<any>(null);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
 
   // Helper to safely parse JSON field to object
@@ -76,6 +76,52 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       return {};
     }
   };
+
+  const getBaseRole = () => {
+    try {
+      const backupStr = localStorage.getItem('quality_water_session_backup');
+      if (backupStr) {
+        const backup = JSON.parse(backupStr);
+        if (backup?.userRole) return backup.userRole;
+      }
+    } catch (_) {}
+    return currentUser?.role || 'driver';
+  };
+
+  const getResolvedDriverSession = (rawSession: any) => {
+    if (!rawSession) return null;
+    const loc = parseJsonFields(rawSession.last_location);
+    const baseRole = getBaseRole();
+    const activeRole = userRole || currentUser?.role || 'driver'; // active role view
+
+    if (baseRole === 'driver' && activeRole === 'operator') {
+      if (loc.operator_session) {
+        return {
+          ...rawSession,
+          last_location: loc.operator_session
+        };
+      }
+      return {
+        ...rawSession,
+        last_location: {
+          cash_float: undefined,
+          cash_closed: false,
+          trips: []
+        }
+      };
+    } else {
+      if (loc.driver_session) {
+        return {
+          ...rawSession,
+          last_location: loc.driver_session
+        };
+      }
+      return rawSession;
+    }
+  };
+
+  const activeDriverSession = getResolvedDriverSession(rawActiveDriverSession);
+  const setActiveDriverSession = setRawActiveDriverSession;
 
   const getDriverSalesObj = (driverName: string) => {
     const emp = employees.find(e => namesMatch(e.name, driverName));
@@ -213,6 +259,17 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     }
   }, [userName, userRole]);
 
+  const getEffectiveEmployeeName = () => {
+    const baseRole = getBaseRole();
+    const activeRole = userRole || currentUser?.role || 'driver';
+    if (baseRole === 'driver' && activeRole === 'operator') {
+      return `${normalizeEmployeeName(userName || currentUser.name)} (Planta)`;
+    }
+    return normalizeEmployeeName(userName || currentUser.name);
+  };
+
+  const effectiveEmployeeName = getEffectiveEmployeeName();
+
   // Load all necessary info (employees, today's attendance, today's order sales)
   const loadData = async () => {
     setLoading(true);
@@ -346,18 +403,12 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       // Find existing attendance by retrieving today's records and matching flexibly
       const { data: todayAtt } = await supabase
         .from('daily_attendance')
-        .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
+        .select('*')
         .eq('work_date', today);
 
       const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
 
       const existingLocation = parseJsonFields(existing?.last_location);
-      const updatedLocation = {
-        ...existingLocation,
-        cash_float: amount,
-        cash_closed: false,
-        cash_assigned_at: new Date().toISOString()
-      };
 
       const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
       const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
@@ -372,6 +423,30 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       } else {
         targetUserRole = 'driver';
       }
+
+      const activeRoleOnRecord = (existing as any)?.user_role || targetUserRole; // 'driver' or 'operator'
+      const timestamp = new Date().toISOString();
+      let updatedLocation = { ...existingLocation };
+
+      if (activeRoleOnRecord === 'operator') {
+        updatedLocation.operator_session = {
+          cash_float: amount,
+          cash_closed: false,
+          cash_assigned_at: timestamp
+        };
+      } else {
+        updatedLocation.driver_session = {
+          cash_float: amount,
+          cash_closed: false,
+          cash_assigned_at: timestamp,
+          trips: existingLocation.driver_session?.trips || existingLocation.trips || []
+        };
+      }
+
+      // Keep root keys updated for backwards compatibility
+      updatedLocation.cash_float = amount;
+      updatedLocation.cash_closed = false;
+      updatedLocation.cash_assigned_at = timestamp;
 
       let { error } = await supabase
         .from('daily_attendance')
@@ -460,24 +535,12 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     try {
       const { data: todayAtt } = await supabase
         .from('daily_attendance')
-        .select('id, user_name, work_date, check_in, break_start, break_end, check_out, last_location, created_at')
+        .select('*')
         .eq('work_date', today);
 
       const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
 
       const existingLocation = parseJsonFields(existing?.last_location);
-      const updatedLocation = {
-        ...existingLocation,
-        cash_float: cleanFloatAmount,
-        cash_closed: true,
-        cash_closed_at: new Date().toISOString(),
-        cash_sales_total: cleanSalesAmount,
-        cash_orders_count: cleanOrdersCount,
-        cash_total_to_deliver: totalToDeliver,
-        closed_by_role: currentUser.role,
-        closed_by_name: currentUser.name
-      };
-
       const targetEmp = employees.find(e => namesMatch(e.name, employeeName));
       const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
       let targetUserRole = targetEmp?.role || 'driver';
@@ -491,6 +554,38 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       } else {
         targetUserRole = 'driver';
       }
+
+      const activeRoleOnRecord = (existing as any)?.user_role || targetUserRole; // 'driver' or 'operator'
+      const timestamp = new Date().toISOString();
+
+      const sessionCloseData = {
+        cash_float: cleanFloatAmount,
+        cash_closed: true,
+        cash_closed_at: timestamp,
+        cash_sales_total: cleanSalesAmount,
+        cash_orders_count: cleanOrdersCount,
+        cash_total_to_deliver: totalToDeliver,
+        closed_by_role: currentUser.role,
+        closed_by_name: currentUser.name,
+        trips: activeRoleOnRecord === 'operator' ? (existingLocation.operator_session?.trips || []) : (existingLocation.driver_session?.trips || existingLocation.trips || [])
+      };
+
+      let updatedLocation = { ...existingLocation };
+      if (activeRoleOnRecord === 'operator') {
+        updatedLocation.operator_session = sessionCloseData;
+      } else {
+        updatedLocation.driver_session = sessionCloseData;
+      }
+
+      // Also copy to root for backwards compatibility and easy admin overview
+      updatedLocation.cash_float = cleanFloatAmount;
+      updatedLocation.cash_closed = true;
+      updatedLocation.cash_closed_at = timestamp;
+      updatedLocation.cash_sales_total = cleanSalesAmount;
+      updatedLocation.cash_orders_count = cleanOrdersCount;
+      updatedLocation.cash_total_to_deliver = totalToDeliver;
+      updatedLocation.closed_by_role = currentUser.role;
+      updatedLocation.closed_by_name = currentUser.name;
 
       // Also set check_out timestamp if closing cash itself is treated as check_out
       const fieldsToUpdate: any = {
@@ -1698,7 +1793,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       <p className="text-[10px] font-black text-slate-400 uppercase leading-none">
                         {currentUser.role === 'operator' ? 'Operador de Planta activo' : 'Repartidor activo'}
                       </p>
-                      <p className="text-lg font-black italic text-white uppercase mt-1">{currentUser.name}</p>
+                      <p className="text-lg font-black italic text-white uppercase mt-1">{effectiveEmployeeName}</p>
                     </div>
                   </div>
 
@@ -1776,10 +1871,10 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                   <button
                     onClick={() => {
                       const completeClosureData = {
-                        name: currentUser.name,
+                        name: effectiveEmployeeName,
                         cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
                         sales_total: Number(activeDriverSession.last_location?.cash_sales_total || 0),
-                        orders_count: getDriverSalesObj(currentUser.name).ordersCount,
+                        orders_count: getDriverSalesObj(effectiveEmployeeName).ordersCount,
                         total_to_deliver: Number(activeDriverSession.last_location?.cash_total_to_deliver || 0),
                         closed_at: activeDriverSession.last_location?.cash_closed_at,
                         closed_by_name: activeDriverSession.last_location?.closed_by_name
@@ -1806,10 +1901,10 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
                       <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Tus Ventas de Hoy</p>
                       <p className="text-2xl font-black text-slate-800 mt-2">
-                        ${Number(getDriverSalesObj(currentUser.name).salesTotal).toFixed(2)}
+                        ${Number(getDriverSalesObj(effectiveEmployeeName).salesTotal).toFixed(2)}
                       </p>
                       <span className="text-[8px] text-slate-400 block mt-1 uppercase">
-                        {getDriverSalesObj(currentUser.name).ordersCount} pedidos confirmados
+                        {getDriverSalesObj(effectiveEmployeeName).ordersCount} pedidos confirmados
                       </span>
                     </div>
                   </div>
@@ -1858,7 +1953,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                             if (isNaN(qty) || qty <= 0) {
                               alert('Error: Por favor ingresa un número válido mayor a 0');
                             } else {
-                              handleAddDriverTrip(currentUser.name, qty);
+                              handleAddDriverTrip(effectiveEmployeeName, qty);
                             }
                           }
                         }}
@@ -1948,7 +2043,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                         alert('Error: Los envases vacíos no pueden ser negativos.');
                                         return;
                                       }
-                                      handleReconcileDriverTrip(currentUser.name, t.id, unsold, empties);
+                                      handleReconcileDriverTrip(effectiveEmployeeName, t.id, unsold, empties);
                                     }}
                                     className="w-full bg-sky-500 hover:bg-sky-600 text-white text-[9px] font-black uppercase py-2.5 rounded-xl transition-all shadow-sm active:scale-95"
                                   >
@@ -1958,7 +2053,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                               ) : (
                                 <div className="flex justify-end gap-1.5">
                                   <button
-                                    onClick={() => handleDeleteDriverTrip(currentUser.name, t.id)}
+                                    onClick={() => handleDeleteDriverTrip(effectiveEmployeeName, t.id)}
                                     className="text-[8px] font-black uppercase tracking-wider text-rose-500 hover:text-rose-700 bg-rose-50/50 hover:bg-rose-50 px-2 py-1 rounded transition-colors"
                                   >
                                     Eliminar Registro
@@ -1983,12 +2078,12 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       </div>
                       <div className="flex justify-between border-b border-sky-100 pb-3">
                         <span>+ Ventas cobradas hoy:</span>
-                        <span className="text-slate-800">${Number(getDriverSalesObj(currentUser.name).salesTotal).toFixed(2)}</span>
+                        <span className="text-slate-800">${Number(getDriverSalesObj(effectiveEmployeeName).salesTotal).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-base font-black pt-2 text-slate-800">
                         <span className="uppercase">EFECTIVO A ENTREGAR:</span>
                         <span className="text-sky-600">
-                          ${(Number(activeDriverSession.last_location.cash_float) + Number(getDriverSalesObj(currentUser.name).salesTotal)).toFixed(2)}
+                          ${(Number(activeDriverSession.last_location.cash_float) + Number(getDriverSalesObj(effectiveEmployeeName).salesTotal)).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1998,9 +2093,9 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                   <button
                     onClick={() => {
                       const dummyDrv = {
-                        name: currentUser.name,
+                        name: effectiveEmployeeName,
                         cash_float: Number(activeDriverSession.last_location.cash_float),
-                        sales_total: Number(getDriverSalesObj(currentUser.name).salesTotal)
+                        sales_total: Number(getDriverSalesObj(effectiveEmployeeName).salesTotal)
                       };
                       setSelectedDriverForClose(dummyDrv);
                     }}
@@ -2028,6 +2123,20 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       <span>⚠️ Por favor solicita tu fondo al encargado antes de salir a ruta.</span>
                     )}
                   </div>
+                  {currentUser.role === 'operator' && (
+                    <button
+                      onClick={() => {
+                        const val = prompt('Iniciar Caja de Planta\n\n¿Quieres iniciar tu caja de planta ahora mismo? Ingresa el fondo de caja inicial o deja en 0:', '0');
+                        if (val !== null) {
+                          const amount = Number(val) || 0;
+                          handleAssignFloat(currentUser.name, amount);
+                        }
+                      }}
+                      className="mt-4 inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-2xl shadow-md transition-all active:scale-95"
+                    >
+                      <Plus size={14} /> Iniciar mi propia Caja con $0 o Fondo
+                    </button>
+                  )}
                 </div>
               )}
             </div>

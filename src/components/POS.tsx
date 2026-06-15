@@ -106,7 +106,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     return 0;
   });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'gift'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'gift' | 'debt'>('cash');
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -404,7 +404,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       customer_name: finalCustomerName,
       items: ticketItems,
       total: paymentMethod === 'gift' ? 0.00 : total,
-      payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'gift' ? 'Obsequio / Regalo' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
+      payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'gift' ? 'Obsequio / Regalo' : paymentMethod === 'debt' ? 'Debe / Crédito' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
       date: new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }),
       phone: manualCustomerPhone
     });
@@ -471,7 +471,21 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       source: isPickupOrder ? 'phone' : 'pos',
       payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
       assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
-      assigned_to_name: isPickupOrder && assignedDriverName ? assignedDriverName : (userRole === 'driver' ? (userName || 'Repartidor') : (userName || 'Mostrador')),
+      assigned_to_name: (() => {
+        if (isPickupOrder && assignedDriverName) return assignedDriverName;
+        let baseRole = userRole;
+        try {
+          const backupStr = localStorage.getItem('quality_water_session_backup');
+          if (backupStr) {
+            const backup = JSON.parse(backupStr);
+            if (backup?.userRole) baseRole = backup.userRole;
+          }
+        } catch (_) {}
+        if (baseRole === 'driver' && userRole === 'operator') {
+          return `${userName || 'Empleado'} (Planta)`;
+        }
+        return userRole === 'driver' ? (userName || 'Repartidor') : (userName || 'Mostrador');
+      })(),
       created_at: new Date().toISOString()
     };
 
@@ -1015,7 +1029,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                 {[
                   { id: 'cash', label: 'Efectivo', icon: DollarSign, disabled: false },
                   { id: 'gift', label: 'Obsequio', icon: Gift, disabled: false },
-                  { id: 'card', label: 'Tarjeta (No)', icon: CreditCard, disabled: true },
+                  { id: 'debt', label: 'Debe', icon: AlertCircle, disabled: false },
                   { id: 'transfer', label: 'Transferencia', icon: Share2, disabled: false }
                 ].map((meth) => {
                   const Icon = meth.icon;
@@ -1025,7 +1039,18 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                       key={meth.id}
                       disabled={meth.disabled}
                       type="button"
-                      onClick={() => !meth.disabled && setPaymentMethod(meth.id as any)}
+                      onClick={() => {
+                        if (!meth.disabled) {
+                          setPaymentMethod(meth.id as any);
+                          if (meth.id === 'debt') {
+                            setPosIsDebt(true);
+                            setPosAmountPaidToday(0);
+                          } else {
+                            setPosIsDebt(false);
+                            setPosAmountPaidToday(0);
+                          }
+                        }
+                      }}
                       className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 border-2 transition-all ${
                         meth.disabled
                           ? 'opacity-35 cursor-not-allowed bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 text-[9px]'
@@ -1040,6 +1065,41 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                   );
                 })}
               </div>
+
+              {/* Input de Pago Parcial para Adeudos incorporado directamente */}
+              {paymentMethod === 'debt' && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="space-y-2 p-3 bg-rose-50 dark:bg-rose-950/20 rounded-xl border border-rose-200 dark:border-rose-900/40 text-left mt-2 animate-fade-in"
+                >
+                  <p className="text-[9px] font-black text-rose-800 dark:text-rose-300 uppercase tracking-wider leading-tight">
+                    El cliente quedará a deber. Ingresa el abono/pago que realiza hoy (deja en 0 si no abona nada):
+                  </p>
+                  <div className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-[10px] font-black text-slate-500 uppercase">Abono de Hoy ($):</span>
+                    <input 
+                      type="number"
+                      min="0"
+                      max={getCartTotal()}
+                      step="0.01"
+                      value={posAmountPaidToday}
+                      onChange={(e) => setPosAmountPaidToday(Math.min(getCartTotal(), Math.max(0, parseFloat(e.target.value) || 0)))}
+                      className="w-24 p-1 rounded-lg font-black text-xs text-right border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-sky-500 outline-none bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[9px] font-black bg-white dark:bg-slate-900/40 p-2 rounded-lg border border-rose-100 dark:border-rose-900/20">
+                    <div>
+                      <span className="text-emerald-600 block">ABONA HOY:</span>
+                      <span className="text-xs font-black text-slate-800 dark:text-white">${posAmountPaidToday.toFixed(2)}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-rose-600 block">SALDO RESTANTE:</span>
+                      <span className="text-xs font-black text-rose-600">${Math.max(0, getCartTotal() - posAmountPaidToday).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
             </div>
             
             {/* Pedidos a Recoger (Wash & Return) Option */}
