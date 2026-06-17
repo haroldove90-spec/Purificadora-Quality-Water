@@ -113,6 +113,14 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [salesSearch, setSalesSearch] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
 
+  // States for quick dispatch quantities by bottle type
+  const [dispatchRosa, setDispatchRosa] = useState<number>(0);
+  const [dispatchAzul, setDispatchAzul] = useState<number>(20);
+  const [dispatchColor, setDispatchColor] = useState<number>(0);
+  const [dispatchPequeno, setDispatchPequeno] = useState<number>(0);
+  const [dispatchLavar, setDispatchLavar] = useState<number>(0);
+  const [dispatchDriver, setDispatchDriver] = useState<string>('');
+
   const calculateTotalVolume = () => {
     let total = 0;
     const list = salesList.length > 0 ? salesList : GLOBAL_SALES;
@@ -513,7 +521,17 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     }
   };
 
-  const handleAddDriverTrip = async (employeeName: string, loadedQty: number) => {
+  const handleAddDriverTrip = async (
+    employeeName: string, 
+    loadedQty: number,
+    details?: {
+      rosa?: number;
+      azul?: number;
+      deColor?: number;
+      pequeno?: number;
+      lavar?: number;
+    }
+  ) => {
     const today = new Date().toLocaleDateString('en-CA');
     try {
       const { data: todayAtt } = await supabase
@@ -545,6 +563,11 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         id: 'T-' + Math.floor(10000 + Math.random() * 90000),
         trip_number: trips.length + 1,
         loaded_qty: Number(loadedQty) || 20,
+        loaded_qty_rosa: Number(details?.rosa || 0),
+        loaded_qty_azul: Number(details?.azul || 0),
+        loaded_qty_color: Number(details?.deColor || 0),
+        loaded_qty_pequeno: Number(details?.pequeno || 0),
+        loaded_qty_lavar: Number(details?.lavar || 0),
         returned_unsold_qty: 0,
         returned_empty_qty: 0,
         sold_qty: 0,
@@ -570,15 +593,26 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
       if (error) throw error;
       
+      let detailMsg = '';
+      if (details) {
+        const parts = [];
+        if (details.rosa) parts.push(`${details.rosa} Rosas`);
+        if (details.azul) parts.push(`${details.azul} Azules`);
+        if (details.deColor) parts.push(`${details.deColor} De Color`);
+        if (details.pequeno) parts.push(`${details.pequeno} Pequeños`);
+        if (details.lavar) parts.push(`${details.lavar} A Lavar`);
+        if (parts.length > 0) detailMsg = ` (${parts.join(', ')})`;
+      }
+      
       await supabase.from('notifications_log').insert([{
         title: '🚚 Carga de Inventario registrada',
-        message: `Se despachó un viaje de carga con ${loadedQty} garrafones a ${employeeName}.`,
+        message: `Se despachó un viaje de carga con ${loadedQty} garrafones${detailMsg} a ${employeeName}.`,
         type: 'delivery',
         user_role: 'driver',
         is_read: false
       }]);
 
-      alert(`¡Carga de ${loadedQty} garrafones asignada con éxito a ${employeeName}!`);
+      alert(`¡Carga de ${loadedQty} garrafones${detailMsg} asignada con éxito a ${employeeName}!`);
     } catch (e: any) {
       alert('Error al asignar carga de viaje: ' + e.message);
     }
@@ -1318,7 +1352,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                                   Obsequio
                                 </span>
                               )}
-                              {sale.payment_method === 'transfer' && (
+                              {(sale.payment_method === 'transfer' || (sale.items && (sale.items.toLowerCase().includes('[método de pago: transfer]') || sale.items.toLowerCase().includes('transferencia')))) && (
                                 <span className="bg-blue-100 text-blue-700 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shrink-0 border border-blue-200">
                                   Transferencia
                                 </span>
@@ -1526,43 +1560,124 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           {activeTab === 'driver_sales' && (
             <div className="space-y-6">
               {/* Widgets de Acciones Rápidas para Administradores */}
-              <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent p-6 rounded-[32px] border border-emerald-500/20 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-sm">
+              <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent p-6 rounded-[32px] border border-emerald-500/20 shadow-sm space-y-4">
                 <div>
                   <h4 className="text-sm font-black text-emerald-800 uppercase italic flex items-center gap-2">🚚 Despacho Rápido de Garrafones (Viaje de Carga)</h4>
-                  <p className="text-[10px] font-bold text-emerald-600 uppercase mt-1 tracking-wider">Carga e inicia viajes de reparto para cualquier chofer/repartidor en ruta</p>
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase mt-1 tracking-wider">Carga e inicia viajes de reparto seleccionando las cantidades específicas por tipo de envase</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex flex-col gap-1 min-w-[200px]">
+
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end bg-white/50 p-4 rounded-2xl border border-emerald-500/10">
+                  <div className="flex flex-col gap-1 col-span-2 md:col-span-1 min-w-[150px]">
                     <span className="text-[9px] font-black uppercase text-emerald-700">Seleccionar Repartidor</span>
-                    <select id="quick-dispatch-driver" className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm">
+                    <select 
+                      value={dispatchDriver}
+                      onChange={(e) => setDispatchDriver(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm w-full font-black"
+                    >
                       <option value="">-- Selecciona --</option>
                       {employeesList.filter(e => e.role === 'driver' || e.role === 'repartidor').map(drv => (
                         <option key={drv.id} value={drv.name}>{drv.name}</option>
                       ))}
                     </select>
                   </div>
-                  <div className="flex flex-col gap-1 w-28">
-                    <span className="text-[9px] font-black uppercase text-emerald-700">Cantidad (Llenos)</span>
-                    <input id="quick-dispatch-qty" type="number" min="1" defaultValue="20" className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm" />
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-black uppercase text-rose-500 flex items-center gap-1 leading-none">🌸 Rosas</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      value={dispatchRosa || ''}
+                      placeholder="0"
+                      onChange={(e) => setDispatchRosa(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 shadow-sm w-full font-black" 
+                    />
                   </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-black uppercase text-sky-500 flex items-center gap-1 leading-none">🔷 Azules</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      value={dispatchAzul || ''}
+                      placeholder="0"
+                      onChange={(e) => setDispatchAzul(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-sky-500/20 shadow-sm w-full font-black" 
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-black uppercase text-purple-500 flex items-center gap-1 leading-none">🌈 Color</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      value={dispatchColor || ''}
+                      placeholder="0"
+                      onChange={(e) => setDispatchColor(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-purple-500/20 shadow-sm w-full font-black" 
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-black uppercase text-amber-500 flex items-center gap-1 leading-none">🍼 Pequeños</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      value={dispatchPequeno || ''}
+                      placeholder="0"
+                      onChange={(e) => setDispatchPequeno(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500/20 shadow-sm w-full font-black" 
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-black uppercase text-slate-500 flex items-center gap-1 leading-none">🧼 A lavar</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      value={dispatchLavar || ''}
+                      placeholder="0"
+                      onChange={(e) => setDispatchLavar(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-slate-500/20 shadow-sm w-full font-black" 
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                  <div className="text-[10px] font-black text-emerald-800 uppercase bg-emerald-500/10 px-3.5 py-2 rounded-xl border border-emerald-500/10 font-bold">
+                    Total a Despachar: <span className="text-sm font-black italic text-emerald-600 ml-1">{dispatchRosa + dispatchAzul + dispatchColor + dispatchPequeno + dispatchLavar}</span> garrafones
+                  </div>
+
                   <button
                     onClick={() => {
-                      const drvSelect = document.getElementById('quick-dispatch-driver') as HTMLSelectElement;
-                      const qtyInput = document.getElementById('quick-dispatch-qty') as HTMLInputElement;
-                      if (!drvSelect?.value) {
+                      if (!dispatchDriver) {
                         alert('Por favor selecciona un repartidor registrado.');
                         return;
                       }
-                      const qty = Number(qtyInput?.value || 20);
-                      if (isNaN(qty) || qty <= 0) {
-                        alert('Por favor, ingresa una cantidad numérica válida mayor a ceno (0).');
+                      const totalQty = dispatchRosa + dispatchAzul + dispatchColor + dispatchPequeno + dispatchLavar;
+                      if (totalQty <= 0) {
+                        alert('Por favor ingresa cantidad para al menos uno de los tipos de garrafones.');
                         return;
                       }
-                      handleAddDriverTrip(drvSelect.value, qty);
+
+                      handleAddDriverTrip(dispatchDriver, totalQty, {
+                        rosa: dispatchRosa,
+                        azul: dispatchAzul,
+                        deColor: dispatchColor,
+                        pequeno: dispatchPequeno,
+                        lavar: dispatchLavar
+                      });
+
+                      // Reset fields after successful dispatch
+                      setDispatchRosa(0);
+                      setDispatchAzul(20);
+                      setDispatchColor(0);
+                      setDispatchPequeno(0);
+                      setDispatchLavar(0);
+                      setDispatchDriver('');
                     }}
-                    className="self-end bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-all active:scale-95 cursor-pointer"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
                   >
-                    Asignar y Enviar Ruta
+                    <Truck size={14} /> Asignar y Enviar Ruta
                   </button>
                 </div>
               </div>

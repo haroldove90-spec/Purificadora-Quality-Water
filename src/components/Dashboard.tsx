@@ -403,15 +403,28 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     
     try {
       const finalPriceNumber = parseFloat(pickupFinalPrice) || 0;
-      const { error } = await supabase
+      let updatePayload: any = {
+        items: pickupFinalItems || confirmingPickupOrder.items,
+        total_price: finalPriceNumber,
+        payment_method: pickupFinalPayment,
+        status: 'delivered' // Converted to final completed sale!
+      };
+
+      let { error } = await supabase
         .from('orders')
-        .update({
-          items: pickupFinalItems || confirmingPickupOrder.items,
-          total_price: finalPriceNumber,
-          payment_method: pickupFinalPayment,
-          status: 'delivered' // Converted to final completed sale!
-        })
+        .update(updatePayload)
         .eq('id', confirmingPickupOrder.id);
+        
+      if (error && (error.message.toLowerCase().includes('payment_method') || error.message.toLowerCase().includes('schema cache'))) {
+        // Fallback for when the database doesn't have payment_method column
+        delete updatePayload.payment_method;
+        updatePayload.items = `${updatePayload.items} [Método de Pago: ${pickupFinalPayment}]`;
+        const retryResult = await supabase
+          .from('orders')
+          .update(updatePayload)
+          .eq('id', confirmingPickupOrder.id);
+        error = retryResult.error;
+      }
         
       if (error) throw error;
       

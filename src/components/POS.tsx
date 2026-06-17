@@ -134,6 +134,63 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   const [posIsDebt, setPosIsDebt] = useState(false);
   const [posAmountPaidToday, setPosAmountPaidToday] = useState(0);
 
+  // Self-healing database insert helper to safely handle missing table schema columns
+  const safeInsertOrder = async (payload: any): Promise<{ data: any; error: any }> => {
+    let cleanedPayload = { ...payload };
+    let attempts = 0;
+    
+    while (attempts < 5) {
+      try {
+        const { data, error } = await supabase.from('orders').insert([cleanedPayload]).select();
+        
+        if (!error) {
+          return { data, error: null };
+        }
+        
+        const errMsg = error.message || '';
+        const errCode = error.code || '';
+        
+        // Handle duplicate insertions gracefully
+        const isDuplicate = errCode === '23505' || 
+                            errMsg.toLowerCase().includes('duplicate') ||
+                            errMsg.toLowerCase().includes('already exists');
+                            
+        if (isDuplicate) {
+          return { data: null, error: null };
+        }
+        
+        // Self-heal: Check for missing columns error (PostgREST PGRST204)
+        let modified = false;
+        if ((errMsg.toLowerCase().includes('payment_method') || errMsg.toLowerCase().includes('schema cache')) && 'payment_method' in cleanedPayload) {
+          const pm = cleanedPayload.payment_method;
+          delete cleanedPayload.payment_method;
+          cleanedPayload.items = `${cleanedPayload.items || ''} [Método de Pago: ${pm}]`;
+          modified = true;
+        }
+        if (errMsg.toLowerCase().includes('whatsapp_number') && 'whatsapp_number' in cleanedPayload) {
+          const wa = cleanedPayload.whatsapp_number;
+          delete cleanedPayload.whatsapp_number;
+          cleanedPayload.items = `${cleanedPayload.items || ''} [WA: ${wa}]`;
+          modified = true;
+        }
+        if (errMsg.toLowerCase().includes('metadata') && 'metadata' in cleanedPayload) {
+          delete cleanedPayload.metadata;
+          modified = true;
+        }
+        
+        if (!modified) {
+          return { data: null, error };
+        }
+      } catch (err) {
+        return { data: null, error: err };
+      }
+      
+      attempts++;
+    }
+    
+    return { data: null, error: { message: 'Max self-healing attempts reached' } };
+  };
+
   // Background Auto Sychronization for Offline Sales
   const syncOfflineSales = async () => {
     try {
@@ -149,7 +206,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       for (let i = 0; i < pendingList.length; i++) {
         const payload = pendingList[i];
         try {
-          const { error } = await supabase.from('orders').insert([payload]);
+          const { error } = await safeInsertOrder(payload);
           const isDuplicate = error && (
             error.code === '23505' || 
             error.message?.toLowerCase().includes('duplicate') ||
@@ -547,9 +604,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
     try {
       // Timeout seguro de 3 segundos para que si la red del repartidor está defectuosa, guarde offline sin congelarle la pantalla
-      const savePromise = supabase
-        .from('orders')
-        .insert([payload]);
+      const savePromise = safeInsertOrder(payload);
 
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('TIMEOUT_CONEXION_DEBIL')), 3000)
@@ -561,22 +616,18 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
       // If online and there was a split debt, insert the second pending_payment order as well
       if (isActuallyDebt && debtAmount > 0 && Number(posAmountPaidToday) > 0) {
-        const { error: insertErr } = await supabase
-          .from('orders')
-          .insert([
-            {
-              customer_name: payload.customer_name,
-              address: payload.address,
-              items: `${itemsDescription} [SALDO PENDIENTE]`,
-              total_price: debtAmount,
-              status: 'pending_payment',
-              source: payload.source,
-              payment_method: 'cash',
-              assigned_to: payload.assigned_to,
-              assigned_to_name: payload.assigned_to_name,
-              created_at: new Date().toISOString()
-            }
-          ]);
+        const { error: insertErr } = await safeInsertOrder({
+          customer_name: payload.customer_name,
+          address: payload.address,
+          items: `${itemsDescription} [SALDO PENDIENTE]`,
+          total_price: debtAmount,
+          status: 'pending_payment',
+          source: payload.source,
+          payment_method: 'cash',
+          assigned_to: payload.assigned_to,
+          assigned_to_name: payload.assigned_to_name,
+          created_at: new Date().toISOString()
+        });
         if (insertErr) {
           console.warn('Error inserting secondary pending_payment split in POS:', insertErr);
         }

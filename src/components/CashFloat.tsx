@@ -316,7 +316,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
 
       const { data: ordersData } = await supabase
         .from('orders')
-        .select('total_price, assigned_to_name, status, created_at, payment_method')
+        .select('*')
         .eq('status', 'delivered')
         .gte('created_at', startOfYesterday)
         .lte('created_at', endOfTomorrow);
@@ -354,7 +354,15 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                 ordersCount: 0
               };
             }
-            if (o.payment_method !== 'transfer') {
+            
+            // Safe payment method check supporting both standard column or self-healed fallback format inside items description
+            const isTransfer = 
+              String(o.payment_method || '').toLowerCase() === 'transfer' || 
+              String(o.items || '').toLowerCase().includes('[método de pago: transfer]') || 
+              String(o.items || '').toLowerCase().includes('[método de pago: transferencia]') || 
+              String(o.items || '').toLowerCase().includes('transferencia');
+
+            if (!isTransfer) {
               salesSummary[name].salesTotal += Number(o.total_price || 0);
             }
             salesSummary[name].ordersCount += 1;
@@ -930,7 +938,17 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   };
 
   // Helper to assign a new vehicle cargo trip/load of garrafones to a driver
-  const handleAddDriverTrip = async (employeeName: string, loadedQty: number) => {
+  const handleAddDriverTrip = async (
+    employeeName: string, 
+    loadedQty: number,
+    details?: {
+      rosa?: number;
+      azul?: number;
+      deColor?: number;
+      pequeno?: number;
+      lavar?: number;
+    }
+  ) => {
     setActionLoading(true);
     const today = getLocalDateString();
     try {
@@ -947,6 +965,11 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         id: 'T-' + Math.floor(10000 + Math.random() * 90000),
         trip_number: trips.length + 1,
         loaded_qty: Number(loadedQty) || 20,
+        loaded_qty_rosa: Number(details?.rosa || 0),
+        loaded_qty_azul: Number(details?.azul || 0),
+        loaded_qty_color: Number(details?.deColor || 0),
+        loaded_qty_pequeno: Number(details?.pequeno || 0),
+        loaded_qty_lavar: Number(details?.lavar || 0),
         returned_unsold_qty: 0,
         returned_empty_qty: 0,
         sold_qty: 0,
@@ -982,17 +1005,28 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
 
       if (error) throw error;
       
+      let detailMsg = '';
+      if (details) {
+        const parts = [];
+        if (details.rosa) parts.push(`${details.rosa} Rosas`);
+        if (details.azul) parts.push(`${details.azul} Azules`);
+        if (details.deColor) parts.push(`${details.deColor} De Color`);
+        if (details.pequeno) parts.push(`${details.pequeno} Pequeños`);
+        if (details.lavar) parts.push(`${details.lavar} A Lavar`);
+        if (parts.length > 0) detailMsg = ` (${parts.join(', ')})`;
+      }
+
       // Send notification alert
       await supabase.from('notifications_log').insert([{
         title: '🚚 Carga de Inventario registrada',
-        message: `Se despachó un viaje de carga con ${loadedQty} garrafones a ${employeeName}.`,
+        message: `Se despachó un viaje de carga con ${loadedQty} garrafones${detailMsg} a ${employeeName}.`,
         type: 'delivery',
         user_role: targetUserRole,
         is_read: false
       }]);
 
       await loadData();
-      alert(`¡Carga de ${loadedQty} garrafones asignada con éxito a ${employeeName}!`);
+      alert(`¡Carga de ${loadedQty} garrafones${detailMsg} asignada con éxito a ${employeeName}!`);
     } catch (e: any) {
       alert('Error al asignar carga de viaje: ' + e.message);
     } finally {
@@ -2001,6 +2035,19 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                   <span className="block font-black text-emerald-600 font-bold">{t.status === 'active' ? '-' : t.sold_qty}</span>
                                 </div>
                               </div>
+
+                              {((t.loaded_qty_rosa || t.loaded_qty_azul || t.loaded_qty_color || t.loaded_qty_pequeno || t.loaded_qty_lavar)) ? (
+                                <div className="p-2 bg-sky-50/50 border border-sky-100 rounded-xl space-y-1 text-left">
+                                  <p className="text-[7.5px] font-black text-slate-405 uppercase tracking-widest leading-none">Carga Desglosada:</p>
+                                  <div className="flex flex-wrap gap-x-2.5 gap-y-1 text-[8.5px] font-extrabold text-slate-650">
+                                    {t.loaded_qty_rosa > 0 && <span className="flex items-center gap-0.5">🌸 Rosas: <strong className="text-slate-800">{t.loaded_qty_rosa}</strong></span>}
+                                    {t.loaded_qty_azul > 0 && <span className="flex items-center gap-0.5">🔷 Azules: <strong className="text-slate-800">{t.loaded_qty_azul}</strong></span>}
+                                    {t.loaded_qty_color > 0 && <span className="flex items-center gap-0.5">🌈 Color: <strong className="text-slate-800">{t.loaded_qty_color}</strong></span>}
+                                    {t.loaded_qty_pequeno > 0 && <span className="flex items-center gap-0.5">🍼 Pequeños: <strong className="text-slate-800">{t.loaded_qty_pequeno}</strong></span>}
+                                    {t.loaded_qty_lavar > 0 && <span className="flex items-center gap-0.5">🧼 A Lavar: <strong className="text-slate-800">{t.loaded_qty_lavar}</strong></span>}
+                                  </div>
+                                </div>
+                              ) : null}
 
                               {/* ACTIVE TRIP LIQUIDATION FORM */}
                               {t.status === 'active' ? (
