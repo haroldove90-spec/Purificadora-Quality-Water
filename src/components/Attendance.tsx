@@ -136,22 +136,31 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
       let location = null;
       try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
+          // Primero intentamos alta precisión con un timeout razonable de 6 segundos
+          navigator.geolocation.getCurrentPosition(resolve, (err1) => {
+            console.warn('Alta precisión falló, intentando precisión estándar...', err1);
+            // Si falla, intentamos de inmediato precisión estándar con un timeout de 8 segundos
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: false,
+              timeout: 8000,
+              maximumAge: 60000
+            });
+          }, {
             enableHighAccuracy: true,
-            timeout: 12000,
+            timeout: 6000,
             maximumAge: 0
           });
         });
         location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       } catch (e: any) {
-        console.warn('Geolocation blocked or errored:', e);
+        console.warn('Geolocation blocked or errored entirely:', e);
         let errorMsg = 'No se pudo obtener la ubicación GPS';
         if (e.code === 1) {
           errorMsg = 'Permiso denegado: Por favor habilita el acceso GPS en la configuración de tu navegador y celular.';
         } else if (e.code === 2) {
           errorMsg = 'Ubicación no disponible: Asegúrate de tener activado el GPS / localización de tu dispositivo.';
         } else if (e.code === 3) {
-          errorMsg = 'Tiempo de espera agotado al obtener señal GPS.';
+          errorMsg = 'Tiempo de espera agotado al obtener señal de ubicación.';
         }
         alert(errorMsg);
       }

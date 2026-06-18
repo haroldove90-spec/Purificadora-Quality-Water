@@ -428,26 +428,123 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
 
                             {/* Ubicación GPS */}
                             <td className="px-6 py-5">
-                              {loc.lat && loc.lng ? (
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center gap-1 bg-sky-50 dark:bg-sky-500/5 px-2.5 py-1 rounded-lg text-sky-600 dark:text-sky-400 max-w-fit">
-                                    <MapPin size={12} className="shrink-0" />
-                                    <span className="text-[9px] font-mono font-extrabold">{loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}</span>
+                              <div className="space-y-2 min-w-[150px]">
+                                {/* Check In Location if present */}
+                                {loc.check_in_location?.lat ? (
+                                  <div className="p-1.5 px-2 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                                    <div className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                                      Entrada
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1">
+                                      <span className="text-[8px] font-mono font-black text-slate-500">
+                                        {loc.check_in_location.lat.toFixed(5)}, {loc.check_in_location.lng.toFixed(5)}
+                                      </span>
+                                      <a 
+                                        href={`https://www.google.com/maps/search/?api=1&query=${loc.check_in_location.lat},${loc.check_in_location.lng}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-sky-500 hover:text-sky-600 inline-flex items-center gap-0.5 font-bold text-[8px] uppercase"
+                                      >
+                                        <Navigation size={8} /> Mapa
+                                      </a>
+                                    </div>
                                   </div>
-                                  <a 
-                                    href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-sky-500 hover:text-sky-600 transition-colors"
-                                  >
-                                    <Navigation size={10} />
-                                    Ver en Google Maps
-                                    <ExternalLink size={8} />
-                                  </a>
-                                </div>
-                              ) : (
-                                <span className="text-[9px] font-bold text-slate-300 uppercase italic">Ubicación no recibida</span>
-                              )}
+                                ) : null}
+
+                                {/* Break Start Location */}
+                                {loc.break_start_location?.lat ? (
+                                  <div className="p-1.5 px-2 bg-amber-500/5 pointer-events-auto border border-amber-500/10 rounded-xl">
+                                    <div className="text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>
+                                      Salida Almuerzo
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1">
+                                      <span className="text-[8px] font-mono font-black text-slate-500">
+                                        {loc.break_start_location.lat.toFixed(5)}, {loc.break_start_location.lng.toFixed(5)}
+                                      </span>
+                                      <a 
+                                        href={`https://www.google.com/maps/search/?api=1&query=${loc.break_start_location.lat},${loc.break_start_location.lng}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-sky-500 hover:text-sky-600 inline-flex items-center gap-0.5 font-bold text-[8px] uppercase"
+                                      >
+                                        <Navigation size={8} /> Mapa
+                                      </a>
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {/* Break End Location */}
+                                {loc.break_end_location?.lat ? (
+                                  <div className="p-1.5 px-2 bg-orange-500/5 border border-orange-500/10 rounded-xl">
+                                    <div className="text-[8px] font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 inline-block"></span>
+                                      Regreso Almuerzo
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1">
+                                      <span className="text-[8px] font-mono font-black text-slate-500">
+                                        {loc.break_end_location.lat.toFixed(5)}, {loc.break_end_location.lng.toFixed(5)}
+                                      </span>
+                                      <a 
+                                        href={`https://www.google.com/maps/search/?api=1&query=${loc.break_end_location.lat},${loc.break_end_location.lng}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-sky-500 hover:text-sky-600 inline-flex items-center gap-0.5 font-bold text-[8px] uppercase"
+                                      >
+                                        <Navigation size={8} /> Mapa
+                                      </a>
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {/* Check Out Location */}
+                                {loc.check_out_location?.lat ? (
+                                  <div className="p-1.5 px-2 bg-indigo-500/5 border border-indigo-500/10 rounded-xl">
+                                    <div className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block"></span>
+                                      Salida Turno
+                                    </div>
+                                    <div className="flex items-center justify-between mt-1">
+                                      <span className="text-[8px] font-mono font-black text-slate-500">
+                                        {loc.check_out_location.lat.toFixed(5)}, {loc.check_out_location.lng.toFixed(5)}
+                                      </span>
+                                      <a 
+                                        href={`https://www.google.com/maps/search/?api=1&query=${loc.check_out_location.lat},${loc.check_out_location.lng}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-sky-500 hover:text-sky-600 inline-flex items-center gap-0.5 font-bold text-[8px] uppercase"
+                                      >
+                                        <Navigation size={8} /> Mapa
+                                      </a>
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {/* Fallback standard latest location */}
+                                {!loc.check_in_location && !loc.break_start_location && !loc.break_end_location && !loc.check_out_location && loc.lat && loc.lng ? (
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1 bg-sky-50 dark:bg-sky-500/5 px-2.5 py-1 rounded-lg text-sky-600 dark:text-sky-400 max-w-fit">
+                                      <MapPin size={12} className="shrink-0" />
+                                      <span className="text-[9px] font-mono font-extrabold">{loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}</span>
+                                    </div>
+                                    <a 
+                                      href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-sky-500 hover:text-sky-600 transition-colors"
+                                    >
+                                      <Navigation size={10} />
+                                      Ver en Google Maps
+                                      <ExternalLink size={8} />
+                                    </a>
+                                  </div>
+                                ) : null}
+
+                                {!loc.lat && !loc.lng && (
+                                  <span className="text-[9px] font-bold text-slate-300 uppercase italic">Ubicación no recibida</span>
+                                )}
+                              </div>
                             </td>
 
                             {/* Validación */}

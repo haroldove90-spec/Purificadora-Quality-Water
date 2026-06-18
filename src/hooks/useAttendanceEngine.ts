@@ -51,7 +51,11 @@ export function useAttendanceEngine() {
 
       const updatedLocation = {
         ...parseJsonObj(existingRecord.last_location),
-        ...(location ? { lat: location.lat, lng: location.lng } : {})
+        ...(location ? { 
+          lat: location.lat, 
+          lng: location.lng,
+          [`${action}_location`]: { lat: location.lat, lng: location.lng, time: timestamp }
+        } : {})
       };
 
       // 1. Lógica de Upsert en Supabase para mantener un solo registro por día
