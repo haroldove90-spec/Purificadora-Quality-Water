@@ -837,7 +837,7 @@ export default function App() {
             {isInstallable && (
               <button
                 onClick={installApp}
-                className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all bg-sky-500/10 text-sky-400 hover:bg-sky-500 hover:text-white mb-4 border border-sky-500/20"
+                className="w-full flex items-center justify-start text-left gap-4 px-4 py-3 rounded-xl transition-all bg-sky-500/10 text-sky-400 hover:bg-sky-500 hover:text-white mb-4 border border-sky-500/20"
               >
                 <Download size={22} className="shrink-0" />
                 {isSidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest text-left">Instalar Aplicación</span>}
@@ -848,7 +848,7 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => handleNavClick(item.id)}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
+              className={`w-full flex items-center justify-start text-left gap-4 px-4 py-3 rounded-xl transition-all ${
                 item.isShortcut 
                   ? 'border border-dashed border-amber-500/30 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300'
                   : activeView === item.id 
@@ -857,16 +857,16 @@ export default function App() {
               }`}
             >
               <item.icon size={22} className={item.isShortcut ? 'text-amber-400 animate-pulse shrink-0' : 'shrink-0'} />
-              {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider">{item.label}</span>}
+              {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider text-left">{item.label}</span>}
             </button>
           ))}
           
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 mt-8"
+            className="w-full flex items-center justify-start text-left gap-4 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 mt-8"
           >
-            <LogOut size={22} />
-            {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider text-slate-400">Cerrar Sesión</span>}
+            <LogOut size={22} className="shrink-0" />
+            {isSidebarOpen && <span className="text-sm font-bold uppercase tracking-wider text-slate-400 text-left">Cerrar Sesión</span>}
           </button>
         </nav>
 
