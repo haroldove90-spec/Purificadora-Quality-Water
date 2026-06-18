@@ -48,7 +48,7 @@ import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
@@ -59,7 +59,7 @@ export default function App() {
     } catch (_) {}
     return 'lobby';
   });
-  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(() => {
+  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'driver' | 'client' | 'supervisor' | null>(() => {
     try {
       const backupStr = localStorage.getItem('quality_water_session_backup');
       if (backupStr) {
@@ -69,7 +69,7 @@ export default function App() {
     } catch (_) {}
     return null;
   });
-  const [currentRoleView, setCurrentRoleView] = useState<'admin' | 'operator' | 'driver' | 'client' | null>(() => {
+  const [currentRoleView, setCurrentRoleView] = useState<'admin' | 'operator' | 'driver' | 'client' | 'supervisor' | null>(() => {
     try {
       const backupStr = localStorage.getItem('quality_water_session_backup');
       if (backupStr) {
@@ -456,12 +456,13 @@ export default function App() {
         if (role === 'planta' || role === 'operador') role = 'operator';
         if (role === 'repartidor' || role === 'chofer' || role === 'client') role = 'driver';
         if (role === 'administrador') role = 'admin';
+        if (role === 'supervisor' || role === 'super') role = 'supervisor';
         
         setUserRole(role as any);
         
         // Mantener la vista de rol seleccionada previamente por el usuario si está guardada en localStorage
         const savedRoleView = localStorage.getItem('currentRoleView');
-        const finalRoleView = (savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView))
+        const finalRoleView = (savedRoleView && ['admin', 'operator', 'driver', 'client', 'supervisor'].includes(savedRoleView))
           ? (savedRoleView as any)
           : (role as any);
           
@@ -477,6 +478,7 @@ export default function App() {
             case 'admin': setActiveView('metrics'); break;
             case 'operator': setActiveView('pos'); break;
             case 'driver': setActiveView('pos'); break;
+            case 'supervisor': setActiveView('supervisor'); break;
             default: setActiveView('pos');
           }
         }
@@ -509,7 +511,7 @@ export default function App() {
         } else {
           const savedRoleView = localStorage.getItem('currentRoleView') as any;
           setUserRole('driver');
-          setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
+          setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client', 'supervisor'].includes(savedRoleView) ? savedRoleView : 'driver');
           setUserName(normalizeEmployeeName(defaultName || 'Repartidor'));
           
           const savedActiveView = localStorage.getItem('activeView');
@@ -524,7 +526,7 @@ export default function App() {
       console.error('Error obteniendo rol:', err);
       const savedRoleView = localStorage.getItem('currentRoleView') as any;
       setUserRole('driver');
-      setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client'].includes(savedRoleView) ? savedRoleView : 'driver');
+      setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client', 'supervisor'].includes(savedRoleView) ? savedRoleView : 'driver');
       setUserName(normalizeEmployeeName(defaultName || 'Usuario'));
       
       const savedActiveView = localStorage.getItem('activeView');
@@ -538,7 +540,7 @@ export default function App() {
     }
   };
 
-  const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client') => {
+  const handleRoleSelection = (role: 'admin' | 'operator' | 'driver' | 'client' | 'supervisor') => {
     // This is now purely for visual priority if needed, but real role comes from DB
     requestPermissions();
   };
@@ -621,6 +623,11 @@ export default function App() {
         { id: 'client_status', label: 'Mi Pedido', icon: MessageSquare },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
+    } else if (currentRoleView === 'supervisor') {
+      items = [
+        { id: 'supervisor', label: 'Supervisor', icon: ShieldCheck },
+        { id: 'profile', label: 'Perfil', icon: User },
+      ];
     }
 
     // Agregar accesos directos de cambio de rol para el administrador real
@@ -628,7 +635,8 @@ export default function App() {
       if (currentRoleView === 'admin') {
         items.push(
           { id: 'switch_to_operator', label: 'Vista Planta', icon: Store, isShortcut: true },
-          { id: 'switch_to_driver', label: 'Vista Repartidor', icon: Truck, isShortcut: true }
+          { id: 'switch_to_driver', label: 'Vista Repartidor', icon: Truck, isShortcut: true },
+          { id: 'switch_to_supervisor', label: 'Vista Supervisor', icon: ShieldCheck, isShortcut: true }
         );
       } else {
         items.push(
@@ -657,6 +665,9 @@ export default function App() {
     } else if (itemId === 'switch_to_driver') {
       setCurrentRoleView('driver');
       setActiveView('pos');
+    } else if (itemId === 'switch_to_supervisor') {
+      setCurrentRoleView('supervisor');
+      setActiveView('supervisor');
     } else if (itemId === 'switch_to_admin') {
       setCurrentRoleView('admin');
       setActiveView('metrics');
@@ -920,7 +931,10 @@ export default function App() {
               )}
               <div className="text-right hidden sm:block">
                 <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest leading-none mb-1">
-                  {currentRoleView === 'admin' ? 'Administrador' : currentRoleView === 'operator' ? 'Planta' : currentRoleView === 'driver' ? 'Repartidor' : 'Cliente'}
+                  {currentRoleView === 'admin' ? 'Administrador' : 
+                   currentRoleView === 'operator' ? 'Planta' : 
+                   currentRoleView === 'driver' ? 'Repartidor' : 
+                   currentRoleView === 'supervisor' ? 'Supervisor' : 'Cliente'}
                   {currentRoleView !== userRole && (
                     <span className="text-amber-500 ml-1 text-[8px] tracking-normal lowercase italic">(vista)</span>
                   )}
@@ -944,7 +958,19 @@ export default function App() {
                 transition={{ duration: 0.2 }}
                 className="flex-1"
               >
-                {activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
+                {activeView === 'supervisor' ? (
+                  <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-slate-900 rounded-[32px] border border-slate-100 dark:border-slate-800 shadow-sm max-w-xl mx-auto my-12 animate-fade-in">
+                    <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center text-amber-500 mb-6 animate-pulse">
+                      <ShieldCheck size={36} />
+                    </div>
+                    <h1 className="text-3xl font-black text-slate-800 dark:text-white uppercase tracking-tight mb-2 italic">
+                       En construcción 
+                    </h1>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider max-w-xs">
+                      El panel avanzado de supervisión se encuentra en desarrollo activo.
+                    </p>
+                  </div>
+                ) : activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
                  activeView === 'inventory' ? <Inventory userRole={currentRoleView} /> :
                  activeView === 'pos' ? <POS userRole={currentRoleView} userName={userName} /> :
                  activeView === 'finances' ? <Finances userRole={currentRoleView} userName={userName} /> :

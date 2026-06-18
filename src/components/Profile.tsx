@@ -260,7 +260,8 @@ export default function Profile() {
             <p className="text-sky-500 font-bold italic mt-2 uppercase text-xs tracking-widest">
               {user?.role === 'admin' ? 'Administrador Maestro' : 
                user?.role === 'operator' ? 'Operador de Planta' : 
-               user?.role === 'driver' ? 'Experto en Logística (Chofer)' : 'Cliente Distinguido'}
+               user?.role === 'driver' ? 'Experto en Logística (Chofer)' : 
+               user?.role === 'supervisor' ? 'Supervisor' : 'Cliente Distinguido'}
             </p>
             <div className="flex items-center justify-center gap-2 mt-4">
               <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2">

@@ -20,13 +20,13 @@ import {
 import { supabase } from '../lib/supabaseClient';
 
 interface LobbyProps {
-  onSelectRole: (role: 'admin' | 'operator' | 'driver' | 'client') => void;
+  onSelectRole: (role: 'admin' | 'operator' | 'driver' | 'client' | 'supervisor') => void;
 }
 
 export default function Lobby({ onSelectRole }: LobbyProps) {
   const [showAuth, setShowAuth] = useState(true);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [selectedRole, setSelectedRole] = useState<'admin' | 'operator' | 'driver'>('driver');
+  const [selectedRole, setSelectedRole] = useState<'admin' | 'operator' | 'driver' | 'supervisor'>('driver');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,7 +92,7 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
             data: {
               full_name: fullName,
               phone: phoneNumber,
-              role: 'driver'
+              role: selectedRole
             }
           }
         });
@@ -146,14 +146,35 @@ export default function Lobby({ onSelectRole }: LobbyProps) {
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
               <>
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-2xl space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Truck size={16} className="text-emerald-500 animate-pulse" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">Perfil Autocreado</span>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Rol / Tipo de Acceso</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'driver', label: 'Repartidor', icon: Truck },
+                      { id: 'operator', label: 'Planta', icon: Waves },
+                      { id: 'supervisor', label: 'Supervisor', icon: ShieldCheck }
+                    ].map((r) => {
+                      const isSelected = selectedRole === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => setSelectedRole(r.id as any)}
+                          className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all duration-200 outline-none ${
+                            isSelected 
+                              ? 'bg-sky-500 border-sky-500 text-white shadow-md shadow-sky-500/10' 
+                              : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <r.icon size={18} className="mb-1" />
+                          <span className="text-[10px] font-black uppercase tracking-tight">{r.label}</span>
+                          {r.id === 'supervisor' && (
+                            <span className="text-[7px] text-amber-500 font-extrabold animate-pulse mt-0.5 leading-none">PROX</span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <p className="text-[10px] text-slate-500 font-bold leading-normal">
-                    La plataforma registrará tu cuenta automáticamente con el perfil de <strong className="text-emerald-600 font-black">REPARTIDOR / CHOFER</strong> para facilitar el inicio de ventas y rutas.
-                  </p>
                 </div>
 
                 <div className="space-y-2">
