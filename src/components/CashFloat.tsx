@@ -594,6 +594,11 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       updatedLocation.cash_total_to_deliver = totalToDeliver;
       updatedLocation.closed_by_role = currentUser.role;
       updatedLocation.closed_by_name = currentUser.name;
+      
+      // Reset supervisor cash approval fields for a fresh closure
+      updatedLocation.cash_approved = false;
+      updatedLocation.cash_approved_at = null;
+      updatedLocation.cash_approved_by = null;
 
       // Also set check_out timestamp if closing cash itself is treated as check_out
       const fieldsToUpdate: any = {
@@ -601,7 +606,10 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         user_name: employeeName,
         work_date: today,
         user_role: targetUserRole,
-        last_location: updatedLocation
+        last_location: updatedLocation,
+        supervisor_cash_approved: false,
+        supervisor_cash_approved_at: null,
+        supervisor_cash_approved_by: null
       };
 
       // If the driver closes it, automatically log a check_out if there wasn't one
@@ -612,6 +620,17 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       let { error } = await supabase
         .from('daily_attendance')
         .upsert(fieldsToUpdate, { onConflict: 'user_name, work_date' });
+
+      if (error) {
+        if (error.message && (error.message.includes('supervisor_cash_approved') || error.message.includes('column'))) {
+          // Fallback if column does not exist yet (although we modified supabase_schema.sql, we should ensure absolute safety)
+          const { supervisor_cash_approved, supervisor_cash_approved_at, supervisor_cash_approved_by, ...tempFields } = fieldsToUpdate;
+          let retryResult = await supabase
+            .from('daily_attendance')
+            .upsert(tempFields, { onConflict: 'user_name, work_date' });
+          error = retryResult.error;
+        }
+      }
 
       if (error) {
         if (error.message && (error.message.includes('user_role') || error.message.includes('column'))) {
@@ -625,7 +644,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
 
       if (error) throw error;
 
-      // Log notifications for both target employee and admin
+      // Log notifications for target employee, admin and supervisor
       await supabase.from('notifications_log').insert([
         {
           title: '📌 Caja Cerrada y Liquidada',
@@ -639,6 +658,13 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
           message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
           type: 'finance',
           user_role: 'admin',
+          is_read: false
+        },
+        {
+          title: '🚨 Cierre de Caja Realizado',
+          message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
+          type: 'finance',
+          user_role: 'supervisor',
           is_read: false
         }
       ]);

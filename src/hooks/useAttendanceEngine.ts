@@ -97,13 +97,22 @@ export function useAttendanceEngine() {
       };
 
       try {
-        await supabase.from('notifications_log').insert([{
-          title: 'Registro de Asistencia',
-          message: `${session.user_name} ha marcado: ${labelMap[action]}`,
-          type: 'attendance',
-          user_role: 'admin',
-          is_read: false
-        }]);
+        await supabase.from('notifications_log').insert([
+          {
+            title: 'Registro de Asistencia',
+            message: `${session.user_name} ha marcado: ${labelMap[action]}`,
+            type: 'attendance',
+            user_role: 'admin',
+            is_read: false
+          },
+          {
+            title: 'Registro de Asistencia',
+            message: `${session.user_name} ha marcado: ${labelMap[action]}`,
+            type: 'attendance',
+            user_role: 'supervisor',
+            is_read: false
+          }
+        ]);
       } catch (notifErr) {
         console.error('Error al insertar notificación de asistencia:', notifErr);
       }

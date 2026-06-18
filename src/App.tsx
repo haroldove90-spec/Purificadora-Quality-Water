@@ -38,6 +38,7 @@ import Attendance from './components/Attendance';
 import NotificationHub from './components/NotificationHub';
 import QualityLog from './components/QualityLog';
 import ClientStatus from './components/ClientStatus';
+import SupervisorDashboard from './components/SupervisorDashboard';
 import Notifications from './components/Notifications';
 import POS from './components/POS';
 import CashFloat from './components/CashFloat';
@@ -48,7 +49,7 @@ import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
@@ -478,7 +479,7 @@ export default function App() {
             case 'admin': setActiveView('metrics'); break;
             case 'operator': setActiveView('pos'); break;
             case 'driver': setActiveView('pos'); break;
-            case 'supervisor': setActiveView('supervisor'); break;
+            case 'supervisor': setActiveView('supervisor_attendance'); break;
             default: setActiveView('pos');
           }
         }
@@ -625,7 +626,8 @@ export default function App() {
       ];
     } else if (currentRoleView === 'supervisor') {
       items = [
-        { id: 'supervisor', label: 'Supervisor', icon: ShieldCheck },
+        { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Clock },
+        { id: 'supervisor_cash_closure', label: 'Supervisar Cortes', icon: DollarSign },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
@@ -667,7 +669,7 @@ export default function App() {
       setActiveView('pos');
     } else if (itemId === 'switch_to_supervisor') {
       setCurrentRoleView('supervisor');
-      setActiveView('supervisor');
+      setActiveView('supervisor_attendance');
     } else if (itemId === 'switch_to_admin') {
       setCurrentRoleView('admin');
       setActiveView('metrics');
@@ -958,18 +960,10 @@ export default function App() {
                 transition={{ duration: 0.2 }}
                 className="flex-1"
               >
-                {activeView === 'supervisor' ? (
-                  <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-slate-900 rounded-[32px] border border-slate-100 dark:border-slate-800 shadow-sm max-w-xl mx-auto my-12 animate-fade-in">
-                    <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center text-amber-500 mb-6 animate-pulse">
-                      <ShieldCheck size={36} />
-                    </div>
-                    <h1 className="text-3xl font-black text-slate-800 dark:text-white uppercase tracking-tight mb-2 italic">
-                       En construcción 
-                    </h1>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider max-w-xs">
-                      El panel avanzado de supervisión se encuentra en desarrollo activo.
-                    </p>
-                  </div>
+                {activeView === 'supervisor_attendance' ? (
+                  <SupervisorDashboard initialTab="attendance" userName={userName} userRole={currentRoleView || 'supervisor'} />
+                ) : activeView === 'supervisor_cash_closure' ? (
+                  <SupervisorDashboard initialTab="cash_closure" userName={userName} userRole={currentRoleView || 'supervisor'} />
                 ) : activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
                  activeView === 'inventory' ? <Inventory userRole={currentRoleView} /> :
                  activeView === 'pos' ? <POS userRole={currentRoleView} userName={userName} /> :

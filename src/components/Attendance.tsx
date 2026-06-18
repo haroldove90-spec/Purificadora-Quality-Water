@@ -8,13 +8,13 @@ import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
 
 interface AttendanceProps {
-  userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
+  userRole?: 'admin' | 'operator' | 'driver' | 'client' | 'supervisor' | null;
   userName?: string | null;
 }
 
 export default function Attendance({ userRole, userName }: AttendanceProps) {
-  // Determinar si estamos en modo monitor (Admin) o modo marcado (Empleado)
-  const isMonitorMode = userRole === 'admin';
+  // Determinar si estamos en modo monitor (Admin o Supervisor) o modo marcado (Empleado)
+  const isMonitorMode = userRole === 'admin' || userRole === 'supervisor';
 
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -136,11 +136,24 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
       let location = null;
       try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject);
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 0
+          });
         });
         location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      } catch (e) {
-        console.warn('Geolocation blocked');
+      } catch (e: any) {
+        console.warn('Geolocation blocked or errored:', e);
+        let errorMsg = 'No se pudo obtener la ubicación GPS';
+        if (e.code === 1) {
+          errorMsg = 'Permiso denegado: Por favor habilita el acceso GPS en la configuración de tu navegador y celular.';
+        } else if (e.code === 2) {
+          errorMsg = 'Ubicación no disponible: Asegúrate de tener activado el GPS / localización de tu dispositivo.';
+        } else if (e.code === 3) {
+          errorMsg = 'Tiempo de espera agotado al obtener señal GPS.';
+        }
+        alert(errorMsg);
       }
 
       const actionMap = {

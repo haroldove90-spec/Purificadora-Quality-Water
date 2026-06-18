@@ -76,6 +76,15 @@ CREATE TABLE public.daily_attendance (
   break_end TIMESTAMP WITH TIME ZONE,
   check_out TIMESTAMP WITH TIME ZONE,
   last_location JSONB,
+  
+  -- Columnas para la validación y confirmación del Supervisor
+  supervisor_attendance_approved BOOLEAN DEFAULT false,
+  supervisor_attendance_approved_at TIMESTAMP WITH TIME ZONE,
+  supervisor_attendance_approved_by TEXT,
+  supervisor_cash_approved BOOLEAN DEFAULT false,
+  supervisor_cash_approved_at TIMESTAMP WITH TIME ZONE,
+  supervisor_cash_approved_by TEXT,
+
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   UNIQUE(user_name, work_date) 
 );
@@ -177,3 +186,17 @@ BEGIN;
   TO public 
   USING (bucket_id = 'avatars');
 COMMIT;
+
+-- ======================================================
+-- SCRIPT DE ACTUALIZACIÓN (MIGRACIÓN IN SITU)
+-- Correr este fragmento si ya cuentas con base de datos existente y no deseas borrar tus datos:
+-- ======================================================
+--
+-- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved BOOLEAN DEFAULT false;
+-- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved_at TIMESTAMP WITH TIME ZONE;
+-- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved_by TEXT;
+-- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved BOOLEAN DEFAULT false;
+-- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved_at TIMESTAMP WITH TIME ZONE;
+-- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved_by TEXT;
+--
+-- ======================================================
