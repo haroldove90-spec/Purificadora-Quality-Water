@@ -237,6 +237,13 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
     }
   };
 
+  // Helper para dar formato seguro a coordenadas sin crasear si son nulas o strings
+  const formatCoord = (val: any, decimals: number = 5) => {
+    if (val === null || val === undefined) return '0.00000';
+    const num = Number(val);
+    return isNaN(num) ? '0.00000' : num.toFixed(decimals);
+  };
+
   return (
     <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-8">
       
@@ -438,7 +445,7 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
                                     </div>
                                     <div className="flex items-center justify-between mt-1">
                                       <span className="text-[8px] font-mono font-black text-slate-500">
-                                        {loc.check_in_location.lat.toFixed(5)}, {loc.check_in_location.lng.toFixed(5)}
+                                        {formatCoord(loc.check_in_location.lat, 5)}, {formatCoord(loc.check_in_location.lng, 5)}
                                       </span>
                                       <a 
                                         href={`https://www.google.com/maps/search/?api=1&query=${loc.check_in_location.lat},${loc.check_in_location.lng}`}
@@ -461,7 +468,7 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
                                     </div>
                                     <div className="flex items-center justify-between mt-1">
                                       <span className="text-[8px] font-mono font-black text-slate-500">
-                                        {loc.break_start_location.lat.toFixed(5)}, {loc.break_start_location.lng.toFixed(5)}
+                                        {formatCoord(loc.break_start_location.lat, 5)}, {formatCoord(loc.break_start_location.lng, 5)}
                                       </span>
                                       <a 
                                         href={`https://www.google.com/maps/search/?api=1&query=${loc.break_start_location.lat},${loc.break_start_location.lng}`}
@@ -484,7 +491,7 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
                                     </div>
                                     <div className="flex items-center justify-between mt-1">
                                       <span className="text-[8px] font-mono font-black text-slate-500">
-                                        {loc.break_end_location.lat.toFixed(5)}, {loc.break_end_location.lng.toFixed(5)}
+                                        {formatCoord(loc.break_end_location.lat, 5)}, {formatCoord(loc.break_end_location.lng, 5)}
                                       </span>
                                       <a 
                                         href={`https://www.google.com/maps/search/?api=1&query=${loc.break_end_location.lat},${loc.break_end_location.lng}`}
@@ -507,7 +514,7 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
                                     </div>
                                     <div className="flex items-center justify-between mt-1">
                                       <span className="text-[8px] font-mono font-black text-slate-500">
-                                        {loc.check_out_location.lat.toFixed(5)}, {loc.check_out_location.lng.toFixed(5)}
+                                        {formatCoord(loc.check_out_location.lat, 5)}, {formatCoord(loc.check_out_location.lng, 5)}
                                       </span>
                                       <a 
                                         href={`https://www.google.com/maps/search/?api=1&query=${loc.check_out_location.lat},${loc.check_out_location.lng}`}
@@ -526,7 +533,7 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
                                   <div className="space-y-1.5">
                                     <div className="flex items-center gap-1 bg-sky-50 dark:bg-sky-500/5 px-2.5 py-1 rounded-lg text-sky-600 dark:text-sky-400 max-w-fit">
                                       <MapPin size={12} className="shrink-0" />
-                                      <span className="text-[9px] font-mono font-extrabold">{loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}</span>
+                                      <span className="text-[9px] font-mono font-extrabold">{formatCoord(loc.lat, 6)}, {formatCoord(loc.lng, 6)}</span>
                                     </div>
                                     <a 
                                       href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`}

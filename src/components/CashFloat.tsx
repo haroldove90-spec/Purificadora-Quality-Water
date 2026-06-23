@@ -116,7 +116,10 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
           last_location: loc.driver_session
         };
       }
-      return rawSession;
+      return {
+        ...rawSession,
+        last_location: loc
+      };
     }
   };
 
@@ -1881,7 +1884,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     {activeDriverSession?.last_location?.cash_closed && (
                       <div className="text-right">
                         <p className="text-[9px] font-black text-slate-400 uppercase">Cerrado el</p>
-                        <p className="font-bold text-white mt-0.5">{new Date(activeDriverSession.last_location.cash_closed_at).toLocaleTimeString()}</p>
+                        <p className="font-bold text-white mt-0.5">{new Date(activeDriverSession.last_location?.cash_closed_at).toLocaleTimeString()}</p>
                       </div>
                     )}
                   </div>
@@ -2147,7 +2150,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     <div className="space-y-3 font-bold text-sm text-slate-600">
                       <div className="flex justify-between">
                         <span>Fondo de Caja inicial:</span>
-                        <span className="text-slate-800">${Number(activeDriverSession.last_location.cash_float).toFixed(2)}</span>
+                        <span className="text-slate-800">${Number(activeDriverSession.last_location?.cash_float || 0).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between border-b border-sky-100 pb-3">
                         <span>+ Ventas cobradas hoy:</span>
@@ -2156,7 +2159,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       <div className="flex justify-between text-base font-black pt-2 text-slate-800">
                         <span className="uppercase">EFECTIVO A ENTREGAR:</span>
                         <span className="text-sky-600">
-                          ${(Number(activeDriverSession.last_location.cash_float) + Number(getDriverSalesObj(effectiveEmployeeName).salesTotal)).toFixed(2)}
+                          ${(Number(activeDriverSession.last_location?.cash_float || 0) + Number(getDriverSalesObj(effectiveEmployeeName).salesTotal)).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -2167,7 +2170,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     onClick={() => {
                       const dummyDrv = {
                         name: effectiveEmployeeName,
-                        cash_float: Number(activeDriverSession.last_location.cash_float),
+                        cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
                         sales_total: Number(getDriverSalesObj(effectiveEmployeeName).salesTotal)
                       };
                       setSelectedDriverForClose(dummyDrv);

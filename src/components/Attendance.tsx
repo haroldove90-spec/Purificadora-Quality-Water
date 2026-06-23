@@ -135,6 +135,9 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
     try {
       let location = null;
       try {
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+          throw new Error('Geolocalización GPS no soportada por este navegador o dispositivo.');
+        }
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
           // Primero intentamos alta precisión con un timeout razonable de 6 segundos
           navigator.geolocation.getCurrentPosition(resolve, (err1) => {

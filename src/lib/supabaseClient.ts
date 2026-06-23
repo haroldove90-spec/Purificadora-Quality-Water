@@ -62,32 +62,70 @@ if (typeof window !== 'undefined') {
     return false;
   };
 
-  // Interceptar window.alert para capturar errores de refresco que se disparan en try/catch locales
-  const originalAlert = window.alert;
-  window.alert = function (message) {
-    const msgStr = String(message || '');
-    if (handleAuthErrorText(msgStr)) {
-      // Si era error de refresh token, silenciamos la alerta y auto-limpiamos
-      return;
-    }
-    originalAlert.apply(window, arguments as any);
-  };
+  // Interceptar window.alert de forma ultra-segura para capturar errores de refresco que se disparan en try/catch locales
+  const originalAlert = typeof window !== 'undefined' ? window.alert : null;
+  if (typeof window !== 'undefined') {
+    window.alert = function (message) {
+      try {
+        const msgStr = String(message || '');
+        if (handleAuthErrorText(msgStr)) {
+          // Si era error de refresh token, silenciamos la alerta y auto-limpiamos
+          return;
+        }
+        if (typeof originalAlert === 'function') {
+          originalAlert.call(window, message);
+        } else {
+          console.log('Alerta bloqueada en este entorno:', message);
+        }
+      } catch (e) {
+        console.warn('Fallback silencioso para alerta bloqueada o restringida:', e);
+      }
+    };
+  }
 
   window.addEventListener('unhandledrejection', (event) => {
-    const reason = event.reason;
-    const msg = reason?.message || reason?.error_description || String(reason || '');
-    if (handleAuthErrorText(msg)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
+    try {
+      const reason = event.reason;
+      const msg = reason?.message || reason?.error_description || String(reason || '');
+      
+      // Capturar y mitigar errores de autenticación o tokens expirados/inválidos
+      if (handleAuthErrorText(msg)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      // Mitigar fallos de conexión WebSocket de Vite (HMR) que a veces ocurren bajo firewalls o iframes restringidos
+      if (msg.includes('websocket') || msg.includes('WebSocket') || msg.includes('HMR')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    } catch (e) {}
   });
 
   window.addEventListener('error', (event) => {
-    const msg = event.message || '';
-    if (handleAuthErrorText(msg)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
+    try {
+      const msg = event.message || '';
+      
+      // Capturar y mitigar errores de autenticación
+      if (handleAuthErrorText(msg)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      // Evitar que errores genéricos de iframe/dominios cruzados ("Script error.") o fallas de WebSocket de Vite HMR propaguen fallas falsas positivas
+      if (
+        msg.includes('Script error.') || 
+        msg.includes('Script error') || 
+        msg.includes('websocket') || 
+        msg.includes('HMR') ||
+        event.filename?.includes('vite')
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    } catch (e) {}
   });
 }
 
