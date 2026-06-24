@@ -168,6 +168,11 @@ CREATE TRIGGER on_auth_user_created
 -- Estas políticas permiten que cualquier usuario logueado suba su propia foto
 
 BEGIN;
+  -- Eliminar políticas previas si ya existen para evitar errores al volver a correr el script
+  DROP POLICY IF EXISTS "Permitir subida de avatars a usuarios autenticados" ON storage.objects;
+  DROP POLICY IF EXISTS "Permitir actualización de propios avatars" ON storage.objects;
+  DROP POLICY IF EXISTS "Avatars públicos para lectura" ON storage.objects;
+
   -- Política para permitir subir archivos
   CREATE POLICY "Permitir subida de avatars a usuarios autenticados" 
   ON storage.objects FOR INSERT 
