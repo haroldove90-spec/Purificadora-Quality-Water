@@ -1756,6 +1756,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                                 className="bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 outline-none text-sky-600 cursor-pointer"
                               >
                                 <option value="admin">Admin</option>
+                                <option value="supervisor">Supervisor</option>
                                 <option value="operator">Operador</option>
                                 <option value="driver">Repartidor</option>
                                 <option value="client">Cliente</option>
@@ -1979,7 +1980,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   <select name="role" className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-sky-500/20 transition-all font-bold appearance-none">
                     <option value="driver">Chofer / Repartidor</option>
                     <option value="operator">Operador de Planta</option>
-                    <option value="admin">Administrador / Supervisor</option>
+                    <option value="supervisor">Supervisor de Turno</option>
+                    <option value="admin">Administrador</option>
                   </select>
                 </div>
 
