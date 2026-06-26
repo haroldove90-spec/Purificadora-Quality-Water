@@ -24,7 +24,8 @@ import {
   Save,
   MessageSquare,
   Check,
-  CheckCircle
+  CheckCircle,
+  Edit3
 } from 'lucide-react';
 import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
@@ -45,6 +46,7 @@ interface Order {
   status: string;
   assigned_to?: string;
   assigned_to_name?: string;
+  source?: string;
   created_at: string;
 }
 
@@ -75,6 +77,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showNewCustomerModal, setShowNewCustomerModal] = useState(false);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
@@ -323,67 +326,127 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       const isAssigned = isPickup ? (newOrder.assigned_to !== '') : (newOrder.source !== 'local' && newOrder.assigned_to !== '');
       const finalItems = isPickup ? `[RECOGER DE CLIENTE-LAVADO] ${pickupJugsCount} Garrafones` : newOrder.items;
       
-      const { data: orderData, error } = await supabase
-        .from('orders')
-        .insert([{
-          customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
-          address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
-          items: finalItems,
-          total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
-          source: newOrder.source,
-          status: isPickup ? (isAssigned ? 'pickup_assigned' : 'pickup_pending') : (newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending')),
-          assigned_to: isAssigned ? newOrder.assigned_to : null,
-          assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Notificación para todos los roles relevantes
-      const sourceType = isPickup ? 'Pedido a Recoger' : (newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono');
-      const notificationType = isPickup ? 'order' : (newOrder.source === 'local' ? 'sale' : 'order');
-      
-      const notifications = [
-        {
-          title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
-          message: `${newOrder.customer_name} - ${isPickup ? `${pickupJugsCount} Garrafones` : newOrder.items} [Tipo: Recoger/Lavado]`,
-          type: notificationType,
-          user_role: 'admin'
-        },
-        {
-          title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
-          message: `${newOrder.customer_name} - ${isPickup ? `${pickupJugsCount} Garrafones` : newOrder.items} [Tipo: Recoger/Lavado]`,
-          type: notificationType,
-          user_role: 'operator'
+      if (editingOrder) {
+        // Mode: Update/Edit existing order
+        let updatedStatus = editingOrder.status;
+        if (editingOrder.status !== 'delivered') {
+          updatedStatus = isPickup ? (isAssigned ? 'pickup_assigned' : 'pickup_pending') : (newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending'));
         }
-      ];
 
-      // Si se asignó un chofer directamente, notificarle
-      if (isAssigned) {
-        // Enviar al canal individual del chofer
-        notifications.push({
-          title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
-          message: isPickup 
-            ? `Se te ha asignado recolección de garrafones vacíos para lavado de ${newOrder.customer_name}` 
-            : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
-          type: 'order',
-          user_role: `driver_${newOrder.assigned_to}`
-        });
-        // Enviar al canal general de 'driver' para redundancia y cobertura
-        notifications.push({
-          title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
-          message: isPickup 
-            ? `Se te ha asignado recolección de garrafones vacíos para lavado de ${newOrder.customer_name} (${pickupJugsCount} pzs)` 
-            : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
-          type: 'order',
-          user_role: 'driver'
-        });
+        const { error } = await supabase
+          .from('orders')
+          .update({
+            customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
+            address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
+            items: finalItems,
+            total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
+            source: newOrder.source,
+            status: updatedStatus,
+            assigned_to: isAssigned ? newOrder.assigned_to : null,
+            assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
+          })
+          .eq('id', editingOrder.id);
+
+        if (error) throw error;
+
+        // Notifications
+        const sourceType = isPickup ? 'Pedido a Recoger' : (newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono');
+        const notificationType = isPickup ? 'order' : (newOrder.source === 'local' ? 'sale' : 'order');
+
+        const notifications = [
+          {
+            title: `Pedido Modificado: ${newOrder.customer_name}`,
+            message: `El pedido ha sido actualizado por un Administrador/Supervisor`,
+            type: notificationType,
+            user_role: 'admin'
+          },
+          {
+            title: `Pedido Modificado: ${newOrder.customer_name}`,
+            message: `El pedido ha sido actualizado por un Administrador/Supervisor`,
+            type: notificationType,
+            user_role: 'operator'
+          }
+        ];
+
+        if (isAssigned) {
+          notifications.push({
+            title: isPickup ? 'Pedido a Recoger Modificado 🔄' : 'Pedido Asignado Modificado',
+            message: `El pedido asignado a ti para ${newOrder.customer_name} ha sido modificado.`,
+            type: 'order',
+            user_role: `driver_${newOrder.assigned_to}`
+          });
+          notifications.push({
+            title: isPickup ? 'Pedido a Recoger Modificado 🔄' : 'Pedido Asignado Modificado',
+            message: `El pedido asignado a ti para ${newOrder.customer_name} ha sido modificado.`,
+            type: 'order',
+            user_role: 'driver'
+          });
+        }
+
+        await supabase.from('notifications_log').insert(notifications);
+      } else {
+        // Mode: Insert new order
+        const { error } = await supabase
+          .from('orders')
+          .insert([{
+            customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
+            address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
+            items: finalItems,
+            total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
+            source: newOrder.source,
+            status: isPickup ? (isAssigned ? 'pickup_assigned' : 'pickup_pending') : (newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending')),
+            assigned_to: isAssigned ? newOrder.assigned_to : null,
+            assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
+          }]);
+
+        if (error) throw error;
+
+        // Notificación para todos los roles relevantes
+        const sourceType = isPickup ? 'Pedido a Recoger' : (newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono');
+        const notificationType = isPickup ? 'order' : (newOrder.source === 'local' ? 'sale' : 'order');
+        
+        const notifications = [
+          {
+            title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
+            message: `${newOrder.customer_name} - ${isPickup ? `${pickupJugsCount} Garrafones` : newOrder.items} [Tipo: Recoger/Lavado]`,
+            type: notificationType,
+            user_role: 'admin'
+          },
+          {
+            title: isPickup ? 'Nuevo Pedido a Recoger' : `Nuevo Registro: ${sourceType}`,
+            message: `${newOrder.customer_name} - ${isPickup ? `${pickupJugsCount} Garrafones` : newOrder.items} [Tipo: Recoger/Lavado]`,
+            type: notificationType,
+            user_role: 'operator'
+          }
+        ];
+
+        // Si se asignó un chofer directamente, notificarle
+        if (isAssigned) {
+          // Enviar al canal individual del chofer
+          notifications.push({
+            title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
+            message: isPickup 
+              ? `Se te ha asignado recolección de garrafones vacíos para lavado de ${newOrder.customer_name}` 
+              : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
+            type: 'order',
+            user_role: `driver_${newOrder.assigned_to}`
+          });
+          // Enviar al canal general de 'driver' para redundancia y cobertura
+          notifications.push({
+            title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
+            message: isPickup 
+              ? `Se te ha asignado recolección de garrafones vacíos para lavado de ${newOrder.customer_name} (${pickupJugsCount} pzs)` 
+              : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
+            type: 'order',
+            user_role: 'driver'
+          });
+        }
+
+        await supabase.from('notifications_log').insert(notifications);
       }
 
-      await supabase.from('notifications_log').insert(notifications);
-
       setShowRegisterModal(false);
+      setEditingOrder(null);
       setIsNewOrderPickup(false);
       setPickupJugsCount(1);
       setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '' });
@@ -470,6 +533,29 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     }
   };
 
+  const handleStartEdit = (order: Order) => {
+    setEditingOrder(order);
+    const isPickup = order.status?.startsWith('pickup') || order.customer_name.startsWith('🔄 [RECOGER]');
+    setIsNewOrderPickup(isPickup);
+    
+    if (isPickup) {
+      const match = order.items.match(/(\d+) Garrafones/);
+      const count = match ? parseInt(match[1]) || 1 : 1;
+      setPickupJugsCount(count);
+    }
+
+    setNewOrder({
+      customer_name: order.customer_name.replace('🔄 [RECOGER] ', ''),
+      address: order.address,
+      items: order.items,
+      total_price: order.total_price.toString(),
+      source: (order.source || 'whatsapp') as any,
+      assigned_to: order.assigned_to || '',
+      assigned_to_name: order.assigned_to_name || ''
+    });
+    setShowRegisterModal(true);
+  };
+
   return (
     <div className="space-y-6 pb-24">
       {/* Header */}
@@ -481,7 +567,13 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
         
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => setShowRegisterModal(true)}
+            onClick={() => {
+              setEditingOrder(null);
+              setIsNewOrderPickup(false);
+              setPickupJugsCount(1);
+              setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '' });
+              setShowRegisterModal(true);
+            }}
             className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 shrink-0"
           >
             <Plus size={18} /> Registrar Venta/Ped.
@@ -500,7 +592,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       </div>
 
       {/* KPI Cards */}
-      {userRole === 'admin' && (
+      {(userRole === 'admin' || userRole === 'supervisor') && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {stats.map((stat, idx) => (
             <motion.div
@@ -651,13 +743,22 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                       >
                         <Download size={16} />
                       </button>
-                      {userRole === 'admin' && (
+                      {(userRole === 'admin' || userRole === 'supervisor') && (
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id, order.customer_name); }}
                           className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
                           title="Eliminar Pedido"
                         >
                           <Trash2 size={16} />
+                        </button>
+                      )}
+                      {(userRole === 'admin' || userRole === 'supervisor') && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleStartEdit(order); }}
+                          className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
+                          title="Editar Pedido"
+                        >
+                          <Edit3 size={16} />
                         </button>
                       )}
                       {order.status === 'pending' || order.status === 'pickup_pending' ? (
@@ -879,7 +980,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           <>
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setShowRegisterModal(false)}
+              onClick={() => { setShowRegisterModal(false); setEditingOrder(null); }}
               className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100]"
             />
             <motion.div 
@@ -889,8 +990,8 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] md:w-full max-w-xl bg-white rounded-[40px] shadow-2xl z-[101] overflow-y-auto max-h-[90vh] md:max-h-auto"
             >
               <div className="p-8 pb-4 flex justify-between items-center">
-                <h2 className="text-2xl font-black text-slate-800 uppercase italic">Registrar <span className="text-sky-500">Venta/Pedido</span></h2>
-                <button onClick={() => setShowRegisterModal(false)} className="p-2 text-slate-400 hover:text-slate-800">
+                <h2 className="text-2xl font-black text-slate-800 uppercase italic">{editingOrder ? 'Editar' : 'Registrar'} <span className="text-sky-500">Venta/Pedido</span></h2>
+                <button onClick={() => { setShowRegisterModal(false); setEditingOrder(null); }} className="p-2 text-slate-400 hover:text-slate-800">
                   <X />
                 </button>
               </div>
@@ -1240,7 +1341,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                 <div className="col-span-2 pt-4 flex gap-4">
                   <button 
                     type="button"
-                    onClick={() => setShowRegisterModal(false)}
+                    onClick={() => { setShowRegisterModal(false); setEditingOrder(null); }}
                     className="flex-1 p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest text-slate-400 hover:bg-slate-50"
                   >
                     Cerrar
@@ -1251,7 +1352,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                     className="flex-[2] bg-gradient-to-r from-sky-500 to-indigo-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-sky-100/35 hover:from-sky-600 hover:to-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
                   >
                     {isSavingOrder ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                    Finalizar Registro
+                    {editingOrder ? 'Guardar Cambios' : 'Finalizar Registro'}
                   </button>
                 </div>
               </form>
