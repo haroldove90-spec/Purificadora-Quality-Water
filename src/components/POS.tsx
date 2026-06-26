@@ -356,6 +356,118 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   const [posIsDebt, setPosIsDebt] = useState(false);
   const [posAmountPaidToday, setPosAmountPaidToday] = useState(0);
 
+  // States for customer debt tracking & inline settlement in POS
+  const [customerPendingDebts, setCustomerPendingDebts] = useState<any[]>([]);
+  const [showPOSDebtModal, setShowPOSDebtModal] = useState(false);
+  const [posDebtPaymentAmount, setPosDebtPaymentAmount] = useState<number>(0);
+  const [posDebtPaymentMethod, setPosDebtPaymentMethod] = useState<'cash' | 'transfer' | 'card'>('cash');
+  const [isProcessingPOSDebt, setIsProcessingPOSDebt] = useState(false);
+
+  const fetchCustomerDebts = async (customerName: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('status', 'pending_payment');
+      
+      if (!error && data) {
+        const filtered = data.filter(o => o.customer_name && namesMatch(o.customer_name, customerName));
+        setCustomerPendingDebts(filtered);
+      }
+    } catch (err) {
+      console.warn('Error fetching customer debts:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedCustomer) {
+      fetchCustomerDebts(selectedCustomer.name);
+    } else {
+      setCustomerPendingDebts([]);
+    }
+  }, [selectedCustomer]);
+
+  const handleApplyPOSDebtPayment = async () => {
+    if (!selectedCustomer) return;
+    if (posDebtPaymentAmount <= 0) {
+      alert('Por favor introduce un monto de pago válido.');
+      return;
+    }
+
+    setIsProcessingPOSDebt(true);
+    try {
+      let remainingPayment = Number(posDebtPaymentAmount);
+      // Ordenar adeudos del más antiguo al más nuevo
+      const sortedDebts = [...customerPendingDebts].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      for (const order of sortedDebts) {
+        if (remainingPayment <= 0) break;
+
+        const orderTotal = Number(order.total_price || 0);
+
+        if (remainingPayment >= orderTotal) {
+          // Liquidar este pedido por completo
+          const { error } = await supabase
+            .from('orders')
+            .update({
+              status: 'delivered',
+              items: `${order.items} [ADEUDO LIQUIDADO POR CHOFER]`,
+              payment_method: posDebtPaymentMethod === 'cash' ? 'cash' : posDebtPaymentMethod === 'transfer' ? 'transfer' : 'card'
+            })
+            .eq('id', order.id);
+          
+          if (error) throw error;
+          remainingPayment -= orderTotal;
+        } else {
+          // Pago parcial de este pedido de adeudo
+          const { error: updateErr } = await supabase
+            .from('orders')
+            .update({
+              status: 'delivered',
+              total_price: remainingPayment,
+              items: `${order.items} [ADEUDO PARCIALMENTE RECAUDADO POR CHOFER]`,
+              payment_method: posDebtPaymentMethod === 'cash' ? 'cash' : posDebtPaymentMethod === 'transfer' ? 'transfer' : 'card'
+            })
+            .eq('id', order.id);
+            
+          if (updateErr) throw updateErr;
+
+          const remainder = orderTotal - remainingPayment;
+          const { error: insertErr } = await supabase
+            .from('orders')
+            .insert([
+              {
+                customer_name: order.customer_name,
+                address: order.address,
+                items: `${order.items} [SALDO RESTANTE DEL ADEUDO]`,
+                total_price: remainder,
+                status: 'pending_payment',
+                source: order.source || 'pos',
+                assigned_to: order.assigned_to,
+                assigned_to_name: order.assigned_to_name,
+                created_at: new Date().toISOString()
+              }
+            ]);
+
+          if (insertErr) throw insertErr;
+          
+          remainingPayment = 0;
+        }
+      }
+
+      alert('¡Pago de adeudo registrado con éxito!');
+      await fetchCustomerDebts(selectedCustomer.name);
+      setShowPOSDebtModal(false);
+    } catch (err: any) {
+      console.error('Error applying debt payment in POS:', err);
+      alert('Error al aplicar el pago del adeudo: ' + err.message);
+    } finally {
+      setIsProcessingPOSDebt(false);
+    }
+  };
+
   // Self-healing database insert helper to safely handle missing table schema columns
   const safeInsertOrder = async (payload: any): Promise<{ data: any; error: any }> => {
     let cleanedPayload = { ...payload };
@@ -1286,27 +1398,49 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
               )}
 
               {/* Selected Customer indicator badge or free input metadata details */}
-              {selectedCustomer ? (
-                <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-3 flex items-start justify-between">
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-black text-sky-700 dark:text-sky-400 capitalize">
-                      ✓ CLIENTE SELECCIONADO
-                    </p>
-                    <p className="text-xs font-black text-slate-700 dark:text-slate-300">
-                      {selectedCustomer.name}
-                    </p>
-                    {selectedCustomer.phone && (
-                      <p className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
-                        <Phone size={10} /> {selectedCustomer.phone}
+               {selectedCustomer ? (
+                <div className="flex flex-col gap-2 bg-sky-500/10 border border-sky-500/20 rounded-xl p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-black text-sky-700 dark:text-sky-400 capitalize">
+                        ✓ CLIENTE SELECCIONADO
                       </p>
-                    )}
+                      <p className="text-xs font-black text-slate-700 dark:text-slate-300">
+                        {selectedCustomer.name}
+                      </p>
+                      {selectedCustomer.phone && (
+                        <p className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
+                          <Phone size={10} /> {selectedCustomer.phone}
+                        </p>
+                      )}
+                    </div>
+                    <button 
+                      onClick={handleClearCustomer}
+                      className="text-sky-600 dark:text-sky-400 hover:text-rose-500 hover:bg-rose-500/10 p-1.5 rounded-lg transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                  <button 
-                    onClick={handleClearCustomer}
-                    className="text-sky-600 dark:text-sky-400 hover:text-rose-500 hover:bg-rose-500/10 p-1.5 rounded-lg transition-colors"
-                  >
-                    <X size={14} />
-                  </button>
+                  
+                  {customerPendingDebts.length > 0 && (
+                    <div className="mt-1 p-2 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-lg flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-rose-600 dark:text-rose-400 font-extrabold uppercase">ADEUDO ACUMULADO:</span>
+                        <span className="text-rose-700 dark:text-rose-300 font-black">${customerPendingDebts.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0).toFixed(2)} pesos</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const totalD = customerPendingDebts.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0);
+                          setPosDebtPaymentAmount(totalD);
+                          setShowPOSDebtModal(true);
+                        }}
+                        className="w-full mt-1 py-1 px-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-[9px] uppercase tracking-wider rounded-md transition-all flex items-center justify-center gap-1 active:scale-[0.98]"
+                      >
+                        <DollarSign size={10} /> Liquidar / Abonar Adeudo
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="border border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-3 space-y-2">
@@ -1848,6 +1982,145 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
               </button>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL COBRAR / ABONAR ADEUDOS INLINE EN POS */}
+      <AnimatePresence>
+        {showPOSDebtModal && selectedCustomer && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPOSDebtModal(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 15 }}
+              className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 max-w-md w-full rounded-3xl overflow-hidden shadow-2xl flex flex-col z-50 p-6 text-slate-800 dark:text-white"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-950 dark:text-white uppercase tracking-tight">COBRAR / ABONAR ADEUDO</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{selectedCustomer.name}</p>
+                </div>
+                <button
+                  onClick={() => setShowPOSDebtModal(false)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="py-4 space-y-4">
+                {/* Total debt info */}
+                <div className="bg-rose-50 dark:bg-rose-950/20 p-4 rounded-2xl border border-rose-100 dark:border-rose-900/30 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] font-black text-rose-800 dark:text-rose-400 uppercase tracking-wide block">Deuda Total Activa:</span>
+                    <span className="text-xs font-bold text-slate-500">Acumulado de notas pendientes</span>
+                  </div>
+                  <span className="text-xl font-black text-rose-600 font-sans">
+                    ${customerPendingDebts.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0).toFixed(2)}
+                  </span>
+                </div>
+
+                {/* Input for payment amount */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Monto a Abonar o Pagar ($):</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      max={customerPendingDebts.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0)}
+                      value={posDebtPaymentAmount}
+                      onChange={(e) => setPosDebtPaymentAmount(Math.min(customerPendingDebts.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0), Math.max(0, parseFloat(e.target.value) || 0)))}
+                      className="w-full pl-8 pr-16 py-3 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-transparent text-slate-900 dark:text-white font-black text-sm focus:ring-2 focus:ring-sky-500 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPosDebtPaymentAmount(customerPendingDebts.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0))}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wide text-slate-500 transition-colors"
+                    >
+                      MAX
+                    </button>
+                  </div>
+                </div>
+
+                {/* Method selector */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Método de Recaudación:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'cash', label: 'Efectivo', icon: DollarSign },
+                      { id: 'transfer', label: 'Transfer.', icon: Share2 },
+                      { id: 'card', label: 'Tarjeta', icon: CreditCard }
+                    ].map((m) => {
+                      const Icon = m.icon;
+                      const active = posDebtPaymentMethod === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setPosDebtPaymentMethod(m.id as any)}
+                          className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 border-2 transition-all ${
+                            active
+                              ? 'bg-sky-500 border-sky-500 text-white font-black'
+                              : 'bg-slate-50 dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-800 hover:border-sky-300'
+                          }`}
+                        >
+                          <Icon size={14} />
+                          <span className="text-[9px] uppercase font-bold tracking-tight">{m.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Breakdown summary */}
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-black bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <div>
+                    <span className="text-emerald-600 block">ABONA HOY:</span>
+                    <span className="text-sm font-black text-slate-800 dark:text-white">${posDebtPaymentAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-rose-600 block">SALDO RESTANTE:</span>
+                    <span className="text-sm font-black text-rose-600">
+                      ${Math.max(0, customerPendingDebts.reduce((acc, o) => acc + (Number(o.total_price) || 0), 0) - posDebtPaymentAmount).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPOSDebtModal(false)}
+                  className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-black text-xs uppercase tracking-widest rounded-2xl transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessingPOSDebt || posDebtPaymentAmount <= 0}
+                  onClick={handleApplyPOSDebtPayment}
+                  className="flex-1 py-3 bg-gradient-to-r from-sky-500 to-indigo-500 text-white font-black text-xs uppercase tracking-widest rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isProcessingPOSDebt ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Check size={16} strokeWidth={3} />
+                  )}
+                  <span>Registrar Pago</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

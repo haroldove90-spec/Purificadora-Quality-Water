@@ -1329,7 +1329,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                         <th className="px-6 py-4">Items / Dirección</th>
                         <th className="px-6 py-4">Fuente</th>
                         <th className="px-6 py-4 text-right">Total</th>
-                        {userRole === 'admin' && <th className="px-6 py-4 text-right">Acción</th>}
+                        <th className="px-6 py-4 text-right">Acción</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -1380,20 +1380,46 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                           <td className="px-6 py-4 text-right">
                             {sale.total_price === 0 && (sale.items && (sale.items.includes('[OBSEQUIO/REGALO]') || sale.items.includes('[OBSEQUIO]'))) ? (
                               <p className="font-black text-emerald-600 text-xs uppercase italic">Regalo ($0.00)</p>
+                            ) : sale.status === 'pending_payment' ? (
+                              <div>
+                                <p className="font-black text-rose-600">${sale.total_price.toFixed(2)}</p>
+                                <span className="text-[8px] text-rose-400 font-extrabold uppercase">Por Cobrar</span>
+                              </div>
                             ) : (
-                              <p className="font-black text-slate-900">${sale.total_price.toFixed(2)}</p>
+                              <div>
+                                <p className="font-black text-slate-900">${sale.total_price.toFixed(2)}</p>
+                                {sale.items?.includes('[PAGO PARCIAL]') && (
+                                  <span className="text-[8px] text-emerald-500 font-extrabold uppercase">Abono / Parcial</span>
+                                )}
+                              </div>
                             )}
                           </td>
-                          {userRole === 'admin' && (
-                            <td className="px-6 py-4 text-right">
-                              <button 
-                                onClick={() => handleDeleteSale(sale.id, sale.customer_name)}
-                                className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </td>
-                          )}
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {sale.status === 'pending_payment' && (
+                                <button
+                                  onClick={() => {
+                                    setDebtCustomer({ name: sale.customer_name, address: sale.address });
+                                    setPaymentAmount(getCustomerDebt(sale.customer_name));
+                                    setShowDebtModal(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-rose-500 hover:bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider rounded-lg transition-all flex items-center gap-1 shadow-sm active:scale-95 shrink-0"
+                                  title="Cobrar / Liquidar este Adeudo"
+                                >
+                                  <DollarSign size={10} /> Cobrar
+                                </button>
+                              )}
+                              {userRole === 'admin' && (
+                                <button 
+                                  onClick={() => handleDeleteSale(sale.id, sale.customer_name)}
+                                  className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all shrink-0"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       )) : !loadingSales && (
                         <tr>
