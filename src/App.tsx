@@ -26,6 +26,7 @@ import {
   Download,
   BookOpen,
   Settings,
+  Database,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
@@ -42,6 +43,8 @@ import SupervisorDashboard from './components/SupervisorDashboard';
 import Notifications from './components/Notifications';
 import POS from './components/POS';
 import CashFloat from './components/CashFloat';
+import SalesHistory from './components/SalesHistory';
+import BackupManager from './components/BackupManager';
 import { normalizeEmployeeName } from './utils/nameHelper';
 
 import Lobby from './components/Lobby';
@@ -49,7 +52,7 @@ import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure' | 'sales_history' | 'backup';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
@@ -583,6 +586,7 @@ export default function App() {
       items = [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'pos', label: 'Venta POS', icon: CreditCard },
+        { id: 'sales_history', label: 'Historial de Ventas', icon: History },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
@@ -594,6 +598,7 @@ export default function App() {
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
+        { id: 'backup', label: 'Respaldo y Seguridad', icon: Database },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     } else if (currentRoleView === 'driver') {
@@ -627,6 +632,7 @@ export default function App() {
     } else if (currentRoleView === 'supervisor') {
       items = [
         { id: 'dashboard', label: 'Gestión de Pedidos', icon: LayoutDashboard },
+        { id: 'sales_history', label: 'Historial de Ventas', icon: History },
         { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Clock },
         { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
         { id: 'supervisor_cash_closure', label: 'Supervisar Cortes', icon: ShieldCheck },
@@ -982,6 +988,8 @@ export default function App() {
                  activeView === 'client_status' ? <ClientStatus userRole={currentRoleView} /> :
                  activeView === 'notifications' ? <Notifications userRole={currentRoleView} /> :
                  activeView === 'manual' ? <Manual role={currentRoleView} /> :
+                 activeView === 'sales_history' ? <SalesHistory userRole={currentRoleView} /> :
+                 activeView === 'backup' ? <BackupManager /> :
                  <Profile />}
               </motion.div>
             </AnimatePresence>

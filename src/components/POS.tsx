@@ -1021,12 +1021,23 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                       <span className="text-[9px] font-black text-sky-100 uppercase block tracking-wider">Vendidos</span>
                       <span className="text-xl font-black block mt-1">{activeTrip.sold_qty || 0}</span>
                     </div>
-                    <div className="bg-emerald-500/30 p-3 rounded-2xl border border-emerald-400/20">
-                      <span className="text-[9px] font-black text-emerald-200 uppercase block tracking-wider">Stock Camión</span>
-                      <span className="text-xl font-black block mt-1">
-                        {Math.max(0, activeTrip.loaded_qty - (activeTrip.sold_qty || 0))}
+                    <div className="bg-sky-500/30 p-3 rounded-2xl border border-sky-400/20">
+                      <span className="text-[9px] font-black text-sky-100 uppercase block tracking-wider">
+                        {activeTrip.status === 'active' ? 'Sin Vender (Ruta)' : 'Sin Vender (Dev.)'}
+                      </span>
+                      <span className="text-xl font-black block mt-1 text-yellow-300">
+                        {activeTrip.status === 'active' 
+                          ? Math.max(0, activeTrip.loaded_qty - (activeTrip.sold_qty || 0))
+                          : (activeTrip.returned_unsold_qty || 0)}
                       </span>
                     </div>
+                  </div>
+
+                  <div className="flex flex-wrap justify-between items-center text-[10px] text-sky-100/90 font-bold bg-white/5 p-2 px-3 rounded-xl">
+                    <span>Estado del viaje:</span>
+                    <span className={`uppercase font-black ${activeTrip.status === 'active' ? 'text-amber-300 animate-pulse' : 'text-emerald-300'}`}>
+                      {activeTrip.status === 'active' ? 'En Ruta (Por Liquidar)' : 'Viaje Retornado / Liquidado'}
+                    </span>
                   </div>
 
                   {/* Progress Bar of Jugs sold */}

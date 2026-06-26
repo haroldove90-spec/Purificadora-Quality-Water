@@ -687,11 +687,28 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
 
                               {/* Garrafones / Pedidos */}
                               <td className="px-6 py-5">
-                                <div className="space-y-0.5">
-                                  <span className="inline-flex px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase">
-                                    {ordersCount} Pedidos / Entregas
-                                  </span>
-                                </div>
+                                {(() => {
+                                  const trips = session.trips || loc.trips || [];
+                                  const totalLoaded = trips.reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0);
+                                  const totalSold = trips.reduce((acc: number, t: any) => acc + (Number(t.sold_qty) || 0), 0);
+                                  const totalUnsold = trips.reduce((acc: number, t: any) => acc + (Number(t.returned_unsold_qty) || 0), 0);
+                                  const totalEnRuta = trips.filter((t: any) => t.status === 'active').reduce((acc: number, t: any) => acc + Math.max(0, (Number(t.loaded_qty) || 0) - (Number(t.sold_qty) || 0)), 0);
+
+                                  return (
+                                    <div className="space-y-1">
+                                      <span className="inline-flex px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/5 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase">
+                                        {ordersCount} Pedidos / Entregas
+                                      </span>
+                                      {trips.length > 0 && (
+                                        <div className="text-[9px] font-bold text-slate-500 space-y-0.5">
+                                          <p className="uppercase">📦 Cargados: <strong className="text-slate-800 dark:text-slate-200">{totalLoaded}</strong></p>
+                                          <p className="text-emerald-600 uppercase">🟢 Vendidos: <strong className="font-black">{totalSold}</strong></p>
+                                          <p className="text-rose-500 uppercase">🔴 Sin Vender: <strong className="font-black">{totalUnsold}</strong> {totalEnRuta > 0 && <span className="text-[7.5px] text-sky-500">({totalEnRuta} en ruta)</span>}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </td>
 
                               {/* Total a entregar */}

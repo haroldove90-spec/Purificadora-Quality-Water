@@ -1717,16 +1717,24 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                             </td>
                             <td className="px-8 py-5 text-center whitespace-nowrap">
                               {drv.role !== 'client' && drv.role !== 'customer' ? (
-                                <div className="flex flex-col items-center">
-                                  <span className={`font-black text-xs px-2 py-1.5 rounded-xl block ${
+                                <div className="flex flex-col items-center space-y-1">
+                                  <span className={`font-black text-[10px] px-2 py-1 rounded-xl block ${
                                     drv.current_vehicle_inventory > 0 
                                       ? 'bg-sky-50 text-sky-600 border border-sky-100 font-extrabold' 
                                       : 'bg-slate-50 text-slate-400 font-bold'
                                   }`}>
                                     {drv.current_vehicle_inventory} g. en ruta
                                   </span>
-                                  <span className="text-[8px] font-extrabold text-slate-400 block mt-1 uppercase tracking-tighter">
-                                    {drv.trips?.length || 0} viajes | {drv.total_sold_jugs} g. vend.
+                                  <div className="text-[10px] font-extrabold space-y-0.5 leading-none">
+                                    <span className="text-emerald-600 block uppercase tracking-tighter">
+                                      🟢 {drv.total_sold_jugs} g. vendidos
+                                    </span>
+                                    <span className="text-rose-500 block uppercase tracking-tighter">
+                                      🔴 {drv.total_returned_unsold} g. sin vender
+                                    </span>
+                                  </div>
+                                  <span className="text-[7.5px] font-bold text-slate-400 block uppercase tracking-widest leading-none">
+                                    ({drv.trips?.length || 0} viajes | {drv.total_loaded_jugs} cargados)
                                   </span>
                                 </div>
                               ) : (
@@ -1985,7 +1993,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     </div>
 
                     {/* Quick Stats of Jugs */}
-                    <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                       <div className="p-3 bg-slate-50 border border-slate-100/60 rounded-2xl">
                         <span className="text-[8px] font-black text-slate-400 block uppercase">Total Cargados</span>
                         <span className="text-base font-black text-slate-700 block mt-1">
@@ -1999,9 +2007,17 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                         </span>
                       </div>
                       <div className="p-3 bg-sky-50/60 border border-sky-100/35 rounded-2xl">
-                        <span className="text-[8px] font-black text-sky-600 block uppercase">Stock en Camión</span>
+                        <span className="text-[8px] font-black text-sky-600 block uppercase">Por Vender (Ruta)</span>
                         <span className="text-base font-black text-sky-600 block mt-1">
-                          {(activeDriverSession?.last_location?.trips || []).filter((t: any) => t.status === 'active').reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0)}
+                          {(activeDriverSession?.last_location?.trips || [])
+                            .filter((t: any) => t.status === 'active')
+                            .reduce((acc: number, t: any) => acc + Math.max(0, (Number(t.loaded_qty) || 0) - (Number(t.sold_qty) || 0)), 0)}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-rose-50/60 border border-rose-100/35 rounded-2xl">
+                        <span className="text-[8px] font-black text-rose-600 block uppercase">Sin Vender (Devueltos)</span>
+                        <span className="text-base font-black text-rose-600 block mt-1">
+                          {(activeDriverSession?.last_location?.trips || []).reduce((acc: number, t: any) => acc + (Number(t.returned_unsold_qty) || 0), 0)}
                         </span>
                       </div>
                     </div>
@@ -2051,9 +2067,9 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                   <span className="text-[7px] text-slate-400 uppercase font-sans">Cargado</span>
                                   <span className="block font-black text-slate-800">{t.loaded_qty}</span>
                                 </div>
-                                <div className="bg-white p-1.5 rounded-lg">
-                                  <span className="text-[7px] text-slate-400 uppercase font-sans font-medium">Dev. Llenos</span>
-                                  <span className="block font-black text-slate-800">{t.status === 'active' ? '-' : t.returned_unsold_qty}</span>
+                                <div className="bg-white p-1.5 rounded-lg border border-rose-100">
+                                  <span className="text-[7px] text-rose-500 uppercase font-sans font-black">Sin Vender</span>
+                                  <span className="block font-black text-rose-600">{t.status === 'active' ? '-' : t.returned_unsold_qty}</span>
                                 </div>
                                 <div className="bg-white p-1.5 rounded-lg">
                                   <span className="text-[7px] text-slate-400 uppercase font-sans font-medium">Dev. Vacíos</span>
