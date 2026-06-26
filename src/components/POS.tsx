@@ -17,10 +17,11 @@ import {
   Search,
   CheckCircle2,
   AlertCircle,
-  Gift
+  Gift,
+  Truck
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-import { normalizeEmployeeName } from '../utils/nameHelper';
+import { normalizeEmployeeName, namesMatch, getLocalDateString } from '../utils/nameHelper';
 
 interface Product {
   id: string;
@@ -50,6 +51,221 @@ interface POSProps {
 export default function POS({ userRole, userName: propUserName }: POSProps) {
   // Active logged-in user session
   const [userName, setUserName] = useState<string>('');
+  
+  // Driver Active Attendance & Trip States
+  const [activeAttendance, setActiveAttendance] = useState<any | null>(null);
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+
+  const parseJsonFields = (val: any) => {
+    if (!val) return {};
+    if (typeof val === 'string') {
+      try { return JSON.parse(val); } catch (_) { return {}; }
+    }
+    return val;
+  };
+
+  const fetchActiveAttendance = async (currentUserName: string) => {
+    if (!currentUserName || userRole !== 'driver') return;
+    setLoadingAttendance(true);
+    
+    try {
+      const backupStr = localStorage.getItem('local_active_attendance_backup');
+      if (backupStr) {
+        const parsedBackup = JSON.parse(backupStr);
+        if (namesMatch(parsedBackup.user_name, currentUserName)) {
+          setActiveAttendance(parsedBackup);
+        }
+      }
+    } catch (_) {}
+
+    if (!navigator.onLine) {
+      setLoadingAttendance(false);
+      return;
+    }
+
+    try {
+      const today = getLocalDateString();
+      const { data, error } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+      
+      if (error) {
+        console.error('Error fetching attendance:', error);
+        return;
+      }
+
+      if (data) {
+        const found = data.find(a => namesMatch(a.user_name, currentUserName));
+        if (found) {
+          setActiveAttendance(found);
+          localStorage.setItem('local_active_attendance_backup', JSON.stringify(found));
+        } else {
+          setActiveAttendance(null);
+          localStorage.removeItem('local_active_attendance_backup');
+        }
+      }
+    } catch (e) {
+      console.error('Error in fetchActiveAttendance:', e);
+    } finally {
+      setLoadingAttendance(false);
+    }
+  };
+
+  const handleInitializeTrip = async (loadedQty: number) => {
+    if (!userName) {
+      alert('Error: No se ha detectado el nombre del repartidor en la sesión.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const today = getLocalDateString();
+      const { data: todayAtt } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      let existing = (todayAtt || []).find(a => namesMatch(a.user_name, userName));
+      
+      if (!existing) {
+        const { data: newAtt, error: createError } = await supabase
+          .from('daily_attendance')
+          .insert([{
+            user_name: userName,
+            user_role: 'driver',
+            work_date: today,
+            check_in: new Date().toISOString(),
+            last_location: {
+              trips: []
+            }
+          }])
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Error creating attendance:', createError);
+          alert('Error al iniciar jornada. Intenta de nuevo.');
+          return;
+        }
+        existing = newAtt;
+      }
+
+      const existingLocation = parseJsonFields(existing?.last_location);
+      const trips = existingLocation.trips || [];
+      const newTrip = {
+        id: 'T-' + Math.floor(10000 + Math.random() * 90000),
+        trip_number: trips.length + 1,
+        loaded_qty: Number(loadedQty) || 20,
+        loaded_qty_rosa: 0,
+        loaded_qty_azul: Number(loadedQty) || 20,
+        loaded_qty_color: 0,
+        loaded_qty_pequeno: 0,
+        loaded_qty_lavar: 0,
+        returned_unsold_qty: 0,
+        returned_empty_qty: 0,
+        sold_qty: 0,
+        status: 'active',
+        loaded_at: new Date().toISOString()
+      };
+
+      const updatedLocation = {
+        ...existingLocation,
+        trips: [...trips, newTrip]
+      };
+
+      const { error: updateError } = await supabase
+        .from('daily_attendance')
+        .update({ last_location: updatedLocation })
+        .eq('id', existing.id);
+
+      if (updateError) {
+        console.error('Error updating trips:', updateError);
+        alert('Error al registrar viaje.');
+      } else {
+        const updatedAtt = {
+          ...existing,
+          last_location: updatedLocation
+        };
+        setActiveAttendance(updatedAtt);
+        localStorage.setItem('local_active_attendance_backup', JSON.stringify(updatedAtt));
+        setNotification({
+          type: 'success',
+          message: `🚚 ¡Viaje #${newTrip.trip_number} iniciado con ${loadedQty} garrafones!`
+        });
+      }
+    } catch (e) {
+      console.error('Error in handleInitializeTrip:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateDriverAttendanceJugs = async () => {
+    if (userRole !== 'driver' || !activeAttendance) return;
+
+    let totalGarrafonesSold = 0;
+    cart.forEach(item => {
+      const isGarrafon = item.product.name.toLowerCase().includes('garrafón') || 
+                          item.product.name.toLowerCase().includes('garrafon');
+      if (isGarrafon) {
+        totalGarrafonesSold += item.quantity;
+      }
+    });
+
+    if (totalGarrafonesSold <= 0) return;
+
+    try {
+      const lastLoc = parseJsonFields(activeAttendance.last_location);
+      const trips = lastLoc.trips || [];
+      
+      let activeTrip = trips.find((t: any) => t.status === 'active');
+      if (!activeTrip && trips.length > 0) {
+        activeTrip = trips[trips.length - 1];
+      }
+
+      if (activeTrip) {
+        activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalGarrafonesSold;
+      } else {
+        const newTrip = {
+          id: 'T-' + Math.floor(10000 + Math.random() * 90000),
+          trip_number: 1,
+          loaded_qty: 20,
+          loaded_qty_rosa: 0,
+          loaded_qty_azul: 20,
+          loaded_qty_color: 0,
+          loaded_qty_pequeno: 0,
+          loaded_qty_lavar: 0,
+          returned_unsold_qty: 0,
+          returned_empty_qty: 0,
+          sold_qty: totalGarrafonesSold,
+          status: 'active',
+          loaded_at: new Date().toISOString()
+        };
+        trips.push(newTrip);
+      }
+
+      const updatedLocation = {
+        ...lastLoc,
+        trips: trips
+      };
+
+      const updatedAtt = {
+        ...activeAttendance,
+        last_location: updatedLocation
+      };
+      setActiveAttendance(updatedAtt);
+      localStorage.setItem('local_active_attendance_backup', JSON.stringify(updatedAtt));
+
+      if (navigator.onLine) {
+        await supabase
+          .from('daily_attendance')
+          .update({ last_location: updatedLocation })
+          .eq('id', activeAttendance.id);
+      }
+    } catch (e) {
+      console.error('Error updating driver attendance jugs:', e);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -57,14 +273,18 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.user_name) {
-          setUserName(normalizeEmployeeName(parsed.user_name));
+          const normName = normalizeEmployeeName(parsed.user_name);
+          setUserName(normName);
+          fetchActiveAttendance(normName);
         }
       } else {
         const backupStr = localStorage.getItem('quality_water_session_backup');
         if (backupStr) {
           const parsedBackup = JSON.parse(backupStr);
           if (parsedBackup.userName) {
-            setUserName(normalizeEmployeeName(parsedBackup.userName));
+            const normName = normalizeEmployeeName(parsedBackup.userName);
+            setUserName(normName);
+            fetchActiveAttendance(normName);
           }
         }
       }
@@ -75,7 +295,9 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
   useEffect(() => {
     if (propUserName) {
-      setUserName(normalizeEmployeeName(propUserName));
+      const normName = normalizeEmployeeName(propUserName);
+      setUserName(normName);
+      fetchActiveAttendance(normName);
     }
   }, [propUserName]);
 
@@ -348,6 +570,31 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
   // Cart Helpers
   const addToCart = (product: Product) => {
+    const isGarrafon = product.name.toLowerCase().includes('garrafón') || product.name.toLowerCase().includes('garrafon');
+    if (userRole === 'driver' && isGarrafon) {
+      const trips = activeAttendance ? parseJsonFields(activeAttendance.last_location)?.trips || [] : [];
+      const activeTrip = trips.find((t: any) => t.status === 'active') || (trips.length > 0 ? trips[trips.length - 1] : null);
+
+      if (!activeTrip) {
+        setNotification({
+          type: 'error',
+          message: '⚠️ Debes iniciar un viaje antes de poder agregar garrafones al carrito.'
+        });
+        return;
+      }
+
+      const currentQtyInCart = getCartCount(product.id);
+      const availableStock = Math.max(0, activeTrip.loaded_qty - (activeTrip.sold_qty || 0));
+
+      if (currentQtyInCart >= availableStock) {
+        setNotification({
+          type: 'error',
+          message: `⚠️ No tienes suficientes garrafones en tu camión. Solo quedan ${availableStock} disponibles.`
+        });
+        return;
+      }
+    }
+
     setCart(prevCart => {
       const existing = prevCart.find(item => item.product.id === product.id);
       if (existing) {
@@ -575,6 +822,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         setOfflineSalesCount(pendingList.length);
         
         // Simular éxito para liberar la interfaz del chofer inmediatamente
+        updateDriverAttendanceJugs();
         clearCart();
         setShowTicketModal(false);
         setIsPickupOrder(false);
@@ -634,6 +882,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       }
 
       // Clear operational states on success
+      await updateDriverAttendanceJugs();
       clearCart();
       setShowTicketModal(false);
       setIsPickupOrder(false);
@@ -739,6 +988,90 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
             )}
           </div>
         </div>
+
+        {/* Garrafones Asignados Section for Delivery Drivers */}
+        {userRole === 'driver' && (() => {
+          const trips = activeAttendance ? parseJsonFields(activeAttendance.last_location)?.trips || [] : [];
+          const activeTrip = trips.find((t: any) => t.status === 'active') || (trips.length > 0 ? trips[trips.length - 1] : null);
+          return (
+            <div className="bg-gradient-to-br from-sky-500 to-blue-600 text-white p-6 rounded-3xl shadow-lg shadow-sky-500/10 space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-white/10 rounded-xl">
+                    <Truck size={22} className="text-sky-100" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base tracking-tight uppercase">Garrafones Asignados</h3>
+                    <p className="text-[10px] text-sky-100/80 font-bold uppercase tracking-wider">Inventario en ruta de tu viaje actual</p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 bg-white/20 text-white rounded-full text-[10px] font-black uppercase tracking-wider">
+                  {activeTrip ? `Viaje #${activeTrip.trip_number}` : 'Sin Viaje Activo'}
+                </span>
+              </div>
+
+              {activeTrip ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-white/10 p-3 rounded-2xl border border-white/5">
+                      <span className="text-[9px] font-black text-sky-100 uppercase block tracking-wider">Cargados</span>
+                      <span className="text-xl font-black block mt-1">{activeTrip.loaded_qty}</span>
+                    </div>
+                    <div className="bg-white/10 p-3 rounded-2xl border border-white/5">
+                      <span className="text-[9px] font-black text-sky-100 uppercase block tracking-wider">Vendidos</span>
+                      <span className="text-xl font-black block mt-1">{activeTrip.sold_qty || 0}</span>
+                    </div>
+                    <div className="bg-emerald-500/30 p-3 rounded-2xl border border-emerald-400/20">
+                      <span className="text-[9px] font-black text-emerald-200 uppercase block tracking-wider">Stock Camión</span>
+                      <span className="text-xl font-black block mt-1">
+                        {Math.max(0, activeTrip.loaded_qty - (activeTrip.sold_qty || 0))}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar of Jugs sold */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-wider text-sky-100">
+                      <span>Progreso de Venta del Viaje</span>
+                      <span>
+                        {Math.round(((activeTrip.sold_qty || 0) / activeTrip.loaded_qty) * 100)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-white/10 h-3 rounded-full overflow-hidden border border-white/5">
+                      <div 
+                        className="bg-emerald-400 h-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, ((activeTrip.sold_qty || 0) / activeTrip.loaded_qty) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white/10 p-4 rounded-2xl border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase">No tienes un viaje activo hoy</p>
+                    <p className="text-[10px] text-sky-100/70 font-bold mt-0.5">Para poder vender, necesitas iniciar un viaje de garrafones.</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const numStr = prompt('Iniciar Viaje de Ruta\n\n¿Con cuántos garrafones llenos sales de planta en este viaje?', '20');
+                      if (numStr !== null) {
+                        const qty = Number(numStr);
+                        if (isNaN(qty) || qty <= 0) {
+                          alert('Error: Por favor ingresa un número válido mayor a 0');
+                        } else {
+                          await handleInitializeTrip(qty);
+                        }
+                      }
+                    }}
+                    className="px-4 py-2 bg-white text-blue-600 hover:bg-sky-50 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-md shrink-0"
+                  >
+                    + Iniciar Viaje
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Global Notifications inside POS */}
         {notification && (
