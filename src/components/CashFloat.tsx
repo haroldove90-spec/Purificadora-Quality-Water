@@ -226,7 +226,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
             name: normalizeEmployeeName(session.user_name),
             role: matchedRole
           });
-          const isManager = matchedRole === 'admin' || matchedRole === 'operator';
+          const isManager = matchedRole === 'admin' || matchedRole === 'operator' || matchedRole === 'supervisor';
           setViewMode(isManager ? 'admin' : 'personal');
         }
       } catch (e) {}
@@ -241,7 +241,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
               name: normalizeEmployeeName(backup.userName),
               role: matchedRole
             });
-            const isManager = matchedRole === 'admin' || matchedRole === 'operator';
+            const isManager = matchedRole === 'admin' || matchedRole === 'operator' || matchedRole === 'supervisor';
             setViewMode(isManager ? 'admin' : 'personal');
           }
         } catch (_) {}
@@ -257,7 +257,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         name: finalName,
         role: finalRole
       });
-      const isManager = finalRole === 'admin' || finalRole === 'operator';
+      const isManager = finalRole === 'admin' || finalRole === 'operator' || finalRole === 'supervisor';
       setViewMode(isManager ? 'admin' : 'personal');
     }
   }, [userName, userRole]);
@@ -1375,8 +1375,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const collectedTotal = driversStatusData.filter(d => d.is_closed).reduce((acc, d) => acc + d.total_to_deliver, 0);
   const activeInPlayTotal = driversStatusData.filter(d => !d.is_closed).reduce((acc, d) => acc + d.total_to_deliver, 0);
 
-  const isAdmin = currentUser.role === 'admin';
-  const isPlantOrAdmin = currentUser.role === 'admin' || currentUser.role === 'operator';
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+  const isPlantOrAdmin = currentUser.role === 'admin' || currentUser.role === 'operator' || currentUser.role === 'supervisor';
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">

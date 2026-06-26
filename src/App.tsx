@@ -627,7 +627,8 @@ export default function App() {
     } else if (currentRoleView === 'supervisor') {
       items = [
         { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Clock },
-        { id: 'supervisor_cash_closure', label: 'Supervisar Cortes', icon: DollarSign },
+        { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
+        { id: 'supervisor_cash_closure', label: 'Supervisar Cortes', icon: ShieldCheck },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     }
