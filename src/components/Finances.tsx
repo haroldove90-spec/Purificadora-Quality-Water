@@ -113,6 +113,29 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [salesSearch, setSalesSearch] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
 
+  // Master scope filter for admin: 'all' (unified/global), 'plant' (planta), 'drivers' (repartidores)
+  const [adminSalesScope, setAdminSalesScope] = useState<'all' | 'plant' | 'drivers'>('all');
+
+  const isPlantSale = (sale: any) => {
+    return !sale.assigned_to_name || 
+           sale.assigned_to_name.includes('Mostrador') || 
+           sale.assigned_to_name.includes('(Planta)') || 
+           sale.source === 'pos' || 
+           sale.source === 'local' ||
+           (sale.address && sale.address.includes(' | Planta'));
+  };
+
+  const getScopedSalesList = () => {
+    if (userRole !== 'admin') return salesList;
+    if (adminSalesScope === 'plant') {
+      return salesList.filter(s => isPlantSale(s));
+    }
+    if (adminSalesScope === 'drivers') {
+      return salesList.filter(s => !isPlantSale(s));
+    }
+    return salesList;
+  };
+
   // States for quick dispatch quantities by bottle type
   const [dispatchRosa, setDispatchRosa] = useState<number>(0);
   const [dispatchAzul, setDispatchAzul] = useState<number>(20);
@@ -123,7 +146,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   const calculateTotalVolume = () => {
     let total = 0;
-    const list = salesList.length > 0 ? salesList : GLOBAL_SALES;
+    const scopedList = getScopedSalesList();
+    const list = scopedList.length > 0 ? scopedList : GLOBAL_SALES;
     list.forEach(sale => {
       const match = (sale.items || '').match(/(\d+)\s*(garrafón|garrafon|garrafones|garr|pza|pzas|L|l|envase|botella)/i);
       if (match) {
@@ -140,20 +164,22 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   const calculateVentasHoy = () => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const todaySales = salesList.filter(s => {
+    const scopedList = getScopedSalesList();
+    const todaySales = scopedList.filter(s => {
       const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
       return dStr === todayStr;
     });
     
     const total = todaySales.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
-    if (total === 0 && salesList.length > 0) {
-      return salesList.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
+    if (total === 0 && scopedList.length > 0) {
+      return scopedList.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
     }
     return total || 14580;
   };
 
   const calculateTicketPromedio = () => {
-    const list = salesList.length > 0 ? salesList : GLOBAL_SALES;
+    const scopedList = getScopedSalesList();
+    const list = scopedList.length > 0 ? scopedList : GLOBAL_SALES;
     const total = list.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
     return Math.round(total / list.length) || 240;
   };
@@ -174,8 +200,9 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       };
     }).reverse();
 
-    if (salesList.length > 0) {
-      salesList.forEach(sale => {
+    const scopedList = getScopedSalesList();
+    if (scopedList.length > 0) {
+      scopedList.forEach(sale => {
         const saleDateStr = sale.created_at ? new Date(sale.created_at).toISOString().split('T')[0] : '';
         const foundDay = last7Days.find(d => d.dateStr === saleDateStr);
         if (foundDay) {
@@ -197,11 +224,12 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     let whatsappCount = 0;
     let posCount = 0;
     let phoneCount = 0;
-    const total = salesList.length;
+    const scopedList = getScopedSalesList();
+    const total = scopedList.length;
 
     if (total === 0) return CHANNEL_DATA;
 
-    salesList.forEach(s => {
+    scopedList.forEach(s => {
       const src = (s.source || '').toLowerCase();
       if (src === 'whatsapp') whatsappCount++;
       else if (src === 'pos' || src === 'local' || src === 'physical') posCount++;
@@ -1058,6 +1086,42 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           </div>
         )}
       </div>
+
+      {/* Selector de Origen de Ventas (Planta vs Repartidores) para Admin */}
+      {userRole === 'admin' && (activeTab === 'metrics' || activeTab === 'sales') && (
+        <div className="bg-white dark:bg-slate-900 p-1.5 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm max-w-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3 py-1.5">
+            <div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Filtrar Canal de Origen</span>
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Ver ventas e ingresos por procedencia</span>
+            </div>
+            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl flex border border-slate-200/50 dark:border-slate-800/50 shadow-inner shrink-0 self-stretch sm:self-auto">
+              {[
+                { id: 'all', label: 'Unificadas (Global)', icon: ShieldCheck, color: 'text-indigo-500' },
+                { id: 'plant', label: 'Solo Planta', icon: Store, color: 'text-emerald-500' },
+                { id: 'drivers', label: 'Solo Repartidores', icon: Truck, color: 'text-sky-500' },
+              ].map((scope) => {
+                const Icon = scope.icon;
+                const active = adminSalesScope === scope.id;
+                return (
+                  <button
+                    key={scope.id}
+                    onClick={() => setAdminSalesScope(scope.id as any)}
+                    className={`py-2 px-3 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-95 ${
+                      active
+                        ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-md'
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    <Icon size={12} className={scope.color} />
+                    <span>{scope.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs handled by sidebar navigation */}
 
