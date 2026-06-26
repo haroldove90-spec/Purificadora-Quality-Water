@@ -35,6 +35,8 @@ export default function DeliveryRoute() {
   const [isDebt, setIsDebt] = useState(false);
   const [amountPaidToday, setAmountPaidToday] = useState(0);
   const [isGift, setIsGift] = useState(false);
+  const [isAssignmentConfirmed, setIsAssignmentConfirmed] = useState(false);
+  const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
 
   const handleExportPDF = () => {
     setIsExporting(true);
@@ -117,6 +119,13 @@ export default function DeliveryRoute() {
     } catch (_) {}
 
     fetchDeliveries();
+
+    // Cargar confirmacion de asignacion del dia
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const isConfirmed = localStorage.getItem(`qw_assignment_confirmed_${today}`) === 'true';
+      setIsAssignmentConfirmed(isConfirmed);
+    } catch (_) {}
 
     // Listen for new assignments
     const subscription = supabase
@@ -347,6 +356,41 @@ export default function DeliveryRoute() {
 
   const displayedDeliveries = activeSubTab === 'active' ? activeDeliveries : completedDeliveries;
 
+  const handleConfirmAssignmentReceipt = async () => {
+    setIsConfirmingReceipt(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const driverName = getLoggedInDriverName() || 'Repartidor';
+
+      // Insert notifications for Admin and Supervisor
+      const notifications = [
+        {
+          title: `🚚 ${driverName} recibió asignación`,
+          message: `El repartidor ha confirmado la recepción de sus ${activeDeliveries.length} pedidos y ya se va a poner a trabajar en ruta.`,
+          type: 'order',
+          user_role: 'admin'
+        },
+        {
+          title: `🚚 ${driverName} recibió asignación`,
+          message: `El repartidor ha confirmado la recepción de sus ${activeDeliveries.length} pedidos y ya se va a poner a trabajar en ruta.`,
+          type: 'order',
+          user_role: 'supervisor'
+        }
+      ];
+
+      const { error } = await supabase.from('notifications_log').insert(notifications);
+      if (error) throw error;
+
+      localStorage.setItem(`qw_assignment_confirmed_${today}`, 'true');
+      setIsAssignmentConfirmed(true);
+      alert('¡Asignación confirmada! Los administradores y supervisores han sido notificados. ¡Excelente jornada!');
+    } catch (e: any) {
+      alert('Error al confirmar: ' + e.message);
+    } finally {
+      setIsConfirmingReceipt(false);
+    }
+  };
+
   if (loading && !deliveries.length) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -425,6 +469,39 @@ export default function DeliveryRoute() {
               Historial de Registros 📋 ({completedDeliveries.length})
             </button>
           </div>
+
+          {/* Confirm Assignment Banner */}
+          {!isAssignmentConfirmed && activeDeliveries.length > 0 && activeSubTab === 'active' && (
+            <div className="bg-gradient-to-r from-sky-500 to-indigo-600 text-white p-6 rounded-3xl shadow-xl flex flex-col gap-4 border border-sky-400/20 relative overflow-hidden">
+              <div className="relative z-10 space-y-2">
+                <span className="text-[9px] font-black bg-white/20 px-2.5 py-1 rounded-full uppercase tracking-widest inline-block">
+                  ⚠️ CONFIRMACIÓN REQUERIDA
+                </span>
+                <h3 className="text-base font-black uppercase italic">¿Recibiste tus Entregas de Hoy?</h3>
+                <p className="text-[11px] text-sky-100 font-bold leading-relaxed">
+                  Tienes <strong>{activeDeliveries.length}</strong> pedidos/recojos asignados en tu ruta de hoy. Por favor, confirma que los has recibido para informar a tus administradores y supervisores que inicias operaciones.
+                </p>
+              </div>
+              <button
+                onClick={handleConfirmAssignmentReceipt}
+                disabled={isConfirmingReceipt}
+                className="w-full bg-white text-indigo-700 hover:bg-sky-50 py-3.5 px-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 relative z-10 cursor-pointer"
+              >
+                {isConfirmingReceipt ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Confirmando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} />
+                    <span>Confirmar Recepción e Iniciar Ruta 🚀</span>
+                  </>
+                )}
+              </button>
+              <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+            </div>
+          )}
 
           <div className="flex items-center justify-between px-2">
             <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">
