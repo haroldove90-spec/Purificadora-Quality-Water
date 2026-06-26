@@ -1801,7 +1801,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                 )}
 
                                 {/* Perform close */}
-                                {!drv.is_closed && drv.cash_float !== null ? (
+                                {!drv.is_closed ? (
                                   <button
                                     onClick={() => setSelectedDriverForClose(drv)}
                                     className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest shadow-md shadow-sky-100 transition-all active:scale-95"
@@ -1811,7 +1811,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                 ) : null}
 
                                 {/* Print tickets for closed drawers */}
-                                {drv.cash_float !== null && (
+                                {(drv.cash_float !== null || drv.is_closed) && (
                                   <>
                                     <button
                                       onClick={() => handleExportReceiptPDF(drv)}
