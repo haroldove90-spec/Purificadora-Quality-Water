@@ -3,6 +3,7 @@ import { exportToPDF } from '../utils/pdfExport';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabaseClient';
 import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
+import { getOrderRoute } from '../utils/routeHelper';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -115,6 +116,40 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   // Master scope filter for admin: 'all' (unified/global), 'plant' (planta), 'drivers' (repartidores)
   const [adminSalesScope, setAdminSalesScope] = useState<'all' | 'plant' | 'drivers'>('all');
+  const [timePeriod, setTimePeriod] = useState<'today' | 'week' | 'month' | 'all'>('all');
+
+  const filterByTimePeriod = (list: any[]) => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - 7);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setMonth(monthStart.getMonth() - 1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    return list.filter(sale => {
+      if (!sale.created_at) return true;
+      const saleDate = new Date(sale.created_at);
+      
+      if (timePeriod === 'today') {
+        const dStr = saleDate.toISOString().split('T')[0];
+        return dStr === todayStr;
+      }
+      if (timePeriod === 'week') {
+        return saleDate >= weekStart;
+      }
+      if (timePeriod === 'month') {
+        return saleDate >= monthStart;
+      }
+      return true; // 'all'
+    });
+  };
 
   const isPlantSale = (sale: any) => {
     return !sale.assigned_to_name || 
@@ -126,14 +161,15 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   };
 
   const getScopedSalesList = () => {
-    if (userRole !== 'admin') return salesList;
-    if (adminSalesScope === 'plant') {
-      return salesList.filter(s => isPlantSale(s));
+    let list = salesList;
+    if (userRole === 'admin') {
+      if (adminSalesScope === 'plant') {
+        list = salesList.filter(s => isPlantSale(s));
+      } else if (adminSalesScope === 'drivers') {
+        list = salesList.filter(s => !isPlantSale(s));
+      }
     }
-    if (adminSalesScope === 'drivers') {
-      return salesList.filter(s => !isPlantSale(s));
-    }
-    return salesList;
+    return filterByTimePeriod(list);
   };
 
   // States for quick dispatch quantities by bottle type
@@ -293,6 +329,56 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       fieldSalesTotal,
       fieldSalesCount,
       employeePlantBreakdown
+    };
+  };
+
+  const getRouteMetricsForPeriod = () => {
+    const listForPeriod = filterByTimePeriod(salesList);
+
+    let rutaCentroTotal = 0;
+    let rutaCentroCount = 0;
+    let rutaSantaCruzTotal = 0;
+    let rutaSantaCruzCount = 0;
+    let telefonoWhatsappTotal = 0;
+    let telefonoWhatsappCount = 0;
+    let ventaPlantaTotal = 0;
+    let ventaPlantaCount = 0;
+
+    listForPeriod.forEach(s => {
+      const route = getOrderRoute(s);
+      const amount = Number(s.total_price || s.amount || 0);
+
+      if (route === 'Ruta Centro') {
+        rutaCentroTotal += amount;
+        rutaCentroCount++;
+      } else if (route === 'Ruta Santa Cruz') {
+        rutaSantaCruzTotal += amount;
+        rutaSantaCruzCount++;
+      } else if (route === 'Llamadas telefónicas - whatsapp') {
+        telefonoWhatsappTotal += amount;
+        telefonoWhatsappCount++;
+      } else if (route === 'Venta planta') {
+        ventaPlantaTotal += amount;
+        ventaPlantaCount++;
+      } else {
+        ventaPlantaTotal += amount;
+        ventaPlantaCount++;
+      }
+    });
+
+    const totalSales = listForPeriod.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
+
+    return {
+      rutaCentroTotal,
+      rutaCentroCount,
+      rutaSantaCruzTotal,
+      rutaSantaCruzCount,
+      telefonoWhatsappTotal,
+      telefonoWhatsappCount,
+      ventaPlantaTotal,
+      ventaPlantaCount,
+      totalSales,
+      totalCount: listForPeriod.length
     };
   };
 
@@ -1087,15 +1173,15 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         )}
       </div>
 
-      {/* Selector de Origen de Ventas (Planta vs Repartidores) para Admin */}
+      {/* Selector de Origen de Ventas (Planta vs Repartidores) y Periodos para Admin */}
       {userRole === 'admin' && (activeTab === 'metrics' || activeTab === 'sales') && (
-        <div className="bg-white dark:bg-slate-900 p-1.5 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm max-w-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3 py-1.5">
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-[32px] border border-slate-200/60 dark:border-slate-800/60 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-950/20 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
             <div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Filtrar Canal de Origen</span>
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Ver ventas e ingresos por procedencia</span>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Filtrar Canal de Origen</span>
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Ver ventas e ingresos por procedencia</span>
             </div>
-            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl flex border border-slate-200/50 dark:border-slate-800/50 shadow-inner shrink-0 self-stretch sm:self-auto">
+            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-xl flex border border-slate-200/50 dark:border-slate-800/50 shadow-inner shrink-0 self-stretch sm:self-auto">
               {[
                 { id: 'all', label: 'Unificadas (Global)', icon: ShieldCheck, color: 'text-indigo-500' },
                 { id: 'plant', label: 'Solo Planta', icon: Store, color: 'text-emerald-500' },
@@ -1107,7 +1193,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   <button
                     key={scope.id}
                     onClick={() => setAdminSalesScope(scope.id as any)}
-                    className={`py-2 px-3 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-95 ${
+                    className={`py-2 px-3 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-95 ${
                       active
                         ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-md'
                         : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
@@ -1115,6 +1201,36 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   >
                     <Icon size={12} className={scope.color} />
                     <span>{scope.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-950/20 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
+            <div>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Rango Temporal</span>
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Unificar ventas por período</span>
+            </div>
+            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-xl flex border border-slate-200/50 dark:border-slate-800/50 shadow-inner shrink-0 self-stretch sm:self-auto">
+              {[
+                { id: 'today', label: 'Hoy' },
+                { id: 'week', label: 'Semana' },
+                { id: 'month', label: 'Mes' },
+                { id: 'all', label: 'Histórico' },
+              ].map((period) => {
+                const active = timePeriod === period.id;
+                return (
+                  <button
+                    key={period.id}
+                    onClick={() => setTimePeriod(period.id as any)}
+                    className={`py-2 px-4 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-95 ${
+                      active
+                        ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-md'
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    <span>{period.label}</span>
                   </button>
                 );
               })}
@@ -1161,67 +1277,115 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
               {/* Plant vs Field sales overview & detailed breakdown */}
               {(() => {
-                const { plantSalesTotal, plantSalesCount, fieldSalesTotal, fieldSalesCount, employeePlantBreakdown } = getPlantAndFieldSalesToday();
+                const { plantSalesTotal, plantSalesCount, employeePlantBreakdown } = getPlantAndFieldSalesToday();
+                const {
+                  rutaCentroTotal,
+                  rutaCentroCount,
+                  rutaSantaCruzTotal,
+                  rutaSantaCruzCount,
+                  telefonoWhatsappTotal,
+                  telefonoWhatsappCount,
+                  ventaPlantaTotal,
+                  ventaPlantaCount,
+                  totalSales
+                } = getRouteMetricsForPeriod();
+
                 return (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Global Comparison Card */}
                     <div className="lg:col-span-1 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between">
                       <div>
-                        <h3 className="font-black text-slate-800 mb-4 uppercase text-[10px] tracking-widest">Comparativa de Canales de Venta (Hoy)</h3>
+                        <h3 className="font-black text-slate-800 mb-1 uppercase text-[10px] tracking-widest">Comparativa por Ruta y Canal</h3>
+                        <p className="text-[10px] font-bold text-slate-400 mb-4 uppercase">
+                          Período: {timePeriod === 'today' ? 'Hoy' : timePeriod === 'week' ? 'Esta Semana' : timePeriod === 'month' ? 'Este Mes' : 'Histórico (Todo)'}
+                        </p>
                         
-                        <div className="space-y-4">
-                          {/* Campo */}
-                          <div className="p-4 rounded-2xl bg-sky-50/50 border border-sky-100 flex items-center justify-between">
+                        <div className="space-y-2.5 max-h-[320px] overflow-y-auto no-scrollbar pr-0.5">
+                          {/* Ruta Centro */}
+                          <div className="p-3.5 rounded-2xl bg-indigo-50/50 border border-indigo-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black">
-                                <Truck size={18} />
+                              <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black">
+                                <Truck size={16} />
                               </div>
                               <div>
-                                <p className="text-[9px] font-black uppercase text-slate-400">Ventas en Campo (Calle)</p>
-                                <p className="text-xl font-black text-slate-900">${fieldSalesTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p className="text-[9px] font-black uppercase text-slate-400">Ruta Centro</p>
+                                <p className="text-base font-black text-slate-900">${rutaCentroTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                               </div>
                             </div>
-                            <span className="text-[10px] bg-sky-100 text-sky-600 font-black px-2 py-1 rounded-full uppercase">{fieldSalesCount} ped.</span>
+                            <span className="text-[9px] bg-indigo-100 text-indigo-600 font-black px-2 py-1 rounded-full uppercase">{rutaCentroCount} ped.</span>
                           </div>
 
-                          {/* Planta */}
-                          <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex items-center justify-between">
+                          {/* Ruta Santa Cruz */}
+                          <div className="p-3.5 rounded-2xl bg-sky-50/50 border border-sky-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black">
-                                <Store size={18} />
+                              <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black">
+                                <Truck size={16} />
                               </div>
                               <div>
-                                <p className="text-[9px] font-black uppercase text-slate-400">Ventas en Planta (Local)</p>
-                                <p className="text-xl font-black text-slate-900">${plantSalesTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p className="text-[9px] font-black uppercase text-slate-400">Ruta Santa Cruz</p>
+                                <p className="text-base font-black text-slate-900">${rutaSantaCruzTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                               </div>
                             </div>
-                            <span className="text-[10px] bg-emerald-100 text-emerald-600 font-black px-2 py-1 rounded-full uppercase">{plantSalesCount} ped.</span>
+                            <span className="text-[9px] bg-sky-100 text-sky-600 font-black px-2 py-1 rounded-full uppercase">{rutaSantaCruzCount} ped.</span>
+                          </div>
+
+                          {/* Llamadas telefónicas - whatsapp */}
+                          <div className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black">
+                                <ShoppingBag size={16} />
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-slate-400">Teléfono / WhatsApp</p>
+                                <p className="text-base font-black text-slate-900">${telefonoWhatsappTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] bg-emerald-100 text-emerald-600 font-black px-2 py-1 rounded-full uppercase">{telefonoWhatsappCount} ped.</span>
+                          </div>
+
+                          {/* Venta planta */}
+                          <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black">
+                                <Store size={16} />
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-slate-400">Venta Planta (Local)</p>
+                                <p className="text-base font-black text-slate-900">${ventaPlantaTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] bg-amber-100 text-amber-600 font-black px-2 py-1 rounded-full uppercase">{ventaPlantaCount} ped.</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Simple Horizontal Progress Ratio */}
                       <div className="mt-6">
-                        <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase mb-1">
-                          <span>Campo (Calle)</span>
+                        <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase mb-1.5">
+                          <span>Rutas</span>
+                          <span>Teléfono/WSP</span>
                           <span>Planta</span>
                         </div>
-                        {plantSalesTotal + fieldSalesTotal > 0 ? (
+                        {totalSales > 0 ? (
                           <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden flex">
                             <div 
-                              className="h-full bg-sky-500 transition-all" 
-                              style={{ width: `${(fieldSalesTotal / (plantSalesTotal + fieldSalesTotal)) * 100}%` }} 
+                              className="h-full bg-indigo-500 transition-all animate-pulse" 
+                              style={{ width: `${((rutaCentroTotal + rutaSantaCruzTotal) / totalSales) * 100}%` }} 
                             />
                             <div 
                               className="h-full bg-emerald-500 transition-all" 
-                              style={{ width: `${(plantSalesTotal / (plantSalesTotal + fieldSalesTotal)) * 100}%` }} 
+                              style={{ width: `${(telefonoWhatsappTotal / totalSales) * 100}%` }} 
+                            />
+                            <div 
+                              className="h-full bg-amber-500 transition-all" 
+                              style={{ width: `${(ventaPlantaTotal / totalSales) * 100}%` }} 
                             />
                           </div>
                         ) : (
                           <div className="w-full h-3 rounded-full bg-slate-100" />
                         )}
                         <span className="text-[8px] text-slate-400 block mt-2 font-black uppercase tracking-wider text-right">
-                          Proporción del día
+                          Distribución de Ingresos ({timePeriod})
                         </span>
                       </div>
                     </div>
