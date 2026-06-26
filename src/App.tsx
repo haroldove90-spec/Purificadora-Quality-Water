@@ -587,7 +587,7 @@ export default function App() {
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
         { id: 'attendance', label: 'Asistencia', icon: Clock },
-        { id: 'cash_float', label: 'Fondo de Caja', icon: DollarSign },
+        { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
         { id: 'sales', label: 'Métricas', icon: History },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'driver_sales', label: 'Empleados', icon: Truck },

@@ -1384,7 +1384,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2">
         <div>
           <h2 className="text-3xl font-black text-slate-800 italic uppercase">
-            Módulo <span className="text-sky-500">Fondo de Caja</span>
+            Módulo <span className="text-sky-500">Cierre de Caja</span>
           </h2>
           <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest leading-none">
             {isPlantOrAdmin 
