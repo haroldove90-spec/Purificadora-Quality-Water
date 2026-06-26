@@ -161,11 +161,19 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
         if (e.code === 1) {
           errorMsg = 'Permiso denegado: Por favor habilita el acceso GPS en la configuración de tu navegador y celular.';
         } else if (e.code === 2) {
-          errorMsg = 'Ubicación no disponible: Asegúrate de tener activado el GPS / localización de tu dispositivo.';
+          errorMsg = 'Ubicación no disponible: Asegúrate de tener activado el GPS / localización de tu dispositivo móvil.';
         } else if (e.code === 3) {
           errorMsg = 'Tiempo de espera agotado al obtener señal de ubicación.';
         }
-        alert(errorMsg);
+        alert(`⚠️ ADVERTENCIA DE UBICACIÓN:\n\n${errorMsg}\n\nLa confirmación no se podrá completar si no tienes activa tu ubicación GPS real. Por favor actívala y vuelve a intentarlo.`);
+        setStatus('idle');
+        return; // BLOCKING: No permite continuar sin ubicación real
+      }
+
+      if (!location || !location.lat || !location.lng) {
+        alert('⚠️ ADVERTENCIA DE UBICACIÓN:\n\nNo se pudo obtener una coordenada GPS válida. Por favor, asegúrate de activar el GPS de tu celular y permitir el acceso.');
+        setStatus('idle');
+        return; // BLOCKING
       }
 
       const actionMap = {

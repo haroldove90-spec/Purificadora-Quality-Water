@@ -908,21 +908,46 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
 
       if (existing) {
-        console.log(`Deleting row completely for ${employeeName}`);
-        const { error: deleteError } = await supabase
-          .from('daily_attendance')
-          .delete()
-          .eq('id', existing.id);
-        
-        if (deleteError) {
-          console.error('Delete error, trying alternative delete by unique tuple:', deleteError);
-          const { error: altDeleteError } = await supabase
+        const hasAttendance = !!(existing.check_in || existing.break_start || existing.break_end || existing.check_out);
+
+        if (hasAttendance) {
+          console.log(`Preserving attendance, only clearing cash float fields for ${employeeName}`);
+          const lastLocObj = parseJsonFields(existing.last_location);
+          const updatedLocation = { ...lastLocObj };
+          delete updatedLocation.cash_float;
+          delete updatedLocation.cash_closed;
+          delete updatedLocation.cash_closed_at;
+          delete updatedLocation.cash_sales_total;
+          delete updatedLocation.cash_orders_count;
+          delete updatedLocation.cash_total_to_deliver;
+          delete updatedLocation.closed_by_role;
+          delete updatedLocation.closed_by_name;
+
+          const { error: updateError } = await supabase
+            .from('daily_attendance')
+            .update({
+              last_location: updatedLocation
+            })
+            .eq('id', existing.id);
+
+          if (updateError) throw updateError;
+        } else {
+          console.log(`Deleting row completely for ${employeeName} since there is no attendance`);
+          const { error: deleteError } = await supabase
             .from('daily_attendance')
             .delete()
-            .eq('user_name', employeeName)
-            .eq('work_date', today);
+            .eq('id', existing.id);
           
-          if (altDeleteError) throw altDeleteError;
+          if (deleteError) {
+            console.error('Delete error, trying alternative delete by unique tuple:', deleteError);
+            const { error: altDeleteError } = await supabase
+              .from('daily_attendance')
+              .delete()
+              .eq('user_name', employeeName)
+              .eq('work_date', today);
+            
+            if (altDeleteError) throw altDeleteError;
+          }
         }
 
 
@@ -1182,17 +1207,38 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       let countProcessed = 0;
 
       if (existingRecords && existingRecords.length > 0) {
-        const idsToDelete = existingRecords.map(r => r.id);
-        const { error: deleteError } = await supabase
-          .from('daily_attendance')
-          .delete()
-          .in('id', idsToDelete);
-        
-        if (deleteError) {
-          console.error('Bulk delete failed:', deleteError);
-          throw deleteError;
+        for (const r of existingRecords) {
+          const hasAttendance = !!(r.check_in || r.break_start || r.break_end || r.check_out);
+          if (hasAttendance) {
+            console.log(`Preserving attendance during bulk reset, clearing only cash float for ${r.user_name}`);
+            const lastLocObj = parseJsonFields(r.last_location);
+            const updatedLocation = { ...lastLocObj };
+            delete updatedLocation.cash_float;
+            delete updatedLocation.cash_closed;
+            delete updatedLocation.cash_closed_at;
+            delete updatedLocation.cash_sales_total;
+            delete updatedLocation.cash_orders_count;
+            delete updatedLocation.cash_total_to_deliver;
+            delete updatedLocation.closed_by_role;
+            delete updatedLocation.closed_by_name;
+
+            const { error: updateError } = await supabase
+              .from('daily_attendance')
+              .update({
+                last_location: updatedLocation
+              })
+              .eq('id', r.id);
+            if (updateError) throw updateError;
+          } else {
+            console.log(`Deleting row during bulk reset for ${r.user_name} since there is no attendance`);
+            const { error: deleteError } = await supabase
+              .from('daily_attendance')
+              .delete()
+              .eq('id', r.id);
+            if (deleteError) throw deleteError;
+          }
+          countProcessed++;
         }
-        countProcessed = existingRecords.length;
       }
 
       // Add a single notification reporting the action
@@ -1238,17 +1284,38 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       let countProcessed = 0;
 
       if (allAtt && allAtt.length > 0) {
-        const idsToDelete = allAtt.map(r => r.id);
-        const { error: deleteError } = await supabase
-          .from('daily_attendance')
-          .delete()
-          .in('id', idsToDelete);
-        
-        if (deleteError) {
-          console.error('Reset all failed:', deleteError);
-          throw deleteError;
+        for (const r of allAtt) {
+          const hasAttendance = !!(r.check_in || r.break_start || r.break_end || r.check_out);
+          if (hasAttendance) {
+            console.log(`Preserving attendance during reset all, clearing only cash float for ${r.user_name}`);
+            const lastLocObj = parseJsonFields(r.last_location);
+            const updatedLocation = { ...lastLocObj };
+            delete updatedLocation.cash_float;
+            delete updatedLocation.cash_closed;
+            delete updatedLocation.cash_closed_at;
+            delete updatedLocation.cash_sales_total;
+            delete updatedLocation.cash_orders_count;
+            delete updatedLocation.cash_total_to_deliver;
+            delete updatedLocation.closed_by_role;
+            delete updatedLocation.closed_by_name;
+
+            const { error: updateError } = await supabase
+              .from('daily_attendance')
+              .update({
+                last_location: updatedLocation
+              })
+              .eq('id', r.id);
+            if (updateError) throw updateError;
+          } else {
+            console.log(`Deleting row during reset all for ${r.user_name} since there is no attendance`);
+            const { error: deleteError } = await supabase
+              .from('daily_attendance')
+              .delete()
+              .eq('id', r.id);
+            if (deleteError) throw deleteError;
+          }
+          countProcessed++;
         }
-        countProcessed = allAtt.length;
       }
 
       // Add a single notification reporting the action
