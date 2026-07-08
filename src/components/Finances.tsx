@@ -1436,7 +1436,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
                   <h3 className="font-black text-slate-800 mb-6 uppercase text-[10px] tracking-widest">Rendimiento Histórico (Ventas x Día)</h3>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={getDynamicSalesData()}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
@@ -1451,7 +1451,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col items-center">
                   <h3 className="font-black text-slate-800 mb-6 uppercase text-[10px] tracking-widest w-full">Canales de Pedido</h3>
                   <div className="h-48 w-full mt-4">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <PieChart>
                         <Pie data={getDynamicChannelData()} cx="50%" cy="50%" innerRadius={55} outerRadius={75} dataKey="value" paddingAngle={4}>
                           {getDynamicChannelData().map((entry, index) => (
