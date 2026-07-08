@@ -200,44 +200,57 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     }
   };
 
+  // Helper to check if a product is a small garrafon
+  const isSmallGarrafon = (name: string): boolean => {
+    const n = name.toLowerCase();
+    return (n.includes('garrafón') || n.includes('garrafon')) && 
+           (n.includes('pequeño') || n.includes('pequeno') || n.includes('chico') || n.includes('10l') || n.includes('10 l'));
+  };
+
+  // Helper to check if a product is a regular garrafon
+  const isRegularGarrafon = (name: string): boolean => {
+    const n = name.toLowerCase();
+    return (n.includes('garrafón') || n.includes('garrafon')) && !isSmallGarrafon(name);
+  };
+
   const updateDriverAttendanceJugs = async () => {
     if (userRole !== 'driver' || !activeAttendance) return;
 
-    let totalGarrafonesSold = 0;
+    let totalRegularGarrafonesSold = 0;
+    let totalSmallGarrafonesSold = 0;
     cart.forEach(item => {
-      const isGarrafon = item.product.name.toLowerCase().includes('garrafón') || 
-                          item.product.name.toLowerCase().includes('garrafon');
-      if (isGarrafon) {
-        totalGarrafonesSold += item.quantity;
+      if (isSmallGarrafon(item.product.name)) {
+        totalSmallGarrafonesSold += item.quantity;
+      } else if (isRegularGarrafon(item.product.name)) {
+        totalRegularGarrafonesSold += item.quantity;
       }
     });
 
-    if (totalGarrafonesSold <= 0) return;
+    if (totalRegularGarrafonesSold <= 0 && totalSmallGarrafonesSold <= 0) return;
 
     try {
       const lastLoc = parseJsonFields(activeAttendance.last_location);
       const trips = lastLoc.trips || [];
       
-      let activeTrip = trips.find((t: any) => t.status === 'active');
-      if (!activeTrip && trips.length > 0) {
-        activeTrip = trips[trips.length - 1];
-      }
+      const activeTrip = trips.find((t: any) => t.status === 'active');
 
       if (activeTrip) {
-        activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalGarrafonesSold;
+        activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularGarrafonesSold;
+        activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallGarrafonesSold;
       } else {
         const newTrip = {
           id: 'T-' + Math.floor(10000 + Math.random() * 90000),
-          trip_number: 1,
+          trip_number: trips.length + 1,
           loaded_qty: 20,
           loaded_qty_rosa: 0,
           loaded_qty_azul: 20,
           loaded_qty_color: 0,
-          loaded_qty_pequeno: 0,
+          loaded_qty_pequeno: totalSmallGarrafonesSold > 0 ? 20 : 0,
           loaded_qty_lavar: 0,
           returned_unsold_qty: 0,
           returned_empty_qty: 0,
-          sold_qty: totalGarrafonesSold,
+          sold_qty: totalRegularGarrafonesSold,
+          sold_qty_pequeno: totalSmallGarrafonesSold,
           status: 'active',
           loaded_at: new Date().toISOString()
         };
@@ -682,10 +695,12 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
   // Cart Helpers
   const addToCart = (product: Product) => {
-    const isGarrafon = product.name.toLowerCase().includes('garrafón') || product.name.toLowerCase().includes('garrafon');
-    if (userRole === 'driver' && isGarrafon) {
+    const isSmallG = isSmallGarrafon(product.name);
+    const isRegularG = isRegularGarrafon(product.name);
+
+    if (userRole === 'driver' && (isSmallG || isRegularG)) {
       const trips = activeAttendance ? parseJsonFields(activeAttendance.last_location)?.trips || [] : [];
-      const activeTrip = trips.find((t: any) => t.status === 'active') || (trips.length > 0 ? trips[trips.length - 1] : null);
+      const activeTrip = trips.find((t: any) => t.status === 'active');
 
       if (!activeTrip) {
         setNotification({
@@ -696,12 +711,18 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       }
 
       const currentQtyInCart = getCartCount(product.id);
-      const availableStock = Math.max(0, activeTrip.loaded_qty - (activeTrip.sold_qty || 0));
+      
+      let availableStock = 0;
+      if (isSmallG) {
+        availableStock = Math.max(0, (Number(activeTrip.loaded_qty_pequeno) || 0) - (Number(activeTrip.sold_qty_pequeno) || 0));
+      } else {
+        availableStock = Math.max(0, (Number(activeTrip.loaded_qty) || 0) - (Number(activeTrip.sold_qty) || 0));
+      }
 
       if (currentQtyInCart >= availableStock) {
         setNotification({
           type: 'error',
-          message: `⚠️ No tienes suficientes garrafones en tu camión. Solo quedan ${availableStock} disponibles.`
+          message: `⚠️ No tienes suficientes garrafones ${isSmallG ? 'pequeños' : 'de 19L/20L'} en tu camión. Solo quedan ${availableStock} disponibles.`
         });
         return;
       }
@@ -1104,7 +1125,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         {/* Garrafones Asignados Section for Delivery Drivers */}
         {userRole === 'driver' && (() => {
           const trips = activeAttendance ? parseJsonFields(activeAttendance.last_location)?.trips || [] : [];
-          const activeTrip = trips.find((t: any) => t.status === 'active') || (trips.length > 0 ? trips[trips.length - 1] : null);
+          const activeTrip = trips.find((t: any) => t.status === 'active');
           return (
             <div className="bg-gradient-to-br from-sky-500 to-blue-600 text-white p-6 rounded-3xl shadow-lg shadow-sky-500/10 space-y-4">
               <div className="flex justify-between items-center">

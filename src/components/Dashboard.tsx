@@ -375,12 +375,6 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
             type: 'order',
             user_role: `driver_${newOrder.assigned_to}`
           });
-          notifications.push({
-            title: isPickup ? 'Pedido a Recoger Modificado 🔄' : 'Pedido Asignado Modificado',
-            message: `El pedido asignado a ti para ${newOrder.customer_name} ha sido modificado.`,
-            type: 'order',
-            user_role: 'driver'
-          });
         }
 
         await supabase.from('notifications_log').insert(notifications);
@@ -430,15 +424,6 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
               : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
             type: 'order',
             user_role: `driver_${newOrder.assigned_to}`
-          });
-          // Enviar al canal general de 'driver' para redundancia y cobertura
-          notifications.push({
-            title: isPickup ? 'Nuevo Recojo Asignado 🔄' : 'Nuevo Pedido Asignado',
-            message: isPickup 
-              ? `Se te ha asignado recolección de garrafones vacíos para lavado de ${newOrder.customer_name} (${pickupJugsCount} pzs)` 
-              : `Se te ha asignado el pedido de ${newOrder.customer_name}`,
-            type: 'order',
-            user_role: 'driver'
           });
         }
 

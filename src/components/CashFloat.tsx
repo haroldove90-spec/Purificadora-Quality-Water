@@ -1089,7 +1089,14 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   };
 
   // Helper to reconcile/liquidate a route load trip when returning (calculates sold amount, registers wash returns)
-  const handleReconcileDriverTrip = async (employeeName: string, tripId: string, unsoldQty: number, emptyQty: number) => {
+  const handleReconcileDriverTrip = async (
+    employeeName: string, 
+    tripId: string, 
+    unsoldQty: number, 
+    emptyQty: number,
+    unsoldPequenoQty = 0,
+    emptyPequenoQty = 0
+  ) => {
     setActionLoading(true);
     const today = getLocalDateString();
     try {
@@ -1107,11 +1114,15 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const updatedTrips = trips.map((t: any) => {
         if (t.id === tripId) {
           const sold = Math.max(0, t.loaded_qty - Number(unsoldQty));
+          const soldPequeno = Math.max(0, (t.loaded_qty_pequeno || 0) - Number(unsoldPequenoQty));
           return {
             ...t,
             returned_unsold_qty: Number(unsoldQty),
             returned_empty_qty: Number(emptyQty),
             sold_qty: sold,
+            returned_unsold_pequeno: Number(unsoldPequenoQty),
+            returned_empty_pequeno: Number(emptyPequenoQty),
+            sold_qty_pequeno: soldPequeno,
             status: 'closed',
             closed_at: new Date().toISOString()
           };
@@ -2187,6 +2198,35 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                         className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-black text-slate-800 outline-none"
                                       />
                                     </div>
+
+                                    {t.loaded_qty_pequeno > 0 && (
+                                      <>
+                                        <div className="space-y-1 col-span-2 border-t border-slate-100 pt-2 mt-1">
+                                          <p className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest">Liquidación Pequeños:</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="text-[7px] font-black uppercase text-slate-400 block">Pequeños Llenos Regresados</label>
+                                          <input 
+                                            type="number"
+                                            min="0"
+                                            max={t.loaded_qty_pequeno}
+                                            defaultValue={0}
+                                            id={`unsold-peq-${t.id}`}
+                                            className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-black text-slate-800 outline-none"
+                                          />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="text-[7px] font-black uppercase text-slate-400 block">Pequeños Vacíos Devueltos</label>
+                                          <input 
+                                            type="number"
+                                            min="0"
+                                            defaultValue={t.loaded_qty_pequeno}
+                                            id={`empty-peq-${t.id}`}
+                                            className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-black text-slate-800 outline-none"
+                                          />
+                                        </div>
+                                      </>
+                                    )}
                                   </div>
                                   <button
                                     onClick={() => {
@@ -2202,7 +2242,26 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                         alert('Error: Los envases vacíos no pueden ser negativos.');
                                         return;
                                       }
-                                      handleReconcileDriverTrip(effectiveEmployeeName, t.id, unsold, empties);
+
+                                      let unsoldPeq = 0;
+                                      let emptyPeq = 0;
+                                      if (t.loaded_qty_pequeno > 0) {
+                                        const unsoldPeqInp = document.getElementById(`unsold-peq-${t.id}`) as HTMLInputElement;
+                                        const emptyPeqInp = document.getElementById(`empty-peq-${t.id}`) as HTMLInputElement;
+                                        unsoldPeq = Number(unsoldPeqInp?.value || 0);
+                                        emptyPeq = Number(emptyPeqInp?.value || 0);
+
+                                        if (unsoldPeq < 0 || unsoldPeq > t.loaded_qty_pequeno) {
+                                          alert(`Error: Los garrafones pequeños devueltos llenos deben ser entre 0 y ${t.loaded_qty_pequeno}`);
+                                          return;
+                                        }
+                                        if (emptyPeq < 0) {
+                                          alert('Error: Los envases vacíos pequeños no pueden ser negativos.');
+                                          return;
+                                        }
+                                      }
+
+                                      handleReconcileDriverTrip(effectiveEmployeeName, t.id, unsold, empties, unsoldPeq, emptyPeq);
                                     }}
                                     className="w-full bg-sky-500 hover:bg-sky-600 text-white text-[9px] font-black uppercase py-2.5 rounded-xl transition-all shadow-sm active:scale-95"
                                   >

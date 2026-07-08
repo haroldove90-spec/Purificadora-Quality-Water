@@ -427,9 +427,9 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     });
 
     return {
-      totalRevenue: totalRevenue || 1850.00,
-      llenados: llenados || 42,
-      envasesNuevos: envasesNuevos || 5
+      totalRevenue: totalRevenue,
+      llenados: llenados,
+      envasesNuevos: envasesNuevos
     };
   };
 
