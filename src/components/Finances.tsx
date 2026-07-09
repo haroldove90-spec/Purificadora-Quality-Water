@@ -673,6 +673,12 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       }
 
       const trips = existingLocation.trips || [];
+      const hasActiveTrip = trips.some((t: any) => t.status === 'active');
+      if (hasActiveTrip) {
+        alert(`⚠️ El repartidor ${employeeName} ya tiene un viaje activo en curso. Por favor, liquida el viaje actual antes de asignarle uno nuevo.`);
+        return;
+      }
+
       const newTrip = {
         id: 'T-' + Math.floor(10000 + Math.random() * 90000),
         trip_number: trips.length + 1,

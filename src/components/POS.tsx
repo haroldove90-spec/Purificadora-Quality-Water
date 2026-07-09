@@ -200,6 +200,80 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     }
   };
 
+  const handleCloseActiveTrip = async () => {
+    if (!activeAttendance) return;
+    setLoading(true);
+    try {
+      const lastLoc = parseJsonFields(activeAttendance.last_location);
+      const trips = lastLoc.trips || [];
+      const activeTripIndex = trips.findIndex((t: any) => t.status === 'active');
+      
+      if (activeTripIndex === -1) {
+        alert('No se encontró ningún viaje activo para liquidar.');
+        return;
+      }
+      
+      const activeTrip = trips[activeTripIndex];
+      const sold = Math.max(0, activeTrip.loaded_qty - Number(closeTripUnsold));
+      const soldPequeno = Math.max(0, (activeTrip.loaded_qty_pequeno || 0) - Number(closeTripUnsoldPequeno));
+      
+      const updatedTrip = {
+        ...activeTrip,
+        returned_unsold_qty: Number(closeTripUnsold),
+        returned_empty_qty: Number(closeTripEmpty),
+        sold_qty: sold,
+        returned_unsold_pequeno: Number(closeTripUnsoldPequeno),
+        returned_empty_pequeno: Number(closeTripEmptyPequeno),
+        sold_qty_pequeno: soldPequeno,
+        status: 'closed',
+        closed_at: new Date().toISOString()
+      };
+      
+      const updatedTrips = [...trips];
+      updatedTrips[activeTripIndex] = updatedTrip;
+      
+      const updatedLocation = {
+        ...lastLoc,
+        trips: updatedTrips
+      };
+      
+      const { error: updateError } = await supabase
+        .from('daily_attendance')
+        .update({ last_location: updatedLocation })
+        .eq('id', activeAttendance.id);
+        
+      if (updateError) throw updateError;
+      
+      const updatedAtt = {
+        ...activeAttendance,
+        last_location: updatedLocation
+      };
+      
+      setActiveAttendance(updatedAtt);
+      localStorage.setItem('local_active_attendance_backup', JSON.stringify(updatedAtt));
+      setShowCloseTripModal(false);
+      
+      // Send notification alert to operator/admin
+      await supabase.from('notifications_log').insert([{
+        title: '🚚 Viaje Liquidado por Repartidor',
+        message: `El repartidor ${userName} liquidó su viaje #${activeTrip.trip_number}. Vendió: ${sold} g. grandes y ${soldPequeno} g. pequeños. Regresó: ${closeTripUnsold} grandes llenos y ${closeTripEmpty} vacíos.`,
+        type: 'delivery',
+        user_role: 'admin',
+        is_read: false
+      }]);
+      
+      setNotification({
+        type: 'success',
+        message: `✅ ¡Viaje #${activeTrip.trip_number} liquidado y cerrado con éxito!`
+      });
+    } catch (e: any) {
+      console.error('Error closing trip:', e);
+      alert('Error al liquidar y cerrar el viaje: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Helper to check if a product is a small garrafon
   const isSmallGarrafon = (name: string): boolean => {
     const n = name.toLowerCase();
@@ -375,6 +449,13 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   const [posDebtPaymentAmount, setPosDebtPaymentAmount] = useState<number>(0);
   const [posDebtPaymentMethod, setPosDebtPaymentMethod] = useState<'cash' | 'transfer' | 'card'>('cash');
   const [isProcessingPOSDebt, setIsProcessingPOSDebt] = useState(false);
+
+  // States for driver-side active trip closure (Liquidación por Ruta)
+  const [showCloseTripModal, setShowCloseTripModal] = useState(false);
+  const [closeTripUnsold, setCloseTripUnsold] = useState(0);
+  const [closeTripEmpty, setCloseTripEmpty] = useState(0);
+  const [closeTripUnsoldPequeno, setCloseTripUnsoldPequeno] = useState(0);
+  const [closeTripEmptyPequeno, setCloseTripEmptyPequeno] = useState(0);
 
   const fetchCustomerDebts = async (customerName: string) => {
     try {
@@ -1188,6 +1269,19 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                       />
                     </div>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setCloseTripUnsold(Math.max(0, activeTrip.loaded_qty - (activeTrip.sold_qty || 0)));
+                      setCloseTripEmpty(activeTrip.sold_qty || 0);
+                      setCloseTripUnsoldPequeno(Math.max(0, (activeTrip.loaded_qty_pequeno || 0) - (activeTrip.sold_qty_pequeno || 0)));
+                      setCloseTripEmptyPequeno(activeTrip.sold_qty_pequeno || 0);
+                      setShowCloseTripModal(true);
+                    }}
+                    className="w-full mt-2 bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-black uppercase py-3 rounded-2xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 size={14} /> Cerrar Caja / Liquidar Ruta 🚚
+                  </button>
                 </div>
               ) : (
                 <div className="bg-white/10 p-4 rounded-2xl border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
@@ -2143,6 +2237,165 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
             </motion.div>
           </div>
         )}
+
+        {/* DRIVER TRIP CLOSURE MODAL (LIQUIDACIÓN POR RUTA) */}
+        {showCloseTripModal && (() => {
+          const trips = activeAttendance ? parseJsonFields(activeAttendance.last_location)?.trips || [] : [];
+          const activeTrip = trips.find((t: any) => t.status === 'active');
+          if (!activeTrip) return null;
+
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              {/* Modal backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowCloseTripModal(false)}
+                className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+              />
+
+              {/* Modal panel */}
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 15 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 15 }}
+                className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 max-w-md w-full rounded-[32px] overflow-hidden shadow-2xl p-6 flex flex-col z-50 text-slate-800 dark:text-white max-h-[95vh]"
+              >
+                {/* Header */}
+                <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-sky-50 dark:bg-sky-950/30 rounded-xl text-sky-500">
+                      <Truck size={20} />
+                    </span>
+                    <div>
+                      <h3 className="font-extrabold text-sm text-slate-950 dark:text-white uppercase tracking-tight">Liquidar Viaje y Cerrar Caja</h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Viaje #{activeTrip.trip_number} (En Ruta)</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowCloseTripModal(false)}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Form fields */}
+                <div className="py-4 space-y-4 overflow-y-auto pr-1 flex-1">
+                  <div className="p-3 bg-sky-50/50 dark:bg-sky-950/20 rounded-2xl border border-sky-100/30">
+                    <p className="text-[10px] font-bold text-sky-600 uppercase tracking-widest mb-1.5">📦 Resumen de Carga del Viaje:</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-slate-400 font-bold block uppercase text-[8px]">Garrafones Cargados:</span>
+                        <strong className="text-slate-700 dark:text-slate-200">{activeTrip.loaded_qty} g.</strong>
+                      </div>
+                      {activeTrip.loaded_qty_pequeno > 0 && (
+                        <div>
+                          <span className="text-slate-400 font-bold block uppercase text-[8px]">Pequeños Cargados:</span>
+                          <strong className="text-slate-700 dark:text-slate-200">{activeTrip.loaded_qty_pequeno} g.</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Regular Jugs inputs */}
+                  <div className="space-y-3.5">
+                    <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-400">Garrafones Grandes (Rosas/Azules/Color):</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-400 block">Grandes Llenos Devueltos</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={activeTrip.loaded_qty}
+                          value={closeTripUnsold}
+                          onChange={(e) => setCloseTripUnsold(Math.min(activeTrip.loaded_qty, Math.max(0, parseInt(e.target.value) || 0)))}
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-3 rounded-xl text-sm font-black text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500"
+                        />
+                        <span className="text-[7.5px] text-slate-400 uppercase">Máx: {activeTrip.loaded_qty} g.</span>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-400 block">Envases Vacíos Devueltos</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={closeTripEmpty}
+                          onChange={(e) => setCloseTripEmpty(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-3 rounded-xl text-sm font-black text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pequenos inputs if loaded_qty_pequeno > 0 */}
+                  {activeTrip.loaded_qty_pequeno > 0 && (
+                    <div className="space-y-3.5 border-t border-slate-100 dark:border-slate-800 pt-3">
+                      <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-400">Garrafones Pequeños:</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black uppercase text-slate-400 block">Pequeños Llenos Devueltos</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={activeTrip.loaded_qty_pequeno}
+                            value={closeTripUnsoldPequeno}
+                            onChange={(e) => setCloseTripUnsoldPequeno(Math.min(activeTrip.loaded_qty_pequeno, Math.max(0, parseInt(e.target.value) || 0)))}
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-3 rounded-xl text-sm font-black text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500"
+                          />
+                          <span className="text-[7.5px] text-slate-400 uppercase">Máx: {activeTrip.loaded_qty_pequeno} g.</span>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black uppercase text-slate-400 block">Vacíos Pequeños Devueltos</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={closeTripEmptyPequeno}
+                            onChange={(e) => setCloseTripEmptyPequeno(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-3 rounded-xl text-sm font-black text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Calculated breakdown summary */}
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-black bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    <div>
+                      <span className="text-emerald-600 block uppercase">Grandes Vendidos:</span>
+                      <span className="text-sm font-black text-slate-800 dark:text-white">{Math.max(0, activeTrip.loaded_qty - Number(closeTripUnsold))} g.</span>
+                    </div>
+                    {activeTrip.loaded_qty_pequeno > 0 && (
+                      <div className="text-right">
+                        <span className="text-sky-600 block uppercase">Pequeños Vendidos:</span>
+                        <span className="text-sm font-black text-sky-600">{Math.max(0, activeTrip.loaded_qty_pequeno - Number(closeTripUnsoldPequeno))} g.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="flex gap-3 mt-4 shrink-0 border-t border-slate-100 dark:border-slate-800 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowCloseTripModal(false)}
+                    className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-black text-xs uppercase tracking-widest rounded-2xl transition-all"
+                  >
+                    Regresar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCloseActiveTrip}
+                    className="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-orange-500/10 active:scale-95"
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Cerrar Ruta</span>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
     </div>

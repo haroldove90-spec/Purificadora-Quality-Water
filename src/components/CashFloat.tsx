@@ -991,6 +991,75 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     }
   };
 
+  // Helper to reopen a driver's closed cash session / workday
+  const handleReopenDriverSession = async (employeeName: string) => {
+    if (!confirm(`¿Estás seguro de reabrir la caja/turno de hoy para ${employeeName}? Esto le permitirá realizar nuevos viajes o ventas.`)) return;
+    setActionLoading(true);
+    const today = getLocalDateString();
+    try {
+      const { data: todayAtt, error: findError } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      if (findError) throw findError;
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, employeeName));
+      if (!existing) {
+        alert('No se encontró ningún registro de asistencia para este empleado hoy.');
+        return;
+      }
+
+      const lastLocObj = parseJsonFields(existing.last_location);
+      const updatedLocation = {
+        ...lastLocObj,
+        cash_closed: false,
+        cash_closed_at: null,
+        cash_closed_by_name: null,
+        cash_closed_by_role: null
+      };
+
+      const { error: updateError } = await supabase
+        .from('daily_attendance')
+        .update({
+          check_out: null,
+          last_location: updatedLocation,
+          supervisor_cash_approved: false,
+          supervisor_cash_approved_at: null,
+          supervisor_cash_approved_by: null
+        })
+        .eq('id', existing.id);
+
+      if (updateError) throw updateError;
+
+      // Add notifications
+      await supabase.from('notifications_log').insert([
+        {
+          title: '🔓 Caja/Turno Reabierto',
+          message: `El administrador o supervisor reabrió tu caja de hoy. Puedes continuar con tus ventas y rutas de entrega.`,
+          type: 'finance',
+          user_role: existing.user_role || 'driver',
+          is_read: false
+        },
+        {
+          title: '🔓 Caja/Turno Reabierto',
+          message: `La caja de hoy de ${employeeName} fue reabierta por el administrador.`,
+          type: 'finance',
+          user_role: 'admin',
+          is_read: false
+        }
+      ]);
+
+      await loadData();
+      alert(`🔓 ¡La caja/turno de ${employeeName} ha sido reabierta con éxito!`);
+    } catch (e: any) {
+      console.error('Error reopening session:', e);
+      alert('Error al reabrir la caja: ' + e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Helper to assign a new vehicle cargo trip/load of garrafones to a driver
   const handleAddDriverTrip = async (
     employeeName: string, 
@@ -1015,6 +1084,13 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const existingLocation = parseJsonFields(existing?.last_location);
       
       const trips = existingLocation.trips || [];
+      const hasActiveTrip = trips.some((t: any) => t.status === 'active');
+      if (hasActiveTrip) {
+        alert(`⚠️ El repartidor ${employeeName} ya tiene un viaje activo en curso. Por favor, liquida el viaje actual antes de asignarle uno nuevo.`);
+        setActionLoading(false);
+        return;
+      }
+
       const newTrip = {
         id: 'T-' + Math.floor(10000 + Math.random() * 90000),
         trip_number: trips.length + 1,
@@ -1894,7 +1970,15 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                   >
                                     Cerrar Caja
                                   </button>
-                                ) : null}
+                                ) : (
+                                  <button
+                                    onClick={() => handleReopenDriverSession(drv.name)}
+                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest shadow-md shadow-amber-100 transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                                    title="Reabrir la caja/turno para permitir nuevos viajes y registrar nuevas ventas"
+                                  >
+                                    <Unlock size={10} /> Reabrir Caja
+                                  </button>
+                                )}
 
                                 {/* Print tickets for closed drawers */}
                                 {(drv.cash_float !== null || drv.is_closed) && (
