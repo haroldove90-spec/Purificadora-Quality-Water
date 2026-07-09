@@ -753,7 +753,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
             title: '📌 Caja Cerrada (Corte Global)',
             message: `Tu caja ha sido cerrada por el Administrador en corte global. Total: $${totalToDeliver} (Fondo: $${floatAmount} + Ventas: $${sales.salesTotal}).`,
             type: 'finance',
-            user_role: att.user_role || 'driver',
+            user_role: (att.user_role === 'driver' || !att.user_role) && att.user_id ? `driver_${att.user_id}` : (att.user_role || 'driver'),
             is_read: false
           });
         }
@@ -1038,7 +1038,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
           title: '🔓 Caja/Turno Reabierto',
           message: `El administrador o supervisor reabrió tu caja de hoy. Puedes continuar con tus ventas y rutas de entrega.`,
           type: 'finance',
-          user_role: existing.user_role || 'driver',
+          user_role: (existing.user_role === 'driver' || !existing.user_role) && existing.user_id ? `driver_${existing.user_id}` : (existing.user_role || 'driver'),
           is_read: false
         },
         {
@@ -1151,7 +1151,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         title: '🚚 Carga de Inventario registrada',
         message: `Se despachó un viaje de carga con ${loadedQty} garrafones${detailMsg} a ${employeeName}.`,
         type: 'delivery',
-        user_role: targetUserRole,
+        user_role: targetUserRole === 'driver' && targetEmp?.id ? `driver_${targetEmp.id}` : targetUserRole,
         is_read: false
       }]);
 
@@ -2283,7 +2283,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                       />
                                     </div>
 
-                                    {t.loaded_qty_pequeno > 0 && (
+                                    {true && (
                                       <>
                                         <div className="space-y-1 col-span-2 border-t border-slate-100 pt-2 mt-1">
                                           <p className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest">Liquidación Pequeños:</p>
@@ -2293,7 +2293,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                           <input 
                                             type="number"
                                             min="0"
-                                            max={t.loaded_qty_pequeno}
+                                            max={t.loaded_qty_pequeno || 0}
                                             defaultValue={0}
                                             id={`unsold-peq-${t.id}`}
                                             className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-black text-slate-800 outline-none"
@@ -2304,7 +2304,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                           <input 
                                             type="number"
                                             min="0"
-                                            defaultValue={t.loaded_qty_pequeno}
+                                            defaultValue={t.loaded_qty_pequeno || 0}
                                             id={`empty-peq-${t.id}`}
                                             className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-black text-slate-800 outline-none"
                                           />
@@ -2329,14 +2329,14 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
 
                                       let unsoldPeq = 0;
                                       let emptyPeq = 0;
-                                      if (t.loaded_qty_pequeno > 0) {
+                                      if (true) {
                                         const unsoldPeqInp = document.getElementById(`unsold-peq-${t.id}`) as HTMLInputElement;
                                         const emptyPeqInp = document.getElementById(`empty-peq-${t.id}`) as HTMLInputElement;
                                         unsoldPeq = Number(unsoldPeqInp?.value || 0);
                                         emptyPeq = Number(emptyPeqInp?.value || 0);
 
-                                        if (unsoldPeq < 0 || unsoldPeq > t.loaded_qty_pequeno) {
-                                          alert(`Error: Los garrafones pequeños devueltos llenos deben ser entre 0 y ${t.loaded_qty_pequeno}`);
+                                        if (unsoldPeq < 0 || unsoldPeq > (t.loaded_qty_pequeno || 0)) {
+                                          alert(`Error: Los garrafones pequeños devueltos llenos deben ser entre 0 y ${t.loaded_qty_pequeno || 0}`);
                                           return;
                                         }
                                         if (emptyPeq < 0) {

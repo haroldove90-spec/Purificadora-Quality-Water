@@ -129,7 +129,7 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
           title: 'Asistencia Verificada',
           message: `Tu asistencia ha sido confirmada por el supervisor ${supervisorName}`,
           type: 'attendance',
-          user_role: employeeRole,
+          user_role: (employeeRole === 'driver' || !employeeRole) && record?.user_id ? `driver_${record.user_id}` : employeeRole,
           is_read: false
         }
       ]);
@@ -211,7 +211,7 @@ export default function SupervisorDashboard({ userName, userRole, initialTab = '
           title: 'Corte de Caja Aprobado',
           message: `Tu corte de caja ha sido aprobado por el supervisor ${supervisorName}`,
           type: 'finances',
-          user_role: employeeRole,
+          user_role: (employeeRole === 'driver' || !employeeRole) && record?.user_id ? `driver_${record.user_id}` : employeeRole,
           is_read: false
         }
       ]);

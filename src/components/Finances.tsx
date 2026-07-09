@@ -724,11 +724,14 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         if (parts.length > 0) detailMsg = ` (${parts.join(', ')})`;
       }
       
+      const targetEmp = employeesList.find((e: any) => namesMatch(e.name, employeeName));
+      const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
+
       await supabase.from('notifications_log').insert([{
         title: '🚚 Carga de Inventario registrada',
         message: `Se despachó un viaje de carga con ${loadedQty} garrafones${detailMsg} a ${employeeName}.`,
         type: 'delivery',
-        user_role: 'driver',
+        user_role: targetUserId ? `driver_${targetUserId}` : 'driver',
         is_read: false
       }]);
 

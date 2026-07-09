@@ -2328,8 +2328,8 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                     </div>
                   </div>
 
-                  {/* Pequenos inputs if loaded_qty_pequeno > 0 */}
-                  {activeTrip.loaded_qty_pequeno > 0 && (
+                  {/* Pequenos inputs - always show */}
+                  {true && (
                     <div className="space-y-3.5 border-t border-slate-100 dark:border-slate-800 pt-3">
                       <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-400">Garrafones Pequeños:</h4>
                       <div className="grid grid-cols-2 gap-3">
@@ -2338,12 +2338,12 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                           <input
                             type="number"
                             min="0"
-                            max={activeTrip.loaded_qty_pequeno}
+                            max={activeTrip.loaded_qty_pequeno || 0}
                             value={closeTripUnsoldPequeno}
-                            onChange={(e) => setCloseTripUnsoldPequeno(Math.min(activeTrip.loaded_qty_pequeno, Math.max(0, parseInt(e.target.value) || 0)))}
+                            onChange={(e) => setCloseTripUnsoldPequeno(Math.min(activeTrip.loaded_qty_pequeno || 0, Math.max(0, parseInt(e.target.value) || 0)))}
                             className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-3 rounded-xl text-sm font-black text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500"
                           />
-                          <span className="text-[7.5px] text-slate-400 uppercase">Máx: {activeTrip.loaded_qty_pequeno} g.</span>
+                          <span className="text-[7.5px] text-slate-400 uppercase">Máx: {activeTrip.loaded_qty_pequeno || 0} g.</span>
                         </div>
                         <div className="space-y-1">
                           <label className="text-[9px] font-black uppercase text-slate-400 block">Vacíos Pequeños Devueltos</label>
@@ -2365,12 +2365,10 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                       <span className="text-emerald-600 block uppercase">Grandes Vendidos:</span>
                       <span className="text-sm font-black text-slate-800 dark:text-white">{Math.max(0, activeTrip.loaded_qty - Number(closeTripUnsold))} g.</span>
                     </div>
-                    {activeTrip.loaded_qty_pequeno > 0 && (
-                      <div className="text-right">
-                        <span className="text-sky-600 block uppercase">Pequeños Vendidos:</span>
-                        <span className="text-sm font-black text-sky-600">{Math.max(0, activeTrip.loaded_qty_pequeno - Number(closeTripUnsoldPequeno))} g.</span>
-                      </div>
-                    )}
+                    <div>
+                      <span className="text-sky-600 block uppercase">Pequeños Vendidos:</span>
+                      <span className="text-sm font-black text-sky-600">{Math.max(0, (activeTrip.loaded_qty_pequeno || 0) - Number(closeTripUnsoldPequeno))} g.</span>
+                    </div>
                   </div>
                 </div>
 

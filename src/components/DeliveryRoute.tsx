@@ -169,6 +169,12 @@ export default function DeliveryRoute() {
   const [deliveryItems, setDeliveryItems] = useState('');
   const [deliveryTotal, setDeliveryTotal] = useState(0);
 
+  const [soldRosa, setSoldRosa] = useState(0);
+  const [soldAzul, setSoldAzul] = useState(0);
+  const [soldColor, setSoldColor] = useState(0);
+  const [soldPequeno, setSoldPequeno] = useState(0);
+  const [pequenosReceived, setPequenosReceived] = useState(0);
+
   const fetchProducts = async () => {
     try {
       const { data } = await supabase.from('products').select('*').order('name');
@@ -189,17 +195,158 @@ export default function DeliveryRoute() {
       setIsDebt(false);
       setIsGift(false);
       setAmountPaidToday(0);
+      setSoldRosa(0);
+      setSoldAzul(0);
+      setSoldColor(0);
+      setSoldPequeno(0);
+      setPequenosReceived(0);
     }
   }, [step, selectedDelivery]);
+
+  const getSessionInfo = () => {
+    try {
+      const saved = localStorage.getItem('qw_session');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (_) {}
+    return null;
+  };
+
+  const parseJsonFields = (field: any) => {
+    if (!field) return {};
+    if (typeof field === 'string') {
+      try {
+        return JSON.parse(field);
+      } catch (e) {
+        return {};
+      }
+    }
+    return field;
+  };
+
+  const handleUpdateSold = (type: 'azul' | 'rosa' | 'color' | 'pequeno', diff: number) => {
+    let newRosa = soldRosa;
+    let newAzul = soldAzul;
+    let newColor = soldColor;
+    let newPequeno = soldPequeno;
+
+    if (type === 'azul') {
+      newAzul = Math.max(0, soldAzul + diff);
+      setSoldAzul(newAzul);
+    } else if (type === 'rosa') {
+      newRosa = Math.max(0, soldRosa + diff);
+      setSoldRosa(newRosa);
+    } else if (type === 'color') {
+      newColor = Math.max(0, soldColor + diff);
+      setSoldColor(newColor);
+    } else if (type === 'pequeno') {
+      newPequeno = Math.max(0, soldPequeno + diff);
+      setSoldPequeno(newPequeno);
+    }
+
+    // Recalculate deliveryItems string
+    const parts = [];
+    if (newAzul > 0) parts.push(`${newAzul}x Garrafón Azul`);
+    if (newRosa > 0) parts.push(`${newRosa}x Garrafón Rosa`);
+    if (newColor > 0) parts.push(`${newColor}x Garrafón De Color`);
+    if (newPequeno > 0) parts.push(`${newPequeno}x Garrafón Pequeño`);
+    setDeliveryItems(parts.join(', '));
+
+    // Recalculate price total dynamically based on fetched products prices
+    let total = 0;
+    if (products && products.length > 0) {
+      const priceAzul = products.find(p => p.name.toLowerCase().includes('azul'))?.price || 35;
+      const priceRosa = products.find(p => p.name.toLowerCase().includes('rosa'))?.price || 35;
+      const priceColor = products.find(p => p.name.toLowerCase().includes('color'))?.price || 35;
+      const pricePequeno = products.find(p => p.name.toLowerCase().includes('pequeño') || p.name.toLowerCase().includes('pequeno'))?.price || 25;
+
+      total += newAzul * priceAzul;
+      total += newRosa * priceRosa;
+      total += newColor * priceColor;
+      total += newPequeno * pricePequeno;
+    } else {
+      total += newAzul * 35;
+      total += newRosa * 35;
+      total += newColor * 35;
+      total += newPequeno * 25;
+    }
+    setDeliveryTotal(total);
+  };
+
+  const updateDriverAttendanceFromDelivery = async (totalRegularSold: number, totalSmallSold: number) => {
+    const session = getSessionInfo();
+    const driverName = session?.user_name;
+    if (!driverName) return;
+
+    const today = new Date().toLocaleDateString('sv-SE');
+    try {
+      const { data: todayAtt } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', today);
+
+      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, driverName));
+      if (!existing) return;
+
+      const lastLoc = parseJsonFields(existing.last_location);
+      const trips = lastLoc.trips || [];
+      const activeTrip = trips.find((t: any) => t.status === 'active');
+
+      if (activeTrip) {
+        activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularSold;
+        activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallSold;
+        activeTrip.collected_empty_qty = (Number(activeTrip.collected_empty_qty) || 0) + jugsReceived;
+        activeTrip.collected_empty_qty_pequeno = (Number(activeTrip.collected_empty_qty_pequeno) || 0) + pequenosReceived;
+      } else {
+        const newTrip = {
+          id: 'T-' + Math.floor(10000 + Math.random() * 90000),
+          trip_number: trips.length + 1,
+          loaded_qty: 20,
+          loaded_qty_rosa: 0,
+          loaded_qty_azul: 20,
+          loaded_qty_color: 0,
+          loaded_qty_pequeno: totalSmallSold > 0 ? 20 : 0,
+          loaded_qty_lavar: 0,
+          returned_unsold_qty: 0,
+          returned_empty_qty: 0,
+          sold_qty: totalRegularSold,
+          sold_qty_pequeno: totalSmallSold,
+          collected_empty_qty: jugsReceived,
+          collected_empty_qty_pequeno: pequenosReceived,
+          status: 'active',
+          loaded_at: new Date().toISOString()
+        };
+        trips.push(newTrip);
+      }
+
+      const updatedLocation = {
+        ...lastLoc,
+        trips: trips
+      };
+
+      await supabase
+        .from('daily_attendance')
+        .update({ last_location: updatedLocation })
+        .eq('id', existing.id);
+
+    } catch (err) {
+      console.warn('Error updating driver attendance from delivery:', err);
+    }
+  };
 
   const handleComplete = async () => {
     if (!selectedDelivery || !currentDelivery) return;
     setCompleting(true);
     
+    const totalRegularSold = soldAzul + soldRosa + soldColor;
+    const totalSmallSold = soldPequeno;
+    
     try {
       if (isGift) {
         const result = await handleCompleteDelivery(selectedDelivery, `${deliveryItems} [OBSEQUIO/REGALO]`, 0, 'delivered');
         if (result.success) {
+          await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
           await fetchDeliveries();
           setStep(1);
           setSelectedDelivery(null);
@@ -212,6 +359,7 @@ export default function DeliveryRoute() {
           // No debt in practice
           const result = await handleCompleteDelivery(selectedDelivery, deliveryItems, deliveryTotal, 'delivered');
           if (result.success) {
+            await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
             await fetchDeliveries();
             setStep(1);
             setSelectedDelivery(null);
@@ -222,6 +370,7 @@ export default function DeliveryRoute() {
           // Fully pending payment
           const result = await handleCompleteDelivery(selectedDelivery, `${deliveryItems} (Se debe)`, deliveryTotal, 'pending_payment');
           if (result.success) {
+            await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
             await fetchDeliveries();
             setStep(1);
             setSelectedDelivery(null);
@@ -232,6 +381,7 @@ export default function DeliveryRoute() {
           // Split into paid portion and unpaid portion (debt)
           const result = await handleCompleteDelivery(selectedDelivery, `${deliveryItems} [PAGO PARCIAL]`, Number(amountPaidToday), 'delivered');
           if (result.success) {
+            await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
             // Write cumulative debt remainder order
             const { error: insertErr } = await supabase
               .from('orders')
@@ -263,6 +413,7 @@ export default function DeliveryRoute() {
       } else {
         const result = await handleCompleteDelivery(selectedDelivery, deliveryItems, deliveryTotal, 'delivered');
         if (result.success) {
+          await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
           await fetchDeliveries();
           setStep(1);
           setSelectedDelivery(null);
@@ -282,27 +433,37 @@ export default function DeliveryRoute() {
     if (!selectedDelivery || !currentDelivery) return;
     setCompleting(true);
     try {
+      const itemsString = pequenosReceived > 0 
+        ? `${jugsReceived} G. Grandes y ${pequenosReceived} G. Pequeños p/Lavado (Recogidos por ${currentDelivery.assigned_to_name || 'Repartidor'})`
+        : `${jugsReceived} Garrafones p/Lavado (Recogidos por ${currentDelivery.assigned_to_name || 'Repartidor'})`;
+
       const { error } = await supabase
         .from('orders')
         .update({
-          items: `${jugsReceived} Garrafones p/Lavado (Recogidos por ${currentDelivery.assigned_to_name || 'Repartidor'})`,
+          items: itemsString,
           status: 'pickup_confirmed' // Transferred to pickup_confirmed state
         })
         .eq('id', selectedDelivery);
         
       if (error) throw error;
 
+      await updateDriverAttendanceFromDelivery(0, 0);
+
+      const notifMsg = pequenosReceived > 0
+        ? `${currentDelivery.assigned_to_name || 'Repartidor'} recogió ${jugsReceived} g. grandes y ${pequenosReceived} g. pequeños vacíos de ${currentDelivery.customer_name} y va de regreso a planta.`
+        : `${currentDelivery.assigned_to_name || 'Repartidor'} recogió ${jugsReceived} garrafones vacíos de ${currentDelivery.customer_name} y va de regreso a planta.`;
+
       // Log notifications to plant/admin
       await supabase.from('notifications_log').insert([
         {
           title: 'Garrafones Recogidos 🔄',
-          message: `${currentDelivery.assigned_to_name || 'Repartidor'} recogió ${jugsReceived} garrafones vacíos de ${currentDelivery.customer_name} y va de regreso a planta.`,
+          message: notifMsg,
           type: 'order',
           user_role: 'admin'
         },
         {
           title: 'Garrafones Recogidos 🔄',
-          message: `${currentDelivery.assigned_to_name || 'Repartidor'} recogió ${jugsReceived} garrafones vacíos de ${currentDelivery.customer_name} y va de regreso a planta.`,
+          message: notifMsg,
           type: 'order',
           user_role: 'operator'
         }
@@ -670,24 +831,59 @@ export default function DeliveryRoute() {
           </h3>
 
           <div className="space-y-6">
-            <div className="text-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                {currentDelivery?.status === 'pickup_assigned' ? 'Cantidad de Garrafones Recogidos' : 'Envases Recibidos'}
-              </p>
-              <div className="flex items-center justify-center gap-6">
-                <button 
-                  onClick={() => setJugsReceived(Math.max(0, jugsReceived - 1))}
-                  className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-600 active:bg-slate-150 shadow-sm min-h-[44px]"
-                >
-                  <Minus size={20} />
-                </button>
-                <span className="text-4xl font-black text-slate-950 w-12">{jugsReceived}</span>
-                <button 
-                  onClick={() => setJugsReceived(jugsReceived + 1)}
-                  className={currentDelivery?.status === 'pickup_assigned' ? "w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white active:bg-indigo-700 shadow-lg shadow-indigo-500/20 min-h-[44px]" : "w-12 h-12 bg-sky-500 rounded-xl flex items-center justify-center text-white active:bg-sky-600 shadow-lg shadow-sky-500/20 min-h-[44px]"}
-                >
-                  <Plus size={20} />
-                </button>
+            {/* Envases Vacíos Recibidos */}
+            <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 text-center space-y-4">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  {currentDelivery?.status === 'pickup_assigned' ? 'Garrafones para Lavado Recogidos' : 'Envases Vacíos Recibidos'}
+                </p>
+                <p className="text-[9px] text-slate-400 font-bold uppercase">Registra los envases vacíos recogidos en esta visita</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3.5">
+                {/* Grandes */}
+                <div className="bg-white p-3 rounded-2xl border border-slate-100 flex flex-col items-center">
+                  <span className="text-[10px] font-black text-slate-400 uppercase mb-2">🔵 Grandes 20L</span>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      type="button"
+                      onClick={() => setJugsReceived(Math.max(0, jugsReceived - 1))}
+                      className="w-8 h-8 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 active:bg-slate-100 min-h-[44px] cursor-pointer"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="text-xl font-black text-slate-950 w-6 text-center">{jugsReceived}</span>
+                    <button 
+                      type="button"
+                      onClick={() => setJugsReceived(jugsReceived + 1)}
+                      className={currentDelivery?.status === 'pickup_assigned' ? "w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white active:bg-indigo-700 min-h-[44px] cursor-pointer" : "w-8 h-8 bg-sky-500 rounded-lg flex items-center justify-center text-white active:bg-sky-600 min-h-[44px] cursor-pointer"}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Pequeños */}
+                <div className="bg-white p-3 rounded-2xl border border-slate-100 flex flex-col items-center">
+                  <span className="text-[10px] font-black text-slate-400 uppercase mb-2">🍼 Pequeños 10L</span>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      type="button"
+                      onClick={() => setPequenosReceived(Math.max(0, pequenosReceived - 1))}
+                      className="w-8 h-8 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 active:bg-slate-100 min-h-[44px] cursor-pointer"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="text-xl font-black text-slate-950 w-6 text-center">{pequenosReceived}</span>
+                    <button 
+                      type="button"
+                      onClick={() => setPequenosReceived(pequenosReceived + 1)}
+                      className={currentDelivery?.status === 'pickup_assigned' ? "w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white active:bg-indigo-700 min-h-[44px] cursor-pointer" : "w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center text-white active:bg-indigo-600 min-h-[44px] cursor-pointer"}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -716,6 +912,113 @@ export default function DeliveryRoute() {
                 <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-3">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Concepto de la Venta / Productos</label>
                   
+                  {/* Desglose de Garrafones Entregados */}
+                  <div className="bg-white p-3 rounded-2xl border border-slate-100 space-y-3.5 text-left">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Desglose de Garrafones Entregados / Vendidos</span>
+                    
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {/* Azul */}
+                      <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <div>
+                          <p className="text-xs font-black text-slate-800">🔵 Azul</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase">Grande 20L</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('azul', -1)}
+                            className="w-6 h-6 bg-white hover:bg-slate-100 rounded-lg flex items-center justify-center font-bold text-slate-600 border border-slate-150 min-h-[30px]"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-black text-slate-850 w-3.5 text-center">{soldAzul}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('azul', 1)}
+                            className="w-6 h-6 bg-sky-500 hover:bg-sky-600 rounded-lg flex items-center justify-center font-bold text-white shadow-sm min-h-[30px]"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Rosa */}
+                      <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <div>
+                          <p className="text-xs font-black text-slate-800">🌸 Rosa</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase">Grande 20L</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('rosa', -1)}
+                            className="w-6 h-6 bg-white hover:bg-slate-100 rounded-lg flex items-center justify-center font-bold text-slate-600 border border-slate-150 min-h-[30px]"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-black text-slate-850 w-3.5 text-center">{soldRosa}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('rosa', 1)}
+                            className="w-6 h-6 bg-pink-500 hover:bg-pink-600 rounded-lg flex items-center justify-center font-bold text-white shadow-sm min-h-[30px]"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Color */}
+                      <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <div>
+                          <p className="text-xs font-black text-slate-800">🟢 Color</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase">Grande 20L</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('color', -1)}
+                            className="w-6 h-6 bg-white hover:bg-slate-100 rounded-lg flex items-center justify-center font-bold text-slate-600 border border-slate-150 min-h-[30px]"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-black text-slate-850 w-3.5 text-center">{soldColor}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('color', 1)}
+                            className="w-6 h-6 bg-emerald-500 hover:bg-emerald-600 rounded-lg flex items-center justify-center font-bold text-white shadow-sm min-h-[30px]"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Pequeño */}
+                      <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <div>
+                          <p className="text-xs font-black text-slate-800">👶 Pequeño</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase">10L / Chico</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('pequeno', -1)}
+                            className="w-6 h-6 bg-white hover:bg-slate-100 rounded-lg flex items-center justify-center font-bold text-slate-600 border border-slate-150 min-h-[30px]"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-black text-slate-850 w-3.5 text-center">{soldPequeno}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSold('pequeno', 1)}
+                            className="w-6 h-6 bg-indigo-500 hover:bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white shadow-sm min-h-[30px]"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Catalogue items buttons */}
                   <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-1 custom-scrollbar">
                     {products.map(p => (
