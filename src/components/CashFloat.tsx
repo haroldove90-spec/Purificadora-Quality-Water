@@ -2256,6 +2256,13 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                 </div>
                               ) : null}
 
+                              {t.assigned_route && (
+                                <div className="p-2 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-between text-left">
+                                  <span className="text-[8px] font-black text-indigo-700 uppercase tracking-widest leading-none">Ruta Asignada:</span>
+                                  <strong className="text-[10px] font-black text-indigo-900 uppercase italic">{t.assigned_route}</strong>
+                                </div>
+                              )}
+
                               {/* ACTIVE TRIP LIQUIDATION FORM */}
                               {t.status === 'active' ? (
                                 <div className="p-3 bg-white border border-slate-200/60 rounded-xl space-y-3">

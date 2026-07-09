@@ -416,6 +416,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'gift' | 'debt'>('cash');
+  const [saleChannel, setSaleChannel] = useState<'mostrador' | 'whatsapp'>('mostrador');
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -982,11 +983,11 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     const payload = {
       id: generateOrderUUID(),
       customer_name: isPickupOrder ? `🔄 [RECOGER] ${generatedTicket.customer_name}` : (generatedTicket.customer_name || 'Venta Mostrador'),
-      address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : manualCustomerAddress,
+      address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : (saleChannel === 'whatsapp' ? 'Planta | WhatsApp' : 'Planta | Mostrador'),
       items: saveItems,
       total_price: savePrice,
       status: orderStatus,
-      source: isPickupOrder ? 'phone' : 'pos',
+      source: isPickupOrder ? 'phone' : (saleChannel === 'whatsapp' ? 'whatsapp' : 'pos'),
       payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
       assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
       assigned_to_name: (() => {
@@ -1827,6 +1828,39 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                 </div>
               )}
             </div>
+
+            {/* Canal de venta selector for Plant role / Operators */}
+            {userRole !== 'driver' && (
+              <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+                <label className="text-[10px] font-black uppercase text-slate-400 block text-left">
+                  Canal de Venta (Venta en Planta)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSaleChannel('mostrador')}
+                    className={`py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                      saleChannel === 'mostrador'
+                        ? 'bg-sky-500 border-sky-500 text-white shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900'
+                    }`}
+                  >
+                    🏪 Mostrador
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaleChannel('whatsapp')}
+                    className={`py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                      saleChannel === 'whatsapp'
+                        ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900'
+                    }`}
+                  >
+                    💬 WhatsApp
+                  </button>
+                </div>
+              </div>
+            )}
             
           </div>
 

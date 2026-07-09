@@ -179,6 +179,12 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [dispatchPequeno, setDispatchPequeno] = useState<number>(0);
   const [dispatchLavar, setDispatchLavar] = useState<number>(0);
   const [dispatchDriver, setDispatchDriver] = useState<string>('');
+  const [dispatchRoute, setDispatchRoute] = useState<string>('1.- Santa Cruz');
+
+  // States for other modules' records under Metrics
+  const [metricsAttendance, setMetricsAttendance] = useState<any[]>([]);
+  const [metricsQualityLogs, setMetricsQualityLogs] = useState<any[]>([]);
+  const [metricsProducts, setMetricsProducts] = useState<any[]>([]);
 
   const calculateTotalVolume = () => {
     let total = 0;
@@ -335,48 +341,55 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const getRouteMetricsForPeriod = () => {
     const listForPeriod = filterByTimePeriod(salesList);
 
-    let rutaCentroTotal = 0;
-    let rutaCentroCount = 0;
-    let rutaSantaCruzTotal = 0;
-    let rutaSantaCruzCount = 0;
-    let telefonoWhatsappTotal = 0;
-    let telefonoWhatsappCount = 0;
-    let ventaPlantaTotal = 0;
-    let ventaPlantaCount = 0;
+    let santaCruzTotal = 0;
+    let santaCruzCount = 0;
+    let sanMiguelTotal = 0;
+    let sanMiguelCount = 0;
+    let laFranciaTotal = 0;
+    let laFranciaCount = 0;
+    let plantaTotal = 0;
+    let plantaCount = 0;
+    let llamadasWhatsappTotal = 0;
+    let llamadasWhatsappCount = 0;
 
     listForPeriod.forEach(s => {
       const route = getOrderRoute(s);
       const amount = Number(s.total_price || s.amount || 0);
 
-      if (route === 'Ruta Centro') {
-        rutaCentroTotal += amount;
-        rutaCentroCount++;
-      } else if (route === 'Ruta Santa Cruz') {
-        rutaSantaCruzTotal += amount;
-        rutaSantaCruzCount++;
-      } else if (route === 'Llamadas telefónicas - whatsapp') {
-        telefonoWhatsappTotal += amount;
-        telefonoWhatsappCount++;
-      } else if (route === 'Venta planta') {
-        ventaPlantaTotal += amount;
-        ventaPlantaCount++;
+      if (route === '1.- Santa Cruz') {
+        santaCruzTotal += amount;
+        santaCruzCount++;
+      } else if (route === '2.- San Miguel-Centro') {
+        sanMiguelTotal += amount;
+        sanMiguelCount++;
+      } else if (route === '3.- La Francia-Los Reyes') {
+        laFranciaTotal += amount;
+        laFranciaCount++;
+      } else if (route === '4.- Planta o Local') {
+        plantaTotal += amount;
+        plantaCount++;
+      } else if (route === '5.- llamadas Telefónicas y WhatsApp') {
+        llamadasWhatsappTotal += amount;
+        llamadasWhatsappCount++;
       } else {
-        ventaPlantaTotal += amount;
-        ventaPlantaCount++;
+        plantaTotal += amount;
+        plantaCount++;
       }
     });
 
     const totalSales = listForPeriod.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
 
     return {
-      rutaCentroTotal,
-      rutaCentroCount,
-      rutaSantaCruzTotal,
-      rutaSantaCruzCount,
-      telefonoWhatsappTotal,
-      telefonoWhatsappCount,
-      ventaPlantaTotal,
-      ventaPlantaCount,
+      santaCruzTotal,
+      santaCruzCount,
+      sanMiguelTotal,
+      sanMiguelCount,
+      laFranciaTotal,
+      laFranciaCount,
+      plantaTotal,
+      plantaCount,
+      llamadasWhatsappTotal,
+      llamadasWhatsappCount,
       totalSales,
       totalCount: listForPeriod.length
     };
@@ -387,16 +400,34 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     const plantSales = salesList.filter(s => {
       const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
       const isToday = dStr === todayStr;
-      const isPlant = !s.assigned_to_name || namesMatch(s.assigned_to_name, 'Mostrador') || s.source === 'local' || s.source === 'pos';
+      const isPlant = !s.assigned_to_name || 
+                      namesMatch(s.assigned_to_name, 'Mostrador') || 
+                      s.assigned_to_name.toLowerCase().includes('planta') ||
+                      s.source === 'local' || 
+                      s.source === 'pos' || 
+                      s.source === 'whatsapp' ||
+                      (s.address && s.address.toLowerCase().includes('planta'));
       return isToday && isPlant;
     });
 
     const totalRevenue = plantSales.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
     
+    let counterTotal = 0;
+    let whatsappTotal = 0;
     let llenados = 0;
     let envasesNuevos = 0;
 
     plantSales.forEach(s => {
+      const price = Number(s.total_price || s.amount || 0);
+      const isWA = s.source === 'whatsapp' || 
+                   (s.address && s.address.toLowerCase().includes('whatsapp')) ||
+                   (s.assigned_to_name && s.assigned_to_name.toLowerCase().includes('whatsapp'));
+      if (isWA) {
+        whatsappTotal += price;
+      } else {
+        counterTotal += price;
+      }
+
       const items = (s.items || '').toLowerCase();
       
       const llenadosMatch = items.match(/(\d+)\s*(llenado|refill|garrafon\s*vacio|garrafón)/gi);
@@ -428,6 +459,9 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
     return {
       totalRevenue: totalRevenue,
+      counterTotal: counterTotal,
+      whatsappTotal: whatsappTotal,
+      totalCount: plantSales.length,
       llenados: llenados,
       envasesNuevos: envasesNuevos
     };
@@ -621,13 +655,39 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           const operatorSales = data.filter((s: any) => 
             s.source === 'pos' || 
             s.source === 'local' ||
-            (s.address && s.address.includes(' | Planta'))
+            s.source === 'whatsapp' ||
+            (s.address && s.address.includes(' | Planta')) ||
+            !s.assigned_to_name ||
+            s.assigned_to_name.includes('Mostrador') ||
+            s.assigned_to_name.includes('Planta')
           );
           setSalesList(operatorSales);
         } else {
           setSalesList(data);
         }
       }
+
+      // Fetch other modules' records for Metrics
+      const { data: attData } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .order('work_date', { ascending: false })
+        .limit(20);
+      if (attData) setMetricsAttendance(attData);
+
+      const { data: qlData } = await supabase
+        .from('quality_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (qlData) setMetricsQualityLogs(qlData);
+
+      const { data: prodData } = await supabase
+        .from('products')
+        .select('*')
+        .order('name', { ascending: true });
+      if (prodData) setMetricsProducts(prodData);
+
     } catch (err) {
       console.warn('Error fetching sales:', err);
     } finally {
@@ -644,7 +704,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       deColor?: number;
       pequeno?: number;
       lavar?: number;
-    }
+    },
+    routeParam?: string
   ) => {
     const today = new Date().toLocaleDateString('en-CA');
     try {
@@ -692,7 +753,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         returned_empty_qty: 0,
         sold_qty: 0,
         status: 'active',
-        loaded_at: new Date().toISOString()
+        loaded_at: new Date().toISOString(),
+        assigned_route: routeParam || dispatchRoute || '1.- Santa Cruz'
       };
 
       const updatedLocation = {
@@ -726,16 +788,17 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       
       const targetEmp = employeesList.find((e: any) => namesMatch(e.name, employeeName));
       const targetUserId = targetEmp?.id || targetEmp?.user_id || null;
+      const finalRoute = routeParam || dispatchRoute || '1.- Santa Cruz';
 
       await supabase.from('notifications_log').insert([{
         title: '🚚 Carga de Inventario registrada',
-        message: `Se despachó un viaje de carga con ${loadedQty} garrafones${detailMsg} a ${employeeName}.`,
+        message: `Se despachó un viaje de carga con ${loadedQty} garrafones${detailMsg} a ${employeeName} para la ruta: ${finalRoute}.`,
         type: 'delivery',
         user_role: targetUserId ? `driver_${targetUserId}` : 'driver',
         is_read: false
       }]);
 
-      alert(`¡Carga de ${loadedQty} garrafones${detailMsg} asignada con éxito a ${employeeName}!`);
+      alert(`¡Carga de ${loadedQty} garrafones${detailMsg} asignada con éxito a ${employeeName} para la ruta: ${finalRoute}!`);
     } catch (e: any) {
       alert('Error al asignar carga de viaje: ' + e.message);
     }
@@ -824,6 +887,172 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       console.error('PDF Export failed:', error);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportExcel = (type: string) => {
+    try {
+      let columns: string[] = [];
+      let data: any[][] = [];
+      let filename = '';
+
+      if (activeTab === 'sales') {
+        filename = 'Reporte_Ventas';
+        columns = ['Folio', 'Cliente', 'Cobrado Por', 'Productos/Items', 'Fuente', 'Monto', 'Fecha/Hora'];
+        const listToExport = getFilteredSales();
+        data = listToExport.map(s => [
+          s.id.slice(0, 8).toUpperCase(),
+          s.customer_name || 'Venta Mostrador',
+          s.assigned_to_name || 'Mostrador',
+          s.items || '',
+          s.source === 'local' ? 'Planta' : s.source === 'whatsapp' ? 'WhatsApp' : s.source === 'pos' ? 'Venta POS' : 'Teléfono',
+          Number(s.total_price || 0).toFixed(2),
+          new Date(s.created_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+        ]);
+      } else if (activeTab === 'customers') {
+        filename = 'Directorio_Clientes';
+        columns = ['Nombre', 'Zona/Dirección', 'Nivel', 'Pedidos'];
+        const list = customersList.length > 0 ? customersList : CLIENT_MANAGEMENT;
+        data = list.map(c => [c.name, c.address || c.neighborhood, c.tier, c.totalOrders || '0']);
+      } else if (activeTab === 'driver_sales') {
+        filename = 'Directorio_Empleados';
+        columns = ['Nombre', 'Rol', 'Teléfono', 'Estatus'];
+        const list = employeesList.length > 0 ? employeesList : SELLER_PERFORMANCE;
+        data = list.map(e => [e.name, e.role, e.phone || '-', e.status || 'active']);
+      } else if (type === 'Corte de Caja') {
+        filename = 'Corte_Caja_Planta';
+        columns = ['Concepto', 'Detalle', 'Valor'];
+        const plantStats = getPlantSalesToday();
+        data = [
+          ['Total Mostrador Hoy', 'Ventas realizadas físicamente en mostrador', `$${plantStats.counterTotal.toFixed(2)}`],
+          ['Total WhatsApp Hoy', 'Ventas de planta coordinadas vía WhatsApp', `$${plantStats.whatsappTotal.toFixed(2)}`],
+          ['Total Neto Recaudado', 'Suma acumulada de ingresos en planta', `$${plantStats.totalRevenue.toFixed(2)}`],
+          ['Pedidos Registrados', 'Número de transacciones procesadas hoy', String(plantStats.totalCount)]
+        ];
+      } else {
+        filename = 'Metricas_Operativas';
+        columns = ['Dia', 'Ventas', 'Pedidos'];
+        data = SALES_DATA.map(d => [d.day, `$${d.sales}`, d.orders]);
+      }
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Excel Export failed:', error);
+    }
+  };
+
+  const handleExportAttendance = (format: 'pdf' | 'excel') => {
+    const columns = ['Colaborador', 'Fecha de Trabajo', 'Rol', 'Entrada', 'Salida / Estado'];
+    const data = metricsAttendance.map(att => [
+      att.user_name || 'Sin Nombre',
+      att.work_date || '',
+      att.user_role || '',
+      att.check_in ? new Date(att.check_in).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '-',
+      att.check_out ? new Date(att.check_out).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : (att.last_location ? 'Activo' : '-')
+    ]);
+    const filename = 'Historial_Asistencia';
+
+    if (format === 'pdf') {
+      exportToPDF({
+        title: 'Reporte de Asistencia del Personal',
+        subtitle: `Generado el ${new Date().toLocaleDateString()} - Control Operativo`,
+        columns,
+        data,
+        filename
+      });
+    } else {
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleExportQuality = (format: 'pdf' | 'excel') => {
+    const columns = ['Tipo Registro', 'Detalle/Observación', 'Registrado Por', 'Fecha/Hora'];
+    const data = metricsQualityLogs.map(log => [
+      log.type || '',
+      log.notes || log.observation || '',
+      log.operator_name || 'Operador',
+      new Date(log.created_at).toLocaleString('es-MX')
+    ]);
+    const filename = 'Bitacora_Control_Calidad';
+
+    if (format === 'pdf') {
+      exportToPDF({
+        title: 'Bitácora de Control de Calidad',
+        subtitle: `Generado el ${new Date().toLocaleDateString()} - Planta QualityWater`,
+        columns,
+        data,
+        filename
+      });
+    } else {
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleExportInventory = (format: 'pdf' | 'excel') => {
+    const columns = ['Producto', 'Categoría', 'Stock en Planta', 'Precio'];
+    const data = metricsProducts.map(prod => [
+      prod.name || '',
+      prod.category || '',
+      String(prod.stock || 0),
+      `$${Number(prod.price || 0).toFixed(2)}`
+    ]);
+    const filename = 'Catalogo_Inventario_Productos';
+
+    if (format === 'pdf') {
+      exportToPDF({
+        title: 'Inventario y Catálogo de Productos',
+        subtitle: `Generado el ${new Date().toLocaleDateString()} - Control de Almacén`,
+        columns,
+        data,
+        filename
+      });
+    } else {
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
@@ -1288,14 +1517,16 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
               {(() => {
                 const { plantSalesTotal, plantSalesCount, employeePlantBreakdown } = getPlantAndFieldSalesToday();
                 const {
-                  rutaCentroTotal,
-                  rutaCentroCount,
-                  rutaSantaCruzTotal,
-                  rutaSantaCruzCount,
-                  telefonoWhatsappTotal,
-                  telefonoWhatsappCount,
-                  ventaPlantaTotal,
-                  ventaPlantaCount,
+                  santaCruzTotal,
+                  santaCruzCount,
+                  sanMiguelTotal,
+                  sanMiguelCount,
+                  laFranciaTotal,
+                  laFranciaCount,
+                  plantaTotal,
+                  plantaCount,
+                  llamadasWhatsappTotal,
+                  llamadasWhatsappCount,
                   totalSales
                 } = getRouteMetricsForPeriod();
 
@@ -1304,90 +1535,114 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     {/* Global Comparison Card */}
                     <div className="lg:col-span-1 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between">
                       <div>
-                        <h3 className="font-black text-slate-800 mb-1 uppercase text-[10px] tracking-widest">Comparativa por Ruta y Canal</h3>
+                        <h3 className="font-black text-slate-800 mb-1 uppercase text-[10px] tracking-widest">Comparativa por Ruta Oficial</h3>
                         <p className="text-[10px] font-bold text-slate-400 mb-4 uppercase">
                           Período: {timePeriod === 'today' ? 'Hoy' : timePeriod === 'week' ? 'Esta Semana' : timePeriod === 'month' ? 'Este Mes' : 'Histórico (Todo)'}
                         </p>
                         
-                        <div className="space-y-2.5 max-h-[320px] overflow-y-auto no-scrollbar pr-0.5">
-                          {/* Ruta Centro */}
+                        <div className="space-y-2.5 max-h-[360px] overflow-y-auto no-scrollbar pr-0.5">
+                          {/* Santa Cruz */}
                           <div className="p-3.5 rounded-2xl bg-indigo-50/50 border border-indigo-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black">
-                                <Truck size={16} />
+                              <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black text-[9px]">
+                                1
                               </div>
                               <div>
-                                <p className="text-[9px] font-black uppercase text-slate-400">Ruta Centro</p>
-                                <p className="text-base font-black text-slate-900">${rutaCentroTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p className="text-[9px] font-black uppercase text-slate-400">1.- Santa Cruz</p>
+                                <p className="text-sm font-black text-slate-900">${santaCruzTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                               </div>
                             </div>
-                            <span className="text-[9px] bg-indigo-100 text-indigo-600 font-black px-2 py-1 rounded-full uppercase">{rutaCentroCount} ped.</span>
+                            <span className="text-[9px] bg-indigo-100 text-indigo-600 font-black px-2 py-1 rounded-full uppercase">{santaCruzCount} ped.</span>
                           </div>
 
-                          {/* Ruta Santa Cruz */}
+                          {/* San Miguel-Centro */}
                           <div className="p-3.5 rounded-2xl bg-sky-50/50 border border-sky-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black">
-                                <Truck size={16} />
+                              <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black text-[9px]">
+                                2
                               </div>
                               <div>
-                                <p className="text-[9px] font-black uppercase text-slate-400">Ruta Santa Cruz</p>
-                                <p className="text-base font-black text-slate-900">${rutaSantaCruzTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p className="text-[9px] font-black uppercase text-slate-400">2.- San Miguel-Centro</p>
+                                <p className="text-sm font-black text-slate-900">${sanMiguelTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                               </div>
                             </div>
-                            <span className="text-[9px] bg-sky-100 text-sky-600 font-black px-2 py-1 rounded-full uppercase">{rutaSantaCruzCount} ped.</span>
+                            <span className="text-[9px] bg-sky-100 text-sky-600 font-black px-2 py-1 rounded-full uppercase">{sanMiguelCount} ped.</span>
                           </div>
 
-                          {/* Llamadas telefónicas - whatsapp */}
-                          <div className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black">
-                                <ShoppingBag size={16} />
-                              </div>
-                              <div>
-                                <p className="text-[9px] font-black uppercase text-slate-400">Teléfono / WhatsApp</p>
-                                <p className="text-base font-black text-slate-900">${telefonoWhatsappTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                              </div>
-                            </div>
-                            <span className="text-[9px] bg-emerald-100 text-emerald-600 font-black px-2 py-1 rounded-full uppercase">{telefonoWhatsappCount} ped.</span>
-                          </div>
-
-                          {/* Venta planta */}
+                          {/* La Francia-Los Reyes */}
                           <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black">
-                                <Store size={16} />
+                              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-[9px]">
+                                3
                               </div>
                               <div>
-                                <p className="text-[9px] font-black uppercase text-slate-400">Venta Planta (Local)</p>
-                                <p className="text-base font-black text-slate-900">${ventaPlantaTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p className="text-[9px] font-black uppercase text-slate-400">3.- La Francia-Los Reyes</p>
+                                <p className="text-sm font-black text-slate-900">${laFranciaTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                               </div>
                             </div>
-                            <span className="text-[9px] bg-amber-100 text-amber-600 font-black px-2 py-1 rounded-full uppercase">{ventaPlantaCount} ped.</span>
+                            <span className="text-[9px] bg-amber-100 text-amber-600 font-black px-2 py-1 rounded-full uppercase">{laFranciaCount} ped.</span>
+                          </div>
+
+                          {/* Planta o Local */}
+                          <div className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black text-[9px]">
+                                4
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-slate-400">4.- Planta o Local</p>
+                                <p className="text-sm font-black text-slate-900">${plantaTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] bg-emerald-100 text-emerald-600 font-black px-2 py-1 rounded-full uppercase">{plantaCount} ped.</span>
+                          </div>
+
+                          {/* llamadas Telefónicas y WhatsApp */}
+                          <div className="p-3.5 rounded-2xl bg-rose-50/50 border border-rose-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center font-black text-[9px]">
+                                5
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-slate-400">5.- Teléfono y WhatsApp</p>
+                                <p className="text-sm font-black text-slate-900">${llamadasWhatsappTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] bg-rose-100 text-rose-600 font-black px-2 py-1 rounded-full uppercase">{llamadasWhatsappCount} ped.</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Simple Horizontal Progress Ratio */}
                       <div className="mt-6">
-                        <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase mb-1.5">
-                          <span>Rutas</span>
-                          <span>Teléfono/WSP</span>
+                        <div className="flex justify-between text-[8px] font-black text-slate-400 uppercase mb-1.5">
+                          <span>S.Cruz</span>
+                          <span>S.Miguel</span>
+                          <span>L.Francia</span>
                           <span>Planta</span>
+                          <span>WSP/Tel</span>
                         </div>
                         {totalSales > 0 ? (
                           <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden flex">
                             <div 
-                              className="h-full bg-indigo-500 transition-all animate-pulse" 
-                              style={{ width: `${((rutaCentroTotal + rutaSantaCruzTotal) / totalSales) * 100}%` }} 
+                              className="h-full bg-indigo-500 transition-all" 
+                              style={{ width: `${(santaCruzTotal / totalSales) * 100}%` }} 
                             />
                             <div 
-                              className="h-full bg-emerald-500 transition-all" 
-                              style={{ width: `${(telefonoWhatsappTotal / totalSales) * 100}%` }} 
+                              className="h-full bg-sky-500 transition-all" 
+                              style={{ width: `${(sanMiguelTotal / totalSales) * 100}%` }} 
                             />
                             <div 
                               className="h-full bg-amber-500 transition-all" 
-                              style={{ width: `${(ventaPlantaTotal / totalSales) * 100}%` }} 
+                              style={{ width: `${(laFranciaTotal / totalSales) * 100}%` }} 
+                            />
+                            <div 
+                              className="h-full bg-emerald-500 transition-all" 
+                              style={{ width: `${(plantaTotal / totalSales) * 100}%` }} 
+                            />
+                            <div 
+                              className="h-full bg-rose-500 transition-all" 
+                              style={{ width: `${(llamadasWhatsappTotal / totalSales) * 100}%` }} 
                             />
                           </div>
                         ) : (
@@ -1481,6 +1736,163 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                         <span className="text-sm font-black text-slate-800">{item.value}%</span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION FOR OTHER CRITICAL ENTERPRISE MODULES */}
+              <div className="pt-4">
+                <div className="border-b border-slate-200 pb-3 mb-6">
+                  <h3 className="font-black text-slate-800 uppercase text-[12px] tracking-widest flex items-center gap-2">
+                    📋 Monitoreo Operativo de Módulos Clave
+                  </h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                    Visualización en tiempo real de registros de Asistencia, Calidad y Existencias en Almacén
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* ATTENDANCE WORK LOGS */}
+                  <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
+                        <div>
+                          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest block">Asistencia del Personal</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase">Últimos registros</span>
+                        </div>
+                        <div className="flex gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleExportAttendance('pdf')}
+                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-colors"
+                            title="Exportar a PDF"
+                          >
+                            PDF
+                          </button>
+                          <button
+                            onClick={() => handleExportAttendance('excel')}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-colors"
+                            title="Exportar a Excel"
+                          >
+                            Excel
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[280px] overflow-y-auto no-scrollbar">
+                        {metricsAttendance.length > 0 ? (
+                          metricsAttendance.map((att, idx) => (
+                            <div key={idx} className="p-3 bg-slate-50 border border-slate-100/70 rounded-xl flex items-center justify-between text-xs">
+                              <div>
+                                <p className="font-extrabold text-slate-700 uppercase">{att.user_name}</p>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase">{att.user_role} • {att.work_date}</p>
+                              </div>
+                              <div className="text-right font-mono text-[9px] text-slate-600">
+                                <p><span className="text-emerald-500 font-bold">In:</span> {att.check_in ? new Date(att.check_in).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
+                                <p><span className="text-rose-500 font-bold">Out:</span> {att.check_out ? new Date(att.check_out).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : (att.last_location ? 'Activo' : '-')}</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-[10px] text-slate-400 text-center py-6 uppercase italic">No hay registros de asistencia hoy.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* QUALITY LOGS */}
+                  <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
+                        <div>
+                          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest block">Bitácora de Calidad</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase">Monitoreo de Planta</span>
+                        </div>
+                        <div className="flex gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleExportQuality('pdf')}
+                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-colors"
+                            title="Exportar a PDF"
+                          >
+                            PDF
+                          </button>
+                          <button
+                            onClick={() => handleExportQuality('excel')}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-colors"
+                            title="Exportar a Excel"
+                          >
+                            Excel
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[280px] overflow-y-auto no-scrollbar">
+                        {metricsQualityLogs.length > 0 ? (
+                          metricsQualityLogs.map((log, idx) => (
+                            <div key={idx} className="p-3 bg-slate-50 border border-slate-100/70 rounded-xl text-xs space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="font-extrabold text-blue-600 uppercase text-[9px] bg-blue-50 px-2 py-0.5 rounded">{log.type}</span>
+                                <span className="text-[8px] text-slate-400 font-mono">{new Date(log.created_at).toLocaleDateString()}</span>
+                              </div>
+                              <p className="text-slate-600 font-bold text-[10px]">{log.notes || log.observation || 'Sin observaciones registradas'}</p>
+                              <p className="text-[8px] text-slate-400 uppercase tracking-wider text-right">Op: {log.operator_name || 'Sistema'}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-[10px] text-slate-400 text-center py-6 uppercase italic">No hay registros de calidad cargados.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* INVENTORY / PRODUCTS STOCK */}
+                  <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
+                        <div>
+                          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest block">Existencias e Inventario</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase">Catálogo y Precios</span>
+                        </div>
+                        <div className="flex gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleExportInventory('pdf')}
+                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-colors"
+                            title="Exportar a PDF"
+                          >
+                            PDF
+                          </button>
+                          <button
+                            onClick={() => handleExportInventory('excel')}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-wider transition-colors"
+                            title="Exportar a Excel"
+                          >
+                            Excel
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[280px] overflow-y-auto no-scrollbar">
+                        {metricsProducts.length > 0 ? (
+                          metricsProducts.map((prod, idx) => (
+                            <div key={idx} className="p-3 bg-slate-50 border border-slate-100/70 rounded-xl flex items-center justify-between text-xs">
+                              <div>
+                                <p className="font-extrabold text-slate-700 uppercase">{prod.name}</p>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase">{prod.category || 'Varios'}</p>
+                              </div>
+                              <div className="text-right">
+                                <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
+                                  Number(prod.stock || 0) <= 5 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
+                                }`}>
+                                  {prod.stock || 0} pzas
+                                </span>
+                                <p className="text-[10px] text-slate-600 font-mono mt-1 font-bold">${Number(prod.price || 0).toFixed(2)}</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-[10px] text-slate-400 text-center py-6 uppercase italic">No hay productos en inventario.</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1829,7 +2241,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   <p className="text-[10px] font-bold text-emerald-600 uppercase mt-1 tracking-wider">Carga e inicia viajes de reparto seleccionando las cantidades específicas por tipo de envase</p>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end bg-white/50 p-4 rounded-2xl border border-emerald-500/10">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end bg-white/50 p-4 rounded-2xl border border-emerald-500/10">
                   <div className="flex flex-col gap-1 col-span-2 md:col-span-1 min-w-[150px]">
                     <span className="text-[9px] font-black uppercase text-emerald-700">Seleccionar Repartidor</span>
                     <select 
@@ -1841,6 +2253,21 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                       {employeesList.filter(e => e.role === 'driver' || e.role === 'repartidor').map(drv => (
                         <option key={drv.id} value={drv.name}>{drv.name}</option>
                       ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1 col-span-2 md:col-span-1 min-w-[150px]">
+                    <span className="text-[9px] font-black uppercase text-emerald-700">Ruta de Asignación</span>
+                    <select 
+                      value={dispatchRoute}
+                      onChange={(e) => setDispatchRoute(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm w-full font-black"
+                    >
+                      <option value="1.- Santa Cruz">1.- Santa Cruz</option>
+                      <option value="2.- San Miguel-Centro">2.- San Miguel-Centro</option>
+                      <option value="3.- La Francia-Los Reyes">3.- La Francia-Los Reyes</option>
+                      <option value="4.- Planta o Local">4.- Planta o Local</option>
+                      <option value="5.- llamadas Telefónicas y WhatsApp">5.- llamadas Telefónicas y WhatsApp</option>
                     </select>
                   </div>
 
@@ -1928,7 +2355,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                         deColor: dispatchColor,
                         pequeno: dispatchPequeno,
                         lavar: dispatchLavar
-                      });
+                      }, dispatchRoute);
 
                       // Reset fields after successful dispatch
                       setDispatchRosa(0);
