@@ -15,7 +15,8 @@ export const getOrderRoute = (order: any): string => {
     if (routeLower.includes('san miguel') || routeLower.includes('centro') || routeLower.includes('2.-')) return '2.- San Miguel-Centro';
     if (routeLower.includes('la francia') || routeLower.includes('reyes') || routeLower.includes('los reyes') || routeLower.includes('3.-')) return '3.- La Francia-Los Reyes';
     if (routeLower.includes('planta') || routeLower.includes('local') || routeLower.includes('4.-')) return '4.- Planta o Local';
-    if (routeLower.includes('llamadas') || routeLower.includes('whatsapp') || routeLower.includes('telefono') || routeLower.includes('5.-')) return '5.- llamadas Telefónicas y WhatsApp';
+    if (routeLower.includes('whatsapp') || routeLower.includes('6.-')) return '6.- WhatsApp';
+    if (routeLower.includes('llamadas') || routeLower.includes('telefono') || routeLower.includes('5.-')) return '5.- Llamadas Telefónicas';
   }
   
   // 4. Fallbacks based on source and driver assignments
@@ -24,7 +25,7 @@ export const getOrderRoute = (order: any): string => {
 
   // If order items specifies origin or is labeled WhatsApp
   if (order.items?.includes('[Origen: WhatsApp]')) {
-    return '5.- llamadas Telefónicas y WhatsApp';
+    return '6.- WhatsApp';
   }
   if (order.items?.includes('[Origen: Mostrador]')) {
     return '4.- Planta o Local';
@@ -36,10 +37,12 @@ export const getOrderRoute = (order: any): string => {
     }
   }
 
-  if (source === 'whatsapp' || source === 'phone' || source === 'whatsapp_chat') {
-    if (!order.assigned_to_name) {
-      return '5.- llamadas Telefónicas y WhatsApp';
-    }
+  if (source === 'whatsapp' || source === 'whatsapp_chat') {
+    return '6.- WhatsApp';
+  }
+
+  if (source === 'phone') {
+    return '5.- Llamadas Telefónicas';
   }
 
   if (order.assigned_to_name) {

@@ -349,8 +349,10 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     let laFranciaCount = 0;
     let plantaTotal = 0;
     let plantaCount = 0;
-    let llamadasWhatsappTotal = 0;
-    let llamadasWhatsappCount = 0;
+    let llamadasTotal = 0;
+    let llamadasCount = 0;
+    let whatsappTotal = 0;
+    let whatsappCount = 0;
 
     listForPeriod.forEach(s => {
       const route = getOrderRoute(s);
@@ -368,9 +370,12 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       } else if (route === '4.- Planta o Local') {
         plantaTotal += amount;
         plantaCount++;
-      } else if (route === '5.- llamadas Telefónicas y WhatsApp') {
-        llamadasWhatsappTotal += amount;
-        llamadasWhatsappCount++;
+      } else if (route === '5.- Llamadas Telefónicas') {
+        llamadasTotal += amount;
+        llamadasCount++;
+      } else if (route === '6.- WhatsApp') {
+        whatsappTotal += amount;
+        whatsappCount++;
       } else {
         plantaTotal += amount;
         plantaCount++;
@@ -388,8 +393,10 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       laFranciaCount,
       plantaTotal,
       plantaCount,
-      llamadasWhatsappTotal,
-      llamadasWhatsappCount,
+      llamadasTotal,
+      llamadasCount,
+      whatsappTotal,
+      whatsappCount,
       totalSales,
       totalCount: listForPeriod.length
     };
@@ -1525,8 +1532,10 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                   laFranciaCount,
                   plantaTotal,
                   plantaCount,
-                  llamadasWhatsappTotal,
-                  llamadasWhatsappCount,
+                  llamadasTotal,
+                  llamadasCount,
+                  whatsappTotal,
+                  whatsappCount,
                   totalSales
                 } = getRouteMetricsForPeriod();
 
@@ -1597,30 +1606,45 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             <span className="text-[9px] bg-emerald-100 text-emerald-600 font-black px-2 py-1 rounded-full uppercase">{plantaCount} ped.</span>
                           </div>
 
-                          {/* llamadas Telefónicas y WhatsApp */}
+                          {/* llamadas Telefónicas */}
                           <div className="p-3.5 rounded-2xl bg-rose-50/50 border border-rose-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center font-black text-[9px]">
                                 5
                               </div>
                               <div>
-                                <p className="text-[9px] font-black uppercase text-slate-400">5.- Teléfono y WhatsApp</p>
-                                <p className="text-sm font-black text-slate-900">${llamadasWhatsappTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p className="text-[9px] font-black uppercase text-slate-400">5.- Llamadas Telefónicas</p>
+                                <p className="text-sm font-black text-slate-900">${llamadasTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                               </div>
                             </div>
-                            <span className="text-[9px] bg-rose-100 text-rose-600 font-black px-2 py-1 rounded-full uppercase">{llamadasWhatsappCount} ped.</span>
+                            <span className="text-[9px] bg-rose-100 text-rose-600 font-black px-2 py-1 rounded-full uppercase">{llamadasCount} ped.</span>
+                          </div>
+
+                          {/* WhatsApp */}
+                          <div className="p-3.5 rounded-2xl bg-teal-50/50 border border-teal-100 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-teal-500 text-white flex items-center justify-center font-black text-[9px]">
+                                6
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-slate-400">6.- WhatsApp</p>
+                                <p className="text-sm font-black text-slate-900">${whatsappTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] bg-teal-100 text-teal-600 font-black px-2 py-1 rounded-full uppercase">{whatsappCount} ped.</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Simple Horizontal Progress Ratio */}
                       <div className="mt-6">
-                        <div className="flex justify-between text-[8px] font-black text-slate-400 uppercase mb-1.5">
+                        <div className="flex justify-between text-[7px] font-black text-slate-400 uppercase mb-1.5 gap-1">
                           <span>S.Cruz</span>
                           <span>S.Miguel</span>
                           <span>L.Francia</span>
                           <span>Planta</span>
-                          <span>WSP/Tel</span>
+                          <span>Teléf.</span>
+                          <span>WhatsApp</span>
                         </div>
                         {totalSales > 0 ? (
                           <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden flex">
@@ -1642,7 +1666,11 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             />
                             <div 
                               className="h-full bg-rose-500 transition-all" 
-                              style={{ width: `${(llamadasWhatsappTotal / totalSales) * 100}%` }} 
+                              style={{ width: `${(llamadasTotal / totalSales) * 100}%` }} 
+                            />
+                            <div 
+                              className="h-full bg-teal-500 transition-all" 
+                              style={{ width: `${(whatsappTotal / totalSales) * 100}%` }} 
                             />
                           </div>
                         ) : (
@@ -2267,7 +2295,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                       <option value="2.- San Miguel-Centro">2.- San Miguel-Centro</option>
                       <option value="3.- La Francia-Los Reyes">3.- La Francia-Los Reyes</option>
                       <option value="4.- Planta o Local">4.- Planta o Local</option>
-                      <option value="5.- llamadas Telefónicas y WhatsApp">5.- llamadas Telefónicas y WhatsApp</option>
+                      <option value="5.- Llamadas Telefónicas">5.- Llamadas Telefónicas</option>
+                      <option value="6.- WhatsApp">6.- WhatsApp</option>
                     </select>
                   </div>
 
