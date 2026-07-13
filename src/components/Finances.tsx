@@ -112,6 +112,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [salesList, setSalesList] = useState<any[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
   const [salesSearch, setSalesSearch] = useState('');
+  const [metricsSearch, setMetricsSearch] = useState('');
+  const [isMounted, setIsMounted] = useState(false);
   const [customerFilter, setCustomerFilter] = useState('');
 
   // Master scope filter for admin: 'all' (unified/global), 'plant' (planta), 'drivers' (repartidores)
@@ -152,24 +154,92 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   };
 
   const isPlantSale = (sale: any) => {
-    return !sale.assigned_to_name || 
-           sale.assigned_to_name.includes('Mostrador') || 
-           sale.assigned_to_name.includes('(Planta)') || 
-           sale.source === 'pos' || 
-           sale.source === 'local' ||
-           (sale.address && sale.address.includes(' | Planta'));
+    if (!sale) return true;
+    const nameLower = (sale.assigned_to_name || '').toLowerCase();
+    
+    // If assigned to an actual driver, it is NOT a plant sale
+    if (nameLower && 
+        !nameLower.includes('mostrador') && 
+        !nameLower.includes('planta') && 
+        !nameLower.includes('operador') &&
+        !nameLower.includes('whatsapp') &&
+        !nameLower.includes('teléfono') &&
+        !nameLower.includes('llamada')) {
+      return false;
+    }
+    
+    // If address is specifically labeled Planta or Mostrador, it is a plant sale
+    if (sale.address) {
+      const addressLower = sale.address.toLowerCase();
+      if (addressLower.includes('planta') || addressLower.includes('mostrador')) {
+        return true;
+      }
+    }
+    
+    // If it has no assigned driver, but is local/pos source, it is plant/mostrador
+    if (!sale.assigned_to_name && (sale.source === 'pos' || sale.source === 'local')) {
+      return true;
+    }
+    
+    return true;
   };
 
   const getScopedSalesList = () => {
     let list = salesList;
-    if (userRole === 'admin') {
+    if (userRole === 'admin' || userRole === 'supervisor') {
       if (adminSalesScope === 'plant') {
         list = salesList.filter(s => isPlantSale(s));
       } else if (adminSalesScope === 'drivers') {
         list = salesList.filter(s => !isPlantSale(s));
       }
     }
-    return filterByTimePeriod(list);
+    list = filterByTimePeriod(list);
+
+    const query = activeTab === 'metrics' ? metricsSearch : (activeTab === 'sales' ? salesSearch : '');
+    if (query.trim()) {
+      const q = norm(query);
+      list = list.filter(sale => {
+        const route = getOrderRoute(sale);
+        const routeNorm = norm(route);
+        const nameNorm = norm(sale.assigned_to_name || '');
+        const custNorm = norm(sale.customer_name || '');
+        const itemsNorm = norm(sale.items || '');
+        const addressNorm = norm(sale.address || '');
+        const payNorm = norm(sale.payment_method || '');
+        const sourceNorm = norm(sale.source || '');
+        
+        // Smart match for routes
+        if (q === 'ruta 1' || q === 'ruta1' || q === 'santa cruz') {
+          return route === '1.- Santa Cruz';
+        }
+        if (q === 'ruta 2' || q === 'ruta2' || q === 'san miguel' || q === 'centro') {
+          return route === '2.- San Miguel-Centro';
+        }
+        if (q === 'ruta 3' || q === 'ruta3' || q === 'la francia' || q === 'reyes' || q === 'los reyes') {
+          return route === '3.- La Francia-Los Reyes';
+        }
+        if (q === 'ruta 4' || q === 'ruta4' || q === 'planta' || q === 'mostrador' || q === 'local') {
+          return route === '4.- Planta o Local';
+        }
+        if (q === 'ruta 5' || q === 'ruta5' || q === 'telefono' || q === 'llamadas' || q === 'llamada') {
+          return route === '5.- Llamadas Telefónicas';
+        }
+        if (q === 'ruta 6' || q === 'ruta6' || q === 'whats' || q === 'whatsapp') {
+          return route === '6.- WhatsApp';
+        }
+        
+        return (
+          routeNorm.includes(q) ||
+          nameNorm.includes(q) ||
+          custNorm.includes(q) ||
+          itemsNorm.includes(q) ||
+          addressNorm.includes(q) ||
+          payNorm.includes(q) ||
+          sourceNorm.includes(q)
+        );
+      });
+    }
+    return list;
   };
 
   // States for quick dispatch quantities by bottle type
@@ -289,10 +359,13 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   const getPlantAndFieldSalesToday = () => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const todaySales = salesList.filter(s => {
-      const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
-      return dStr === todayStr;
-    });
+    const list = getScopedSalesList();
+    const activeSales = timePeriod === 'today' 
+      ? list.filter(s => {
+          const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
+          return dStr === todayStr;
+        })
+      : list;
 
     let plantSalesTotal = 0;
     let plantSalesCount = 0;
@@ -301,12 +374,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
     const employeePlantBreakdown: Record<string, { total: number; count: number }> = {};
 
-    todaySales.forEach(s => {
-      const isPlant = !s.assigned_to_name || 
-                      s.assigned_to_name.includes('Mostrador') || 
-                      s.assigned_to_name.includes('(Planta)') || 
-                      s.source === 'pos' || 
-                      s.source === 'local';
+    activeSales.forEach(s => {
+      const isPlant = isPlantSale(s);
       
       const amount = Number(s.total_price || s.amount || 0);
 
@@ -339,7 +408,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   };
 
   const getRouteMetricsForPeriod = () => {
-    const listForPeriod = filterByTimePeriod(salesList);
+    const listForPeriod = getScopedSalesList();
 
     let santaCruzTotal = 0;
     let santaCruzCount = 0;
@@ -1404,7 +1473,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           </p>
         </div>
         
-        {userRole === 'admin' && (
+        {(userRole === 'admin' || userRole === 'supervisor') && (
           <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
             <button 
               onClick={() => handleExport('Ventas Mensuales')}
@@ -1414,12 +1483,20 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
               {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               PDF Mensual
             </button>
+            <button 
+              onClick={() => handleExportExcel('Ventas Mensuales')}
+              disabled={isExporting}
+              className="flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] shadow-xl hover:bg-emerald-700 transition-all active:scale-95 uppercase tracking-widest shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={16} />
+              Excel Mensual
+            </button>
           </div>
         )}
       </div>
 
       {/* Selector de Origen de Ventas (Planta vs Repartidores) y Periodos para Admin */}
-      {userRole === 'admin' && (activeTab === 'metrics' || activeTab === 'sales') && (
+      {(userRole === 'admin' || userRole === 'supervisor') && (activeTab === 'metrics' || activeTab === 'sales') && (
         <div className="bg-white dark:bg-slate-900 p-3 rounded-[32px] border border-slate-200/60 dark:border-slate-800/60 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-950/20 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
             <div>
@@ -1496,6 +1573,41 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         >
           {activeTab === 'metrics' && (
             <div className="space-y-6">
+              {/* Buscador inteligente */}
+              {(userRole === 'admin' || userRole === 'supervisor') && (
+                <div className="bg-gradient-to-r from-sky-500 to-indigo-600 p-6 rounded-[32px] text-white shadow-lg shadow-sky-500/10 relative overflow-hidden">
+                  <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-wider">🔍 Buscador Inteligente de Métricas</h4>
+                      <p className="text-[10px] text-sky-100/80 font-bold uppercase mt-1">
+                        Escribe "Ruta 1", "Ruta 2", "Planta", "WhatsApp", un repartidor o cliente para recalcular instantáneamente todas las tarjetas y gráficas
+                      </p>
+                    </div>
+                    <div className="relative w-full md:w-80">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type="text"
+                        placeholder="Ejem: Ruta 1, Carlos, WhatsApp..."
+                        value={metricsSearch}
+                        onChange={(e) => setMetricsSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-white text-slate-800 rounded-2xl text-xs font-bold shadow-inner outline-none focus:ring-2 focus:ring-white/50 placeholder-slate-400"
+                      />
+                      {metricsSearch && (
+                        <button
+                          onClick={() => setMetricsSearch('')}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-extrabold text-xs"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="absolute right-0 bottom-0 opacity-10 translate-x-10 translate-y-10">
+                    <TrendingUp size={180} />
+                  </div>
+                </div>
+              )}
+
               {/* KPI Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
@@ -1728,31 +1840,39 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
                   <h3 className="font-black text-slate-800 mb-6 uppercase text-[10px] tracking-widest">Rendimiento Histórico (Ventas x Día)</h3>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <BarChart data={getDynamicSalesData()}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
-                        <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                        <Bar dataKey="sales" fill="#0ea5e9" radius={[6, 6, 0, 0]} barSize={40} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    {isMounted ? (
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <BarChart data={getDynamicSalesData()}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
+                          <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                          <Bar dataKey="sales" fill="#0ea5e9" radius={[6, 6, 0, 0]} barSize={40} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="w-full h-full bg-slate-50 rounded-2xl animate-pulse" />
+                    )}
                   </div>
                 </div>
 
                 <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex flex-col items-center">
                   <h3 className="font-black text-slate-800 mb-6 uppercase text-[10px] tracking-widest w-full">Canales de Pedido</h3>
                   <div className="h-48 w-full mt-4">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <PieChart>
-                        <Pie data={getDynamicChannelData()} cx="50%" cy="50%" innerRadius={55} outerRadius={75} dataKey="value" paddingAngle={4}>
-                          {getDynamicChannelData().map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    {isMounted ? (
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <PieChart>
+                          <Pie data={getDynamicChannelData()} cx="50%" cy="50%" innerRadius={55} outerRadius={75} dataKey="value" paddingAngle={4}>
+                            {getDynamicChannelData().map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="w-full h-full bg-slate-50 rounded-full animate-pulse" />
+                    )}
                   </div>
                   <div className="mt-8 grid grid-cols-2 gap-x-8 gap-y-4 w-full">
                     {getDynamicChannelData().map((item, idx) => (
@@ -1929,7 +2049,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
           {activeTab === 'sales' && (
             <div className="space-y-6">
-              {userRole !== 'admin' && (
+              {!(userRole === 'admin' || userRole === 'supervisor') && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
                     <div>
@@ -1982,6 +2102,12 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                         className="flex items-center gap-2 bg-slate-100 text-slate-600 px-3.5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all shrink-0"
                       >
                         <Download size={12} /> Exportar PDF
+                      </button>
+                      <button 
+                        onClick={() => handleExportExcel('Venta_Filtro')}
+                        className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3.5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all shrink-0"
+                      >
+                        <Download size={12} /> Exportar Excel
                       </button>
                     </div>
                     <div className="relative">
@@ -2086,7 +2212,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                                   <DollarSign size={10} /> Cobrar
                                 </button>
                               )}
-                              {userRole === 'admin' && (
+                              {(userRole === 'admin' || userRole === 'supervisor') && (
                                 <button 
                                   onClick={() => handleDeleteSale(sale.id, sale.customer_name)}
                                   className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all shrink-0"
@@ -2143,7 +2269,13 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     onClick={() => handleExport('Cartera de Clientes')}
                     className="flex items-center gap-2 bg-slate-100 text-slate-600 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
                   >
-                    <Download size={14} /> Exportar
+                    <Download size={14} /> Exportar PDF
+                  </button>
+                  <button 
+                    onClick={() => handleExportExcel('customers')}
+                    className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                  >
+                    <Download size={14} /> Exportar Excel
                   </button>
                   <button 
                     onClick={() => {
@@ -2233,7 +2365,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                             >
                               <Edit3 size={16} />
                             </button>
-                            {userRole === 'admin' && (
+                            {(userRole === 'admin' || userRole === 'supervisor') && (
                               <button 
                                 onClick={() => handleDeleteCustomer(client.id, client.name)}
                                 className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
@@ -2412,9 +2544,15 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                       onClick={() => handleExport('Directorio de Empleados')}
                       className="flex items-center gap-2 bg-slate-100 text-slate-600 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
                     >
-                      <Download size={14} /> Exportar
+                      <Download size={14} /> Exportar PDF
                     </button>
-                    {userRole === 'admin' && (
+                    <button 
+                      onClick={() => handleExportExcel('driver_sales')}
+                      className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all"
+                    >
+                      <Download size={14} /> Exportar Excel
+                    </button>
+                    {(userRole === 'admin' || userRole === 'supervisor') && (
                       <button 
                         onClick={handleClearAllEmployeesSalesHistory}
                         className="flex items-center gap-2 bg-rose-50 text-rose-600 border border-rose-100 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition-all shrink-0"
@@ -2519,7 +2657,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                                 Reporte Ventas
                               </button>
 
-                              {userRole === 'admin' && (
+                              {(userRole === 'admin' || userRole === 'supervisor') && (
                                 <button 
                                   onClick={() => handleClearEmployeeSalesHistory(emp.name)}
                                   className="px-2.5 py-1 bg-rose-50 text-rose-600 border border-rose-100 rounded-lg transition-all hover:bg-rose-100 flex items-center gap-1 font-black"
@@ -2530,7 +2668,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                                 </button>
                               )}
 
-                              {userRole === 'admin' && (
+                              {(userRole === 'admin' || userRole === 'supervisor') && (
                                 <button 
                                   onClick={() => handleDeleteEmployee(emp.id, emp.name)}
                                   className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
@@ -2580,12 +2718,22 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     <Store size={18} className="text-sky-500" />
                     Corte de Caja en Planta
                   </h3>
-                  <button 
-                    onClick={() => handleExport('Corte de Caja')}
-                    className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:text-sky-500 transition-colors"
-                  >
-                    <Download size={18} />
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button 
+                      onClick={() => handleExport('Corte de Caja')}
+                      className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:text-sky-500 hover:bg-sky-50 transition-colors"
+                      title="Exportar PDF"
+                    >
+                      <FileText size={18} />
+                    </button>
+                    <button 
+                      onClick={() => handleExportExcel('Corte de Caja')}
+                      className="p-2 bg-slate-50 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-all"
+                      title="Exportar Excel"
+                    >
+                      <Download size={18} />
+                    </button>
+                  </div>
                 </div>
                 {(() => {
                   const plantStats = getPlantSalesToday();

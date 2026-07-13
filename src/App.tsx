@@ -633,7 +633,9 @@ export default function App() {
       items = [
         { id: 'dashboard', label: 'Gestión de Pedidos', icon: LayoutDashboard },
         { id: 'sales_history', label: 'Historial de Ventas', icon: History },
-        { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Clock },
+        { id: 'attendance', label: 'Registrar Mi Asistencia', icon: Clock },
+        { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Users },
+        { id: 'driver_sales', label: 'Empleados', icon: Truck },
         { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
         { id: 'supervisor_cash_closure', label: 'Supervisar Cortes', icon: ShieldCheck },
         { id: 'profile', label: 'Perfil', icon: User },

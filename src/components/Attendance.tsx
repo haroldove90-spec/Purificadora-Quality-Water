@@ -13,8 +13,9 @@ interface AttendanceProps {
 }
 
 export default function Attendance({ userRole, userName }: AttendanceProps) {
+  const [viewAsEmployee, setViewAsEmployee] = useState(false);
   // Determinar si estamos en modo monitor (Admin o Supervisor) o modo marcado (Empleado)
-  const isMonitorMode = userRole === 'admin' || userRole === 'supervisor';
+  const isMonitorMode = (userRole === 'admin' || userRole === 'supervisor') && !viewAsEmployee;
 
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -218,6 +219,31 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
           </p>
         </div>
         
+        {(userRole === 'admin' || userRole === 'supervisor') && (
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner gap-1 shrink-0">
+            <button
+              onClick={() => setViewAsEmployee(false)}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                !viewAsEmployee
+                  ? 'bg-slate-900 text-white shadow-md'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Monitor de Personal 📊
+            </button>
+            <button
+              onClick={() => setViewAsEmployee(true)}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                viewAsEmployee
+                  ? 'bg-slate-900 text-white shadow-md'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Registrar Mi Entrada/Salida ⏰
+            </button>
+          </div>
+        )}
+
         {isMonitorMode && (
           <div className="flex items-center gap-3">
             <button 
