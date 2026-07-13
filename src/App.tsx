@@ -985,7 +985,7 @@ export default function App() {
                  activeView === 'cash_float' ? <CashFloat userRole={currentRoleView} userName={userName} /> :
                  activeView === 'quality' ? <QualityLog userRole={currentRoleView} /> :
                  activeView === 'route' ? <DeliveryRoute userRole={currentRoleView} /> :
-                 activeView === 'client_status' ? <ClientStatus userRole={currentRoleView} /> :
+                 activeView === 'client_status' ? <ClientStatus userRole={currentRoleView} userName={userName} /> :
                  activeView === 'notifications' ? <Notifications userRole={currentRoleView} /> :
                  activeView === 'manual' ? <Manual role={currentRoleView} /> :
                  activeView === 'sales_history' ? <SalesHistory userRole={currentRoleView} /> :

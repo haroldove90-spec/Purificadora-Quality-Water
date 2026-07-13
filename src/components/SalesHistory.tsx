@@ -18,11 +18,29 @@ import {
   Filter, 
   RefreshCw,
   Sparkles,
-  Loader2
+  Loader2,
+  DollarSign,
+  Award,
+  CalendarDays,
+  CalendarRange,
+  Users
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  AreaChart, 
+  Area, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  BarChart, 
+  Bar, 
+  Cell,
+  Legend
+} from 'recharts';
 import { supabase } from '../lib/supabaseClient';
 import { exportToPDF } from '../utils/pdfExport';
-import { namesMatch } from '../utils/nameHelper';
+import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
 
 interface Order {
   id: string;
@@ -63,6 +81,7 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
   });
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [metricsTab, setMetricsTab] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   // Modals / Actions
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
@@ -95,6 +114,18 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
       console.error('Error fetching initial data:', e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper to map DB source string to clear human label
+  const getSourceLabel = (source?: string) => {
+    if (!source) return 'Venta Local';
+    switch (source.toLowerCase()) {
+      case 'pos': return 'Punto de Venta (Ruta/Planta)';
+      case 'local': return 'Venta Mostrador';
+      case 'whatsapp': return 'WhatsApp';
+      case 'phone': return 'Pedido Telefónico';
+      default: return source;
     }
   };
 
@@ -134,7 +165,7 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
 
     const combinedList = Array.from(listMap.values());
 
-    // Apply search query filter
+    // Apply sidebar search query filter (only active when searching sidebar)
     if (!searchQuery) return combinedList;
     
     const query = searchQuery.toLowerCase().trim();
@@ -167,25 +198,73 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
       if (statusFilter !== 'all' && o.status !== statusFilter) return false;
 
       // Filter by source
-      if (sourceFilter !== 'all' && o.source !== sourceFilter) return false;
+      if (sourceFilter !== 'all') {
+        if (sourceFilter === 'local') {
+          if (o.source !== 'local' && o.source !== 'pos') return false;
+        } else {
+          if (o.source !== sourceFilter) return false;
+        }
+      }
 
       return true;
     });
   };
 
-  const selectedOrders = getFilteredCustomerOrders();
+  // Get ALL orders filtered globally (Auditor's Smart Search View)
+  const getFilteredGlobalOrders = () => {
+    return orders.filter(o => {
+      // Filter by date range
+      const orderDate = o.created_at.split('T')[0];
+      if (orderDate < startDate || orderDate > endDate) return false;
 
-  // Statistics for the selected customer (within selected parameters)
-  const calculateStats = () => {
+      // Filter by status
+      if (statusFilter !== 'all' && o.status !== statusFilter) return false;
+
+      // Filter by source
+      if (sourceFilter !== 'all') {
+        if (sourceFilter === 'local') {
+          if (o.source !== 'local' && o.source !== 'pos') return false;
+        } else {
+          if (o.source !== sourceFilter) return false;
+        }
+      }
+
+      // Smart Search filter across Customer, ID, Items, Address, and Driver Name
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase().trim();
+        const custName = o.customer_name?.toLowerCase() || '';
+        const id = o.id?.toLowerCase() || '';
+        const items = o.items?.toLowerCase() || '';
+        const addr = o.address?.toLowerCase() || '';
+        const driver = o.assigned_to_name?.toLowerCase() || '';
+
+        return (
+          custName.includes(query) ||
+          id.includes(query) ||
+          items.includes(query) ||
+          addr.includes(query) ||
+          driver.includes(query)
+        );
+      }
+
+      return true;
+    });
+  };
+
+  const selectedOrders = selectedCustomerName ? getFilteredCustomerOrders() : getFilteredGlobalOrders();
+
+  // Selected customer analytics
+  const calculateCustomerStats = () => {
     const totalPurchases = selectedOrders.length;
     const totalAmount = selectedOrders.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+    const avgTicket = totalPurchases > 0 ? totalAmount / totalPurchases : 0;
     
     // Calculate favorite item
     const itemCounts: { [key: string]: number } = {};
     selectedOrders.forEach(o => {
       const items = o.items.split(',').map(i => i.trim());
       items.forEach(item => {
-        if (!item) return;
+        if (!item || item.includes('[RECOGER') || item.includes('[SALDO')) return;
         itemCounts[item] = (itemCounts[item] || 0) + 1;
       });
     });
@@ -203,10 +282,120 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
       ? new Date(selectedOrders[0].created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
       : 'N/A';
 
-    return { totalPurchases, totalAmount, favoriteItem, lastPurchase };
+    return { totalPurchases, totalAmount, avgTicket, favoriteItem, lastPurchase };
   };
 
-  const customerStats = calculateStats();
+  // Grouped temporal data for the selected client chart
+  const getTemporalData = () => {
+    if (metricsTab === 'daily') {
+      const groups: { [key: string]: number } = {};
+      selectedOrders.forEach(o => {
+        const day = o.created_at.split('T')[0];
+        groups[day] = (groups[day] || 0) + (Number(o.total_price) || 0);
+      });
+      return Object.entries(groups)
+        .map(([date, total]) => ({ name: date, total }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .slice(-15); // Show last 15 days of active logs
+    } else if (metricsTab === 'weekly') {
+      const groups: { [key: string]: number } = {};
+      selectedOrders.forEach(o => {
+        const d = new Date(o.created_at);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(d.setDate(diff)).toISOString().split('T')[0];
+        groups[monday] = (groups[monday] || 0) + (Number(o.total_price) || 0);
+      });
+      return Object.entries(groups)
+        .map(([week, total]) => ({ name: `Sem ${week.slice(5)}`, total }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .slice(-8); // Show last 8 active weeks
+    } else {
+      const groups: { [key: string]: number } = {};
+      const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      selectedOrders.forEach(o => {
+        const d = new Date(o.created_at);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        groups[key] = (groups[key] || 0) + (Number(o.total_price) || 0);
+      });
+      return Object.entries(groups)
+        .map(([key, total]) => {
+          const [year, month] = key.split('-');
+          const monthName = monthNames[parseInt(month) - 1];
+          return { name: `${monthName} ${year}`, total, rawKey: key };
+        })
+        .sort((a, b) => a.rawKey.localeCompare(b.rawKey))
+        .slice(-12); // Show last 12 active months
+    }
+  };
+
+  // Global sales analytics (for entire team/shop)
+  const calculateGlobalStats = () => {
+    const totalOrders = selectedOrders.filter(o => o.status === 'delivered').length;
+    const totalRevenue = selectedOrders
+      .filter(o => o.status === 'delivered')
+      .reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+    const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    // Find best performing driver by revenue
+    const driverRevenue: { [key: string]: number } = {};
+    selectedOrders.filter(o => o.status === 'delivered').forEach(o => {
+      const driver = o.assigned_to_name || 'Mostrador / Planta';
+      driverRevenue[driver] = (driverRevenue[driver] || 0) + (Number(o.total_price) || 0);
+    });
+
+    let topDriver = 'Mostrador / Planta';
+    let maxRevenue = 0;
+    Object.entries(driverRevenue).forEach(([driver, rev]) => {
+      if (rev > maxRevenue && driver !== 'Mostrador / Planta' && !driver.includes('Mostrador')) {
+        maxRevenue = rev;
+        topDriver = driver;
+      }
+    });
+
+    return { totalOrders, totalRevenue, avgTicket, topDriver };
+  };
+
+  // Prepare chart data of sales by driver (top 6)
+  const getDriverChartData = () => {
+    const driverRevenue: { [key: string]: number } = {};
+    selectedOrders.filter(o => o.status === 'delivered').forEach(o => {
+      const driver = o.assigned_to_name || 'Mostrador';
+      driverRevenue[driver] = (driverRevenue[driver] || 0) + (Number(o.total_price) || 0);
+    });
+    return Object.entries(driverRevenue)
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+  };
+
+  // Prepare chart data of sales by channel
+  const getChannelChartData = () => {
+    const channels: { [key: string]: number } = {
+      'WhatsApp': 0,
+      'Teléfono': 0,
+      'POS Planta/Ruta': 0,
+      'Venta Local': 0
+    };
+
+    selectedOrders.filter(o => o.status === 'delivered').forEach(o => {
+      const src = o.source?.toLowerCase() || '';
+      if (src === 'whatsapp') {
+        channels['WhatsApp'] += Number(o.total_price) || 0;
+      } else if (src === 'phone') {
+        channels['Teléfono'] += Number(o.total_price) || 0;
+      } else if (src === 'pos') {
+        channels['POS Planta/Ruta'] += Number(o.total_price) || 0;
+      } else {
+        channels['Venta Local'] += Number(o.total_price) || 0;
+      }
+    });
+
+    return Object.entries(channels).map(([name, value]) => ({ name, value }));
+  };
+
+  const customerStats = calculateCustomerStats();
+  const globalStats = calculateGlobalStats();
 
   const handleDeleteClick = (order: Order) => {
     setOrderToDelete(order);
@@ -244,39 +433,46 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
 
   // EXPORT TO PDF
   const handleExportPDF = () => {
-    if (!selectedCustomerName) return;
-    
-    const columns = ['Fecha/Hora', 'ID Pedido', 'Artículos', 'Repartidor', 'Origen', 'Estado', 'Total'];
+    const titleText = selectedCustomerName 
+      ? `Historial de Consumo: ${selectedCustomerName.toUpperCase()}`
+      : `Historial de Ventas Global - Quality Water`;
+    const subtitleText = selectedCustomerName
+      ? `Periodo: ${startDate} al ${endDate} | Total Consumido: $${customerStats.totalAmount.toFixed(2)} pesos`
+      : `Periodo: ${startDate} al ${endDate} | Facturación Total: $${globalStats.totalRevenue.toFixed(2)} pesos`;
+
+    const columns = ['Fecha/Hora', 'Cliente', 'ID Pedido', 'Artículos', 'Atendió', 'Origen', 'Estado', 'Total'];
     const data = selectedOrders.map(o => [
       new Date(o.created_at).toLocaleString('es-MX'),
+      o.customer_name,
       o.id.slice(0, 8).toUpperCase(),
       o.items,
       o.assigned_to_name || 'Mostrador / Planta',
-      o.source === 'local' ? 'Venta Local' : o.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono',
-      o.status === 'delivered' ? 'Completado' : o.status === 'assigned' ? 'En Ruta' : o.status === 'pending' ? 'Pendiente' : o.status,
+      getSourceLabel(o.source),
+      o.status === 'delivered' ? 'Entregado' : o.status === 'assigned' ? 'En Ruta' : o.status === 'pending' ? 'Pendiente' : o.status,
       `$${Number(o.total_price).toFixed(2)}`
     ]);
 
     exportToPDF({
-      title: `Historial de Consumo: ${selectedCustomerName.toUpperCase()}`,
-      subtitle: `Periodo: ${startDate} al ${endDate} | Total Consumido: $${customerStats.totalAmount.toFixed(2)} pesos`,
+      title: titleText,
+      subtitle: subtitleText,
       columns,
       data,
-      filename: `Historial_${selectedCustomerName.replace(/\s+/g, '_')}`
+      filename: selectedCustomerName 
+        ? `Historial_${selectedCustomerName.replace(/\s+/g, '_')}`
+        : `Historial_Global_Ventas_${startDate}_a_${endDate}`
     });
   };
 
   // EXPORT TO EXCEL (CSV with UTF-8 BOM)
   const handleExportExcel = () => {
-    if (!selectedCustomerName) return;
-
-    const headers = ['Fecha/Hora', 'ID Pedido', 'Artículos', 'Repartidor', 'Origen', 'Estado', 'Monto Total'];
+    const headers = ['Fecha/Hora', 'Cliente', 'ID Pedido', 'Artículos', 'Atendió/Entregó', 'Origen/Canal', 'Estado', 'Monto Total'];
     const rows = selectedOrders.map(o => [
       new Date(o.created_at).toLocaleString('es-MX'),
+      o.customer_name,
       o.id.toUpperCase(),
       o.items.replace(/"/g, '""'), // escape quotes
       o.assigned_to_name || 'Mostrador / Planta',
-      o.source === 'local' ? 'Venta Local' : o.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono',
+      getSourceLabel(o.source),
       o.status === 'delivered' ? 'Completado' : o.status === 'assigned' ? 'En Ruta' : o.status === 'pending' ? 'Pendiente' : o.status,
       Number(o.total_price).toFixed(2)
     ]);
@@ -292,13 +488,21 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Historial_${selectedCustomerName.replace(/\s+/g, '_')}_${startDate}_al_${endDate}.csv`);
+    
+    const filename = selectedCustomerName
+      ? `Historial_${selectedCustomerName.replace(/\s+/g, '_')}_${startDate}_al_${endDate}.csv`
+      : `Historial_Global_Ventas_${startDate}_al_${endDate}.csv`;
+      
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const activeCustomerList = getCombinedCustomerList();
+  const temporalChartData = selectedCustomerName ? getTemporalData() : [];
+
+  const COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b'];
 
   return (
     <div className="space-y-6" id="sales_history_module">
@@ -309,18 +513,18 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <span className="text-[10px] font-black bg-indigo-500/20 text-indigo-300 px-3 py-1.5 rounded-full uppercase tracking-widest inline-flex items-center gap-1.5 border border-indigo-400/20">
-              <Sparkles size={12} className="text-indigo-400" /> PANEL DE AUDITORÍA
+              <Sparkles size={12} className="text-indigo-400" /> PANEL DE AUDITORÍA Y VENTAS
             </span>
             <h1 className="text-3xl md:text-4xl font-black uppercase italic tracking-tight leading-none">
               Historial de <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-400">Ventas y Clientes</span>
             </h1>
             <p className="text-xs text-slate-400 max-w-xl font-medium leading-relaxed">
-              Consulta, filtra y descarga los historiales de consumo individuales de tus clientes. Puedes buscar por nombre, teléfono o dirección, y depurar registros si es necesario.
+              Consulte y audite las ventas de la purificadora. Seleccione un cliente específico en el panel izquierdo para ver su rendimiento temporal (por fecha, semana y mes) o navegue por la Vista General de auditoría.
             </p>
           </div>
           <button 
             onClick={fetchInitialData}
-            className="self-start md:self-center bg-slate-800/80 border border-slate-700/50 text-slate-300 hover:text-white px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 hover:bg-slate-800 flex items-center gap-2 shadow-lg cursor-pointer"
+            className="self-start md:self-center bg-slate-800/80 border border-slate-700/50 text-slate-300 hover:text-white px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 hover:bg-slate-800 flex items-center gap-2 shadow-lg cursor-pointer animate-none"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             Sincronizar Datos
@@ -331,16 +535,40 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
       {/* Main Multi-panel view */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left column: Search and Customer List */}
-        <div className="lg:col-span-4 bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm flex flex-col h-[650px]">
+        {/* Left column: Directory Sidebar */}
+        <div className="lg:col-span-4 bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm flex flex-col h-[700px]">
+          
+          {/* Main selection toggle for Vista General */}
+          <button
+            onClick={() => {
+              setSelectedCustomerName(null);
+              setSearchQuery('');
+            }}
+            className={`w-full mb-5 text-left p-4 rounded-2xl border transition-all duration-250 flex items-center gap-3.5 cursor-pointer ${
+              selectedCustomerName === null 
+                ? 'bg-gradient-to-br from-indigo-900 to-slate-900 border-indigo-950 text-white shadow-lg shadow-indigo-900/10' 
+                : 'bg-slate-50 hover:bg-slate-100 border-slate-100 text-slate-700'
+            }`}
+          >
+            <div className={`p-2.5 rounded-xl ${selectedCustomerName === null ? 'bg-indigo-500/20 text-sky-400' : 'bg-slate-200/80 text-slate-500'}`}>
+              <Users size={18} />
+            </div>
+            <div className="space-y-0.5">
+              <p className="font-black text-xs uppercase tracking-wider">🌎 Ver Historial General</p>
+              <p className={`text-[9px] font-bold uppercase tracking-wider ${selectedCustomerName === null ? 'text-sky-300' : 'text-slate-400'}`}>
+                Vista de Auditoría de todas las ventas
+              </p>
+            </div>
+          </button>
+
           <div className="space-y-4 mb-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-              <Search size={14} className="text-slate-400" /> Buscador Inteligente
+              <Search size={14} className="text-slate-400" /> Directorio de Clientes
             </h3>
             <div className="relative">
               <input 
                 type="text"
-                placeholder="Buscar por nombre, tel o dir..."
+                placeholder={selectedCustomerName === null ? "Buscar en todo el historial..." : "Buscar por nombre, tel o dir..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 placeholder-slate-400"
@@ -349,7 +577,7 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
               {searchQuery && (
                 <button 
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full bg-slate-200 hover:bg-slate-350 text-slate-500 hover:text-slate-700 transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-500 hover:text-slate-700 transition-colors"
                 >
                   <X size={12} />
                 </button>
@@ -378,6 +606,7 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
                     key={cust.name}
                     onClick={() => {
                       setSelectedCustomerName(cust.name);
+                      setSearchQuery(''); // Reset sidebar search on click
                     }}
                     className={`w-full text-left p-4 rounded-2xl border transition-all duration-250 flex items-center justify-between group cursor-pointer ${
                       isSelected 
@@ -405,10 +634,11 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
           </div>
         </div>
 
-        {/* Right column: Selected Customer History & Audit */}
+        {/* Right column: Selected Customer History OR Global View */}
         <div className="lg:col-span-8 flex flex-col gap-6">
           
           {selectedCustomerName ? (
+            /* CLIENT DRILLDOWN VIEW */
             <>
               {/* Customer Banner & Stats Cards */}
               <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-6">
@@ -417,7 +647,7 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
                   <div className="space-y-1">
                     <span className="text-[9px] font-black text-indigo-600 uppercase bg-indigo-50 px-2.5 py-1 rounded-full tracking-widest border border-indigo-100">
-                      CLIENTE SELECCIONADO
+                      EXPEDIENTE DE CLIENTE
                     </span>
                     <h2 className="text-xl md:text-2xl font-black text-slate-800 uppercase italic">
                       {selectedCustomerName}
@@ -493,16 +723,17 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Origen</label>
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Origen / Canal</label>
                     <select 
                       value={sourceFilter}
                       onChange={(e) => setSourceFilter(e.target.value)}
                       className="w-full bg-white p-3 border-none rounded-xl font-bold text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-600 appearance-none"
                     >
                       <option value="all">TODOS</option>
-                      <option value="local">VENTA LOCAL</option>
+                      <option value="pos">PLANTA / CHOFERES (POS)</option>
+                      <option value="local">VENTA LOCAL (MOSTRADOR)</option>
                       <option value="whatsapp">WHATSAPP</option>
-                      <option value="phone">TELÉFONO</option>
+                      <option value="phone">PEDIDO TELEFÓNICO</option>
                     </select>
                   </div>
                 </div>
@@ -510,9 +741,9 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
                 {/* Bento Statistics Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Compras Registradas</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Compras Totales</p>
                     <p className="text-xl font-black text-indigo-900 leading-tight">{customerStats.totalPurchases} pedidos</p>
-                    <p className="text-[9px] text-slate-400 font-bold">En el periodo seleccionado</p>
+                    <p className="text-[9px] text-slate-400 font-bold">Frecuencia en periodo</p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
@@ -522,40 +753,111 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
                   </div>
 
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1 min-w-0">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Producto Favorito</p>
-                    <p className="text-xs font-black text-indigo-900 leading-tight truncate uppercase" title={customerStats.favoriteItem}>
-                      {customerStats.favoriteItem}
-                    </p>
-                    <p className="text-[9px] text-slate-400 font-bold">Más recurrente</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Ticket Promedio</p>
+                    <p className="text-xl font-black text-indigo-900 leading-tight">${customerStats.avgTicket.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="text-[9px] text-slate-400 font-bold">Valor medio por compra</p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Última Compra</p>
-                    <p className="text-sm font-black text-indigo-900 leading-tight py-0.5 uppercase">{customerStats.lastPurchase}</p>
-                    <p className="text-[9px] text-slate-400 font-bold">Fecha registrada</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Producto Favorito</p>
+                    <p className="text-[11px] font-black text-indigo-900 leading-tight py-1 truncate uppercase" title={customerStats.favoriteItem}>
+                      {customerStats.favoriteItem}
+                    </p>
+                    <p className="text-[9px] text-slate-400 font-bold">Mayor cantidad</p>
                   </div>
                 </div>
               </div>
 
+              {/* Client Temporal Breakdown Graph */}
+              <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-50 pb-4">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                      <TrendingUp size={14} className="text-indigo-500" /> Historial de Consumo Temporal
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Ventas realizadas agrupadas por fecha, semana o mes</p>
+                  </div>
+                  
+                  {/* Selector de periodo temporal */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                    <button
+                      onClick={() => setMetricsTab('daily')}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${metricsTab === 'daily' ? 'bg-white text-indigo-900 shadow-sm' : 'text-slate-400 hover:text-slate-700'}`}
+                    >
+                      <CalendarDays size={10} /> Diario
+                    </button>
+                    <button
+                      onClick={() => setMetricsTab('weekly')}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${metricsTab === 'weekly' ? 'bg-white text-indigo-900 shadow-sm' : 'text-slate-400 hover:text-slate-700'}`}
+                    >
+                      <CalendarRange size={10} /> Semanal
+                    </button>
+                    <button
+                      onClick={() => setMetricsTab('monthly')}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${metricsTab === 'monthly' ? 'bg-white text-indigo-900 shadow-sm' : 'text-slate-400 hover:text-slate-700'}`}
+                    >
+                      <Calendar size={10} /> Mensual
+                    </button>
+                  </div>
+                </div>
+
+                {temporalChartData.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-xs font-bold uppercase">
+                    Sin datos financieros suficientes para graficar en este rango
+                  </div>
+                ) : (
+                  <div className="h-[220px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={temporalChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="clientColor" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis 
+                          dataKey="name" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 'bold' }} 
+                        />
+                        <YAxis 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 'bold' }}
+                          tickFormatter={(v) => `$${v}`}
+                        />
+                        <Tooltip 
+                          contentStyle={{ background: '#0f172a', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 'bold' }}
+                          formatter={(v) => [`$${Number(v).toFixed(2)} pesos`, 'Consumido']}
+                        />
+                        <Area type="monotone" dataKey="total" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#clientColor)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+
               {/* Purchase Details Table Card */}
-              <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm flex-1 overflow-hidden flex flex-col min-h-[350px]">
+              <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col min-h-[350px]">
                 <div className="p-6 pb-4 border-b border-slate-100 flex items-center justify-between">
                   <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                    <Calendar size={14} className="text-slate-400" /> Registro Detallado de Compras
+                    <Calendar size={14} className="text-slate-400" /> Registro Detallado de Compras del Cliente
                   </h3>
                   <span className="text-[9px] font-black bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full uppercase">
                     {selectedOrders.length} Resultados
                   </span>
                 </div>
 
-                <div className="flex-1 overflow-x-auto">
+                <div className="overflow-x-auto flex-1">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-slate-50 bg-slate-50/30 text-slate-400 font-black uppercase text-[9px] tracking-widest">
                         <th className="px-6 py-4">Fecha</th>
                         <th className="px-6 py-4">ID / Tipo</th>
                         <th className="px-6 py-4">Productos / Artículos</th>
-                        <th className="px-6 py-4">Entregó</th>
+                        <th className="px-6 py-4">Atendió / Entregó</th>
                         <th className="px-6 py-4 text-center">Estatus</th>
                         <th className="px-6 py-4 text-right">Total</th>
                         {(userRole === 'admin' || userRole === 'supervisor') && (
@@ -598,8 +900,12 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
                                     #{order.id.slice(0, 8).toUpperCase()}
                                   </p>
                                   <p className="text-[8px] font-black uppercase flex items-center gap-1">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${order.source === 'local' ? 'bg-indigo-500' : order.source === 'whatsapp' ? 'bg-emerald-500' : 'bg-sky-500'}`} />
-                                    {order.source === 'local' ? 'Venta Local' : order.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono'}
+                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                      order.source === 'whatsapp' ? 'bg-emerald-500' :
+                                      order.source === 'pos' ? 'bg-sky-500' :
+                                      order.source === 'phone' ? 'bg-blue-500' : 'bg-indigo-500'
+                                    }`} />
+                                    {getSourceLabel(order.source)}
                                   </p>
                                 </div>
                               </td>
@@ -657,17 +963,325 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
               </div>
             </>
           ) : (
-            <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-12 text-center h-[650px] flex flex-col items-center justify-center space-y-4">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
-                <User size={24} className="text-slate-400" />
+            /* GLOBAL AUDITOR'S VIEW */
+            <>
+              {/* Global General Metrics */}
+              <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full tracking-widest border border-indigo-100 uppercase">
+                      VISTA DE AUDITORÍA GENERAL
+                    </span>
+                    <h2 className="text-xl md:text-2xl font-black text-slate-800 uppercase italic">
+                      Consola de Control de Ventas
+                    </h2>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">
+                      Análisis global de facturación, repartos en ruta y ventas de planta en mostrador
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleExportPDF}
+                      disabled={selectedOrders.length === 0}
+                      className="bg-slate-900 hover:bg-slate-850 text-white font-black text-[10px] uppercase tracking-widest px-4 py-3 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <FileText size={14} /> Reporte Global PDF
+                    </button>
+                    <button
+                      onClick={handleExportExcel}
+                      disabled={selectedOrders.length === 0}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest px-4 py-3 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Download size={14} /> Reporte Excel (CSV)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Fecha Inicio</label>
+                    <input 
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full bg-white p-3 border-none rounded-xl font-bold text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-600"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Fecha Fin</label>
+                    <input 
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full bg-white p-3 border-none rounded-xl font-bold text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-600"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Estatus de Ventas</label>
+                    <select 
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full bg-white p-3 border-none rounded-xl font-bold text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-600 appearance-none"
+                    >
+                      <option value="all">TODOS</option>
+                      <option value="delivered">ENTREGADO / COBRADO</option>
+                      <option value="assigned">EN RUTA</option>
+                      <option value="pending">PENDIENTE DE DESPACHO</option>
+                      <option value="cancelled">CANCELADOS</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1">Origen / Canal</label>
+                    <select 
+                      value={sourceFilter}
+                      onChange={(e) => setSourceFilter(e.target.value)}
+                      className="w-full bg-white p-3 border-none rounded-xl font-bold text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-600 appearance-none"
+                    >
+                      <option value="all">TODOS</option>
+                      <option value="pos">PLANTA / CHOFERES (POS)</option>
+                      <option value="local">VENTA LOCAL (MOSTRADOR)</option>
+                      <option value="whatsapp">WHATSAPP</option>
+                      <option value="phone">PEDIDO TELEFÓNICO</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Global Metrics Row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-100/40 space-y-1">
+                    <div className="flex justify-between items-center text-indigo-500">
+                      <p className="text-[8px] font-black uppercase tracking-widest">Facturación Total</p>
+                      <DollarSign size={14} />
+                    </div>
+                    <p className="text-xl font-black text-indigo-950 leading-tight">${globalStats.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Monto entregado</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-100/40 space-y-1">
+                    <div className="flex justify-between items-center text-emerald-600">
+                      <p className="text-[8px] font-black uppercase tracking-widest">Ventas Completas</p>
+                      <CheckCircle size={14} />
+                    </div>
+                    <p className="text-xl font-black text-emerald-950 leading-tight">{globalStats.totalOrders} entregas</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Pedidos liquidados</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-sky-50/40 border border-sky-100/40 space-y-1">
+                    <div className="flex justify-between items-center text-sky-500">
+                      <p className="text-[8px] font-black uppercase tracking-widest">Ticket Promedio</p>
+                      <TrendingUp size={14} />
+                    </div>
+                    <p className="text-xl font-black text-sky-950 leading-tight">${globalStats.avgTicket.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Media por ticket</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-amber-50/40 border border-amber-100/40 space-y-1">
+                    <div className="flex justify-between items-center text-amber-500">
+                      <p className="text-[8px] font-black uppercase tracking-widest">Chofer Estrella</p>
+                      <Award size={14} />
+                    </div>
+                    <p className="text-[11.5px] font-black text-amber-950 py-1 leading-tight truncate uppercase">{globalStats.topDriver}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Mayor volumen ruta</p>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Consulta de Historial de Ventas</h3>
-                <p className="text-[11px] text-slate-400 max-w-sm font-medium">
-                  Por favor, selecciona un cliente del panel lateral izquierdo para ver su historial completo de compras, estadísticas, filtros avanzados, y opciones de descarga.
-                </p>
+
+              {/* General Interactive Charts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Sales by channel chart */}
+                <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">📊 Venta por Canales</h3>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Participación económica por canal de venta</p>
+                  </div>
+                  <div className="h-[200px] w-full flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={getChannelChartData()} layout="vertical" margin={{ top: 10, right: 10, left: 15, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 'bold' }} tickFormatter={(v) => `$${v}`} />
+                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#475569', fontWeight: 'bold' }} />
+                        <Tooltip contentStyle={{ background: '#0f172a', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 'bold' }} formatter={(v) => [`$${Number(v).toFixed(2)} pesos`, 'Ventas']} />
+                        <Bar dataKey="value" radius={[0, 8, 8, 0]} maxBarSize={22}>
+                          {getChannelChartData().map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Sales by driver chart */}
+                <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">🚚 Venta por Colaboradores / Choferes</h3>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Ventas entregadas en ruta por cada repartidor</p>
+                  </div>
+                  <div className="h-[200px] w-full flex items-center justify-center">
+                    {getDriverChartData().length === 0 ? (
+                      <p className="text-slate-400 text-xs font-black uppercase">Sin ventas registradas en ruta hoy</p>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={getDriverChartData()} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: '#475569', fontWeight: 'bold' }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 'bold' }} tickFormatter={(v) => `$${v}`} />
+                          <Tooltip contentStyle={{ background: '#0f172a', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '11px', fontWeight: 'bold' }} formatter={(v) => [`$${Number(v).toFixed(2)} pesos`, 'Entregado']} />
+                          <Bar dataKey="total" fill="#4f46e5" radius={[8, 8, 0, 0]} maxBarSize={22} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
               </div>
-            </div>
+
+              {/* Unified Global Sales Table */}
+              <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
+                <div className="p-6 pb-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                    <Calendar size={14} className="text-slate-400" /> Registro Histórico Global de Ventas (Auditoría)
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {searchQuery && (
+                      <span className="text-[9px] font-black bg-sky-50 text-sky-600 px-2.5 py-1 rounded-full uppercase">
+                        🔍 Búsqueda Inteligente Activa
+                      </span>
+                    )}
+                    <span className="text-[9px] font-black bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full uppercase">
+                      {selectedOrders.length} Resultados
+                    </span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto flex-1">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-50 bg-slate-50/30 text-slate-400 font-black uppercase text-[9px] tracking-widest">
+                        <th className="px-6 py-4">Fecha</th>
+                        <th className="px-6 py-4">Cliente</th>
+                        <th className="px-6 py-4">ID / Tipo</th>
+                        <th className="px-6 py-4">Productos / Artículos</th>
+                        <th className="px-6 py-4">Atendió / Entregó</th>
+                        <th className="px-6 py-4 text-center">Estatus</th>
+                        <th className="px-6 py-4 text-right">Total</th>
+                        {(userRole === 'admin' || userRole === 'supervisor') && (
+                          <th className="px-6 py-4 text-center">Acciones</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {selectedOrders.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-16 text-center text-slate-400">
+                            <div className="flex flex-col items-center gap-2">
+                              <AlertCircle size={20} className="text-slate-300" />
+                              <p className="text-[11px] font-bold uppercase tracking-wider">No se encontraron ventas registradas</p>
+                              <p className="text-[10px] text-slate-400">Prueba con otro término de búsqueda o modifica el rango de fechas.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        selectedOrders.map((order) => {
+                          const orderDate = new Date(order.created_at);
+                          const isPickup = order.status.startsWith('pickup_') || order.customer_name.startsWith('🔄 [RECOGER] ');
+                          
+                          return (
+                            <tr key={order.id} className="hover:bg-slate-50/50 transition-colors group">
+                              <td className="px-6 py-4">
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-black text-slate-700">
+                                    {orderDate.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-medium">
+                                    {orderDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4">
+                                <p className="text-xs font-black text-slate-700 uppercase italic">
+                                  {order.customer_name}
+                                </p>
+                                <p className="text-[8.5px] text-slate-400 font-bold truncate max-w-[150px]">
+                                  {order.address}
+                                </p>
+                              </td>
+
+                              <td className="px-6 py-4">
+                                <div className="space-y-0.5">
+                                  <p className="text-xs font-mono font-bold text-slate-600">
+                                    #{order.id.slice(0, 8).toUpperCase()}
+                                  </p>
+                                  <p className="text-[8px] font-black uppercase flex items-center gap-1">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                      order.source === 'whatsapp' ? 'bg-emerald-500' :
+                                      order.source === 'pos' ? 'bg-sky-500' :
+                                      order.source === 'phone' ? 'bg-blue-500' : 'bg-indigo-500'
+                                    }`} />
+                                    {getSourceLabel(order.source)}
+                                  </p>
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4 max-w-xs">
+                                <p className="text-xs font-bold text-slate-600 leading-normal truncate" title={order.items}>
+                                  {order.items}
+                                </p>
+                              </td>
+
+                              <td className="px-6 py-4">
+                                <p className="text-xs font-bold text-slate-600">
+                                  {order.assigned_to_name || 'Mostrador / Planta'}
+                                </p>
+                              </td>
+
+                              <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${
+                                  order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                  order.status === 'assigned' || order.status === 'pickup_assigned' ? 'bg-sky-50 text-sky-600 border-sky-100' :
+                                  order.status === 'cancelled' ? 'bg-rose-50 text-rose-600 border-rose-100' :
+                                  'bg-amber-50 text-amber-600 border-amber-100'
+                                }`}>
+                                  {order.status === 'delivered' ? 'Entregado' : 
+                                   order.status === 'assigned' ? 'En Ruta' : 
+                                   order.status === 'pending' ? 'Pendiente' : 
+                                   order.status === 'cancelled' ? 'Cancelado' : order.status.toUpperCase()}
+                                </span>
+                              </td>
+
+                              <td className="px-6 py-4 text-right">
+                                <p className={`text-xs font-black ${isPickup ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                  ${Number(order.total_price).toFixed(2)}
+                                </p>
+                              </td>
+
+                              {(userRole === 'admin' || userRole === 'supervisor') && (
+                                <td className="px-6 py-4 text-center">
+                                  <button
+                                    onClick={() => handleDeleteClick(order)}
+                                    className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 active:scale-90 cursor-pointer"
+                                    title="Eliminar registro de venta"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
