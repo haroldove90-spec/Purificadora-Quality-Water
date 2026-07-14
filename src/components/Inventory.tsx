@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Search, Package, Trash2, Edit3, Save, X, Loader2, DollarSign, Tag, Info } from 'lucide-react';
+import { Plus, Search, Package, Trash2, Edit3, Save, X, Loader2, DollarSign, Tag, Info, Printer, Download } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { exportToPDF } from '../utils/pdfExport';
 
 interface Product {
   id: string;
@@ -120,6 +121,56 @@ export default function Products({ userRole }: { userRole: string | null }) {
     p.description?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const handleExportPDF = () => {
+    try {
+      const columns = ['ID', 'Producto', 'Descripción', 'Precio ($)'];
+      const data = filteredProducts.map((p, idx) => [
+        p.id.slice(0, 8).toUpperCase(),
+        p.name,
+        p.description || '-',
+        `$${p.price.toFixed(2)}`
+      ]);
+
+      exportToPDF({
+        title: 'Catálogo de Productos - Inventario',
+        subtitle: `Generado el ${new Date().toLocaleDateString()} - Purificadora QualityWater`,
+        columns,
+        data,
+        filename: 'Catalogo_Productos'
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      const columns = ['ID', 'Producto', 'Descripción', 'Precio ($)'];
+      const data = filteredProducts.map((p, idx) => [
+        p.id.slice(0, 8).toUpperCase(),
+        p.name,
+        p.description || '-',
+        p.price.toFixed(2)
+      ]);
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Catalogo_Productos_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-24">
       {/* Header */}
@@ -129,7 +180,23 @@ export default function Products({ userRole }: { userRole: string | null }) {
           <p className="text-slate-500 mt-2 font-bold italic uppercase text-[10px] tracking-wider">Gestión centralizada para ventas y pedidos</p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={handleExportPDF}
+            disabled={filteredProducts.length === 0}
+            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 shrink-0"
+            title="Exportar a PDF"
+          >
+            <Printer size={16} /> PDF
+          </button>
+          <button
+            onClick={handleExportExcel}
+            disabled={filteredProducts.length === 0}
+            className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100 px-4 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 shrink-0"
+            title="Exportar a Excel"
+          >
+            <Download size={16} /> Excel
+          </button>
           <button 
             onClick={() => {
               setEditingProduct(null);

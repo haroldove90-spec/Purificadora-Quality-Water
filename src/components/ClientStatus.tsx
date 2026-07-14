@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Package, MapPin, Phone, MessageSquare, Clock, CheckCircle2, 
   Truck, AlertCircle, ShoppingCart, Tag, TagIcon, Store, 
-  History, Plus, Check, Loader2, Calendar, DollarSign
+  History, Plus, Check, Loader2, Calendar, DollarSign, Printer, Download
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { namesMatch } from '../utils/nameHelper';
+import { exportToPDF } from '../utils/pdfExport';
 
 interface Product {
   id: string;
@@ -96,6 +97,58 @@ export default function ClientStatus({ userRole, userName }: ClientStatusProps) 
       }
     } catch (err) {
       console.warn('Error fetching client history:', err);
+    }
+  };
+
+  const handleExportPDF = () => {
+    try {
+      const columns = ['Fecha', 'ID de Compra', 'Detalle / Artículos', 'Estatus', 'Total ($)'];
+      const data = clientHistory.map(o => [
+        new Date(o.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        `#${o.id.slice(0, 8).toUpperCase()}`,
+        o.items,
+        o.status === 'delivered' ? 'Entregado' : o.status === 'pending' ? 'Pendiente' : o.status === 'assigned' ? 'En ruta' : o.status,
+        `$${Number(o.total_price).toFixed(2)}`
+      ]);
+
+      exportToPDF({
+        title: 'Mi Historial de Consumo',
+        subtitle: `Cliente: ${userName || 'Usuario'} - Generado el ${new Date().toLocaleDateString()}`,
+        columns,
+        data,
+        filename: `Historial_Consumo_${(userName || 'Usuario').replace(/\s+/g, '_')}`
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      const columns = ['Fecha', 'ID de Compra', 'Detalle / Artículos', 'Estatus', 'Total ($)'];
+      const data = clientHistory.map(o => [
+        new Date(o.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        `#${o.id.slice(0, 8).toUpperCase()}`,
+        o.items,
+        o.status === 'delivered' ? 'Entregado' : o.status === 'pending' ? 'Pendiente' : o.status === 'assigned' ? 'En ruta' : o.status,
+        Number(o.total_price).toFixed(2)
+      ]);
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Historial_Consumo_${(userName || 'Usuario').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -392,12 +445,32 @@ export default function ClientStatus({ userRole, userName }: ClientStatusProps) 
       {/* Customer Purchase History Table */}
       {userName && (
         <div className="space-y-6">
-          <div className="flex items-center gap-4 px-4">
-            <div className="h-px flex-1 bg-slate-200" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 border-b border-slate-100 pb-4">
             <h2 className="text-xl font-black text-slate-800 uppercase italic tracking-widest flex items-center gap-3">
                <History size={20} className="text-indigo-500" /> Mi Historial de Consumo
             </h2>
-            <div className="h-px flex-1 bg-slate-200" />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                disabled={clientHistory.length === 0}
+                className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                title="Exportar mi historial en PDF"
+              >
+                <Printer size={12} className="text-slate-500" />
+                Exportar PDF
+              </button>
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                disabled={clientHistory.length === 0}
+                className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100 px-3.5 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                title="Exportar mi historial en Excel"
+              >
+                <Download size={12} className="text-emerald-500" />
+                Exportar Excel
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">

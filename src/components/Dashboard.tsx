@@ -25,7 +25,8 @@ import {
   MessageSquare,
   Check,
   CheckCircle,
-  Edit3
+  Edit3,
+  FileText
 } from 'lucide-react';
 import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
@@ -296,6 +297,37 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     });
   };
 
+  const handleExportGlobalExcel = () => {
+    try {
+      const columns = ['ID / Referencia', 'Cliente', 'Dirección', 'Artículos', 'Repartidor', 'Estado', 'Fecha'];
+      const data = filteredOrders.map(order => [
+        order.id.slice(0, 8).toUpperCase(),
+        order.customer_name,
+        order.address?.replace(' | Planta', ''),
+        order.items,
+        order.assigned_to_name || 'Sin Asignar',
+        order.status === 'delivered' ? 'Completado' : order.status === 'assigned' ? 'En Ruta' : 'Pendiente',
+        new Date(order.created_at).toLocaleString()
+      ]);
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Reporte_Global_Despacho_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleExportIndividual = (order: any) => {
     const columns = ['Campo', 'Detalle'];
     const data = [
@@ -315,6 +347,38 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       data,
       filename: `Pedido_${order.customer_name.replace(/\s+/g, '_')}`
     });
+  };
+
+  const handleExportIndividualExcel = (order: any) => {
+    try {
+      const columns = ['Campo', 'Detalle'];
+      const data = [
+        ['ID de Pedido', order.id.toUpperCase()],
+        ['Cliente', order.customer_name],
+        ['Dirección de Despacho', order.address?.replace(' | Planta', '')],
+        ['Detalles / Artículos', order.items],
+        ['Repartidor Asignado', order.assigned_to_name || 'Sin Asignar'],
+        ['Estado Actual', order.status === 'delivered' ? 'Completado / Entregado' : order.status === 'assigned' ? 'En Ruta / Asignado' : 'Pendiente de Despacho'],
+        ['Tipo de Entrega', order.source === 'local' ? 'Venta Local en Planta' : 'Pedido de Entrega domicilio'],
+        ['Fecha y Hora', new Date(order.created_at).toLocaleString()]
+      ];
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Pedido_${order.customer_name.replace(/\s+/g, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleRegisterOrder = async (e: React.FormEvent) => {
@@ -612,11 +676,19 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportGlobal}
-              className="flex items-center gap-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 px-3.5 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95"
-              title="Exportar todos los pedidos de la lista actual"
+              className="flex items-center gap-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 px-3.5 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap"
+              title="Exportar todos los pedidos de la lista actual en PDF"
             >
-              <Download size={12} className="text-sky-500 animate-pulse" />
-              Exportar Todo ({filteredOrders.length})
+              <Download size={12} className="text-sky-500" />
+              Exportar PDF ({filteredOrders.length})
+            </button>
+            <button
+              onClick={handleExportGlobalExcel}
+              className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-100 px-3.5 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap"
+              title="Exportar todos los pedidos de la lista actual en Excel"
+            >
+              <Download size={12} className="text-emerald-500" />
+              Exportar Excel ({filteredOrders.length})
             </button>
             <span className="text-[10px] bg-slate-800 text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-widest whitespace-nowrap">
               {filteredOrders.length} Resultados
@@ -724,9 +796,16 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                        <button 
                         onClick={(e) => { e.stopPropagation(); handleExportIndividual(order); }}
                         className="p-2 text-slate-300 hover:text-sky-500 transition-colors"
-                        title="Exportar Reporte Individual"
+                        title="Exportar Reporte Individual PDF"
                       >
                         <Download size={16} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleExportIndividualExcel(order); }}
+                        className="p-2 text-slate-300 hover:text-emerald-500 transition-colors"
+                        title="Exportar Reporte Individual Excel"
+                      >
+                        <FileText size={16} />
                       </button>
                       {(userRole === 'admin' || userRole === 'supervisor') && (
                         <button 

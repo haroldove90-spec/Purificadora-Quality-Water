@@ -822,6 +822,92 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     });
   };
 
+  const handleExportGlobalExcel = () => {
+    try {
+      const todayDate = new Date().toLocaleDateString('es-MX', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      const columns = ['Empleado', 'Estatus', 'Fondo Inicial', 'Ventas del Día', 'Pedidos', 'Efectivo a Entregar'];
+      const data = driversStatusData.map(d => {
+        const statusStr = d.is_closed ? 'CERRADA' : d.cash_float !== null ? 'ABIERTA' : 'SIN INICIAR';
+        const roleStr = d.role === 'admin' ? 'Admin' : d.role === 'operator' ? 'Planta' : 'Repartidor';
+        return [
+          `${d.name} (${roleStr})`,
+          statusStr,
+          d.cash_float !== null ? Number(d.cash_float).toFixed(2) : '0.00',
+          Number(d.sales_total).toFixed(2),
+          d.orders_count,
+          Number(d.total_to_deliver).toFixed(2)
+        ];
+      });
+
+      data.push(['', '', '', '', '', '']);
+      data.push(['RESUMEN DE CAPITAL CONSOLIDADO', '', '', '', '', '']);
+      data.push(['Total Fondos Asignados', '', '', '', '', assignedFloatsTotal.toFixed(2)]);
+      data.push(['Total Ventas Registradas Today', '', '', '', '', registeredSalesTotal.toFixed(2)]);
+      data.push(['Total Efectivo Recaudado (Cierres)', '', '', '', '', collectedTotal.toFixed(2)]);
+      data.push(['Total Flotante Pendiente', '', '', '', '', activeInPlayTotal.toFixed(2)]);
+      data.push(['GRAN TOTAL PATRIMONIAL DIARIO', '', '', '', '', (assignedFloatsTotal + registeredSalesTotal).toFixed(2)]);
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Reporte_Global_Cortes_${getLocalDateString()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  const handleExportReceiptExcel = (driverData: any) => {
+    try {
+      const isClosed = !!driverData.is_closed || !!driverData.closed_at;
+      const statusLabel = isClosed ? 'Cerrada / Liquidada' : 'Caja Abierta (Sesión Activa)';
+      const closeTimeStr = isClosed 
+        ? new Date(driverData.closed_at || '').toLocaleString() 
+        : 'Borrador (Sesión en Curso)';
+
+      const columns = ['Concepto', 'Detalle'];
+      const data = [
+        ['Empleado', `${driverData.name}`],
+        ['Fondo de Caja (Inicio)', `$${Number(driverData.cash_float || 0).toFixed(2)} pesos`],
+        ['Ventas del Día (Entregas)', `$${Number(driverData.sales_total || 0).toFixed(2)} pesos`],
+        ['Total de Entregas Realizadas', `${driverData.orders_count || 0} pedidos`],
+        ['Monto Total Neto a Entregar', `$${Number(driverData.total_to_deliver || 0).toFixed(2)} pesos`],
+        ['Estatus de Caja', statusLabel],
+        ['Fecha de Cierre / Reporte', closeTimeStr],
+        ['Firmado por', `${driverData.name} (Empleado)`],
+        ['Recibido por', `${driverData.closed_by_name || 'Administrador (Pendiente)'}`],
+      ];
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Comprobante_Cierre_${driverData.name.replace(/\s+/g, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
   // Re-open Cash drawer (Admin lock toggle)
   const handleReopenCashDrawer = async (employeeName: string) => {
     if (!confirm(`¿Estás seguro de reabrir la caja de ${employeeName}?`)) return;
@@ -1761,6 +1847,18 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                           Reporte Global (PDF)
                         </button>
                       )}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={handleExportGlobalExcel}
+                          disabled={actionLoading}
+                          className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all shadow-sm"
+                          title="Exportar Reporte Global de Cortes de Caja de hoy en Excel"
+                        >
+                          <Download size={12} />
+                          Reporte Global (Excel)
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={handleResetAllFloats}
@@ -1991,6 +2089,13 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                       <Printer size={15} />
                                     </button>
                                     <button
+                                      onClick={() => handleExportReceiptExcel(drv)}
+                                      className="p-2 bg-slate-50 text-emerald-600 hover:text-emerald-700 rounded-xl hover:bg-slate-100 transition-all"
+                                      title="Comprobante Excel"
+                                    >
+                                      <Download size={15} />
+                                    </button>
+                                    <button
                                       onClick={() => { if (drv.is_closed) handleReopenCashDrawer(drv.name); }}
                                       className={`p-1.5 text-slate-400 hover:text-amber-500 transition-colors ${drv.is_closed ? "" : "hidden"}`}
                                       title="Reabrir caja"
@@ -2101,23 +2206,42 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      const completeClosureData = {
-                        name: effectiveEmployeeName,
-                        cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
-                        sales_total: Number(activeDriverSession.last_location?.cash_sales_total || 0),
-                        orders_count: getDriverSalesObj(effectiveEmployeeName).ordersCount,
-                        total_to_deliver: Number(activeDriverSession.last_location?.cash_total_to_deliver || 0),
-                        closed_at: activeDriverSession.last_location?.cash_closed_at,
-                        closed_by_name: activeDriverSession.last_location?.closed_by_name
-                      };
-                      handleExportReceiptPDF(completeClosureData);
-                    }}
-                    className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-4 rounded-[20px] font-black text-xs uppercase tracking-widest shadow-xl transition-all mx-auto active:scale-95"
-                  >
-                    <Download size={16} /> Descargar Comprobante PDF
-                  </button>
+                  <div className="flex gap-4 justify-center flex-wrap">
+                    <button
+                      onClick={() => {
+                        const completeClosureData = {
+                          name: effectiveEmployeeName,
+                          cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
+                          sales_total: Number(activeDriverSession.last_location?.cash_sales_total || 0),
+                          orders_count: getDriverSalesObj(effectiveEmployeeName).ordersCount,
+                          total_to_deliver: Number(activeDriverSession.last_location?.cash_total_to_deliver || 0),
+                          closed_at: activeDriverSession.last_location?.cash_closed_at,
+                          closed_by_name: activeDriverSession.last_location?.closed_by_name
+                        };
+                        handleExportReceiptPDF(completeClosureData);
+                      }}
+                      className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3.5 rounded-[20px] font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95"
+                    >
+                      <Download size={16} /> Descargar PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        const completeClosureData = {
+                          name: effectiveEmployeeName,
+                          cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
+                          sales_total: Number(activeDriverSession.last_location?.cash_sales_total || 0),
+                          orders_count: getDriverSalesObj(effectiveEmployeeName).ordersCount,
+                          total_to_deliver: Number(activeDriverSession.last_location?.cash_total_to_deliver || 0),
+                          closed_at: activeDriverSession.last_location?.cash_closed_at,
+                          closed_by_name: activeDriverSession.last_location?.closed_by_name
+                        };
+                        handleExportReceiptExcel(completeClosureData);
+                      }}
+                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 rounded-[20px] font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95"
+                    >
+                      <Download size={16} /> Descargar Excel
+                    </button>
+                  </div>
                 </motion.div>
               ) : activeDriverSession?.last_location?.cash_float !== undefined ? (
                 /* Driver Drawer active - can perform Cierre */

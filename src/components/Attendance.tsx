@@ -90,6 +90,36 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
     }
   };
 
+  const handleExportExcel = () => {
+    try {
+      const columns = ['Empleado', 'Fecha', 'Entrada', 'Comida I', 'Comida R', 'Salida'];
+      const data = history.map(h => [
+        h.user_name,
+        h.work_date,
+        h.check_in ? new Date(h.check_in).toLocaleTimeString() : '-',
+        h.break_start ? new Date(h.break_start).toLocaleTimeString() : '-',
+        h.break_end ? new Date(h.break_end).toLocaleTimeString() : '-',
+        h.check_out ? new Date(h.check_out).toLocaleTimeString() : '-'
+      ]);
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Reporte_Asistencia_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleDeleteAttendance = async (id: string, name: string) => {
     if (!confirm(`¿Eliminar registro de asistencia de ${name}?`)) return;
     const { error } = await supabase.from('daily_attendance').delete().eq('id', id);
@@ -249,10 +279,18 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
             <button 
               onClick={handleExportPDF}
               disabled={isExporting || history.length === 0}
-              className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
             >
               {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               Exportar PDF
+            </button>
+            <button 
+              onClick={handleExportExcel}
+              disabled={isExporting || history.length === 0}
+              className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50"
+            >
+              <Download size={16} />
+              Exportar Excel
             </button>
             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
               <Users size={16} className="text-sky-500" />

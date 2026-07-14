@@ -30,7 +30,8 @@ import {
   X,
   Loader2,
   Trash2,
-  Edit3
+  Edit3,
+  Award
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -83,7 +84,7 @@ const CLIENT_MANAGEMENT = [
   { id: 'C4', name: 'Oficinas BBVA', neighborhood: 'Juarez', tier: 'VIP', totalOrders: 12, lastActivity: 'Hoy' },
 ];
 
-type Tab = 'metrics' | 'sales' | 'customers' | 'driver_sales' | 'plant_cut';
+type Tab = 'metrics' | 'sales' | 'customers' | 'driver_sales' | 'plant_cut' | 'employee_sales';
 
 interface FinancesProps {
   initialTab?: Tab;
@@ -115,6 +116,11 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [metricsSearch, setMetricsSearch] = useState('');
   const [isMounted, setIsMounted] = useState(false);
   const [customerFilter, setCustomerFilter] = useState('');
+
+  // Estados para Ventas por Empleado
+  const [empSalesSearch, setEmpSalesSearch] = useState('');
+  const [empSalesRoleFilter, setEmpSalesRoleFilter] = useState<string>('all');
+  const [selectedEmployeeForSales, setSelectedEmployeeForSales] = useState<any | null>(null);
 
   // Master scope filter for admin: 'all' (unified/global), 'plant' (planta), 'drivers' (repartidores)
   const [adminSalesScope, setAdminSalesScope] = useState<'all' | 'plant' | 'drivers'>('all');
@@ -255,6 +261,191 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [metricsAttendance, setMetricsAttendance] = useState<any[]>([]);
   const [metricsQualityLogs, setMetricsQualityLogs] = useState<any[]>([]);
   const [metricsProducts, setMetricsProducts] = useState<any[]>([]);
+
+  // States for today's attendances and editing trips (requested by user to edit trips/routes)
+  const [todayAttendances, setTodayAttendances] = useState<any[]>([]);
+  const [editingTrip, setEditingTrip] = useState<any | null>(null);
+  const [editTripDriver, setEditTripDriver] = useState<string>('');
+  const [editTripRoute, setEditTripRoute] = useState<string>('');
+  const [editTripRosa, setEditTripRosa] = useState<number>(0);
+  const [editTripAzul, setEditTripAzul] = useState<number>(0);
+  const [editTripColor, setEditTripColor] = useState<number>(0);
+  const [editTripPequeno, setEditTripPequeno] = useState<number>(0);
+  const [editTripLavar, setEditTripLavar] = useState<number>(0);
+  const [editTripStatus, setEditTripStatus] = useState<string>('active');
+
+  const parseJsonObj = (val: any) => {
+    if (!val) return {};
+    if (typeof val === 'string') {
+      try {
+        return JSON.parse(val);
+      } catch (_) {
+        return {};
+      }
+    }
+    return val;
+  };
+
+  const fetchTodayAttendance = async () => {
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const { data, error } = await supabase
+      .from('daily_attendance')
+      .select('*')
+      .eq('work_date', todayStr);
+    if (!error && data) {
+      setTodayAttendances(data);
+    }
+  };
+
+  const handleStartEditTrip = (trip: any) => {
+    setEditingTrip(trip);
+    setEditTripDriver(trip.driverName);
+    setEditTripRoute(trip.assigned_route || '1.- Santa Cruz');
+    setEditTripRosa(trip.loaded_qty_rosa || 0);
+    setEditTripAzul(trip.loaded_qty_azul || 0);
+    setEditTripColor(trip.loaded_qty_color || 0);
+    setEditTripPequeno(trip.loaded_qty_pequeno || 0);
+    setEditTripLavar(trip.loaded_qty_lavar || 0);
+    setEditTripStatus(trip.status || 'active');
+  };
+
+  const handleSaveTripEdit = async () => {
+    if (!editingTrip) return;
+    try {
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      const totalQty = Number(editTripRosa) + Number(editTripAzul) + Number(editTripColor) + Number(editTripPequeno) + Number(editTripLavar);
+
+      // 1. Fetch original attendance record
+      const { data: origAttData, error: origErr } = await supabase
+        .from('daily_attendance')
+        .select('*')
+        .eq('work_date', todayStr);
+
+      if (origErr) throw origErr;
+
+      const originalAttendance = (origAttData || []).find(a => {
+        const n1 = a.user_name.toLowerCase().trim();
+        const n2 = editingTrip.driverName.toLowerCase().trim();
+        return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+      });
+
+      if (!originalAttendance) {
+        alert('Error: No se encontró el registro de asistencia del repartidor original.');
+        return;
+      }
+
+      const origLocation = parseJsonObj(originalAttendance.last_location);
+      const origTrips = origLocation.trips || [];
+      const origTripIndex = origTrips.findIndex((t: any) => t.id === editingTrip.id);
+
+      if (origTripIndex === -1) {
+        alert('Error: No se encontró el viaje original en el registro.');
+        return;
+      }
+
+      // Check if driver was changed
+      const isDriverChanged = editTripDriver.toLowerCase().trim() !== editingTrip.driverName.toLowerCase().trim();
+
+      // Create updated trip object
+      const updatedTrip = {
+        ...origTrips[origTripIndex],
+        assigned_route: editTripRoute,
+        loaded_qty: totalQty,
+        loaded_qty_rosa: Number(editTripRosa),
+        loaded_qty_azul: Number(editTripAzul),
+        loaded_qty_color: Number(editTripColor),
+        loaded_qty_pequeno: Number(editTripPequeno),
+        loaded_qty_lavar: Number(editTripLavar),
+        status: editTripStatus
+      };
+
+      if (!isDriverChanged) {
+        // Just update in the same record
+        origTrips[origTripIndex] = updatedTrip;
+        const updatedLocation = {
+          ...origLocation,
+          trips: origTrips
+        };
+
+        const { error: saveErr } = await supabase
+          .from('daily_attendance')
+          .update({ last_location: updatedLocation })
+          .eq('id', originalAttendance.id);
+
+        if (saveErr) throw saveErr;
+      } else {
+        // Moving trip to another driver
+        // A. Remove trip from original driver
+        origTrips.splice(origTripIndex, 1);
+        const updatedOrigLocation = {
+          ...origLocation,
+          trips: origTrips
+        };
+
+        const { error: saveOrigErr } = await supabase
+          .from('daily_attendance')
+          .update({ last_location: updatedOrigLocation })
+          .eq('id', originalAttendance.id);
+
+        if (saveOrigErr) throw saveOrigErr;
+
+        // B. Fetch or create target driver's attendance record
+        const targetAttendance = (origAttData || []).find(a => {
+          const n1 = a.user_name.toLowerCase().trim();
+          const n2 = editTripDriver.toLowerCase().trim();
+          return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+        });
+
+        let targetLocation: any = {};
+        let targetTrips: any[] = [];
+
+        if (targetAttendance) {
+          targetLocation = parseJsonObj(targetAttendance.last_location);
+          targetTrips = targetLocation.trips || [];
+        }
+
+        // Adjust trip number for target driver
+        const targetTripWithNewNumber = {
+          ...updatedTrip,
+          trip_number: targetTrips.length + 1
+        };
+
+        targetTrips.push(targetTripWithNewNumber);
+        const updatedTargetLocation = {
+          ...targetLocation,
+          trips: targetTrips
+        };
+
+        const { error: saveTargetErr } = await supabase
+          .from('daily_attendance')
+          .upsert({
+            ...(targetAttendance || {}),
+            user_name: editTripDriver,
+            work_date: todayStr,
+            user_role: 'driver',
+            last_location: updatedTargetLocation,
+            check_in: targetAttendance?.check_in || new Date().toISOString()
+          }, { onConflict: 'user_name, work_date' });
+
+        if (saveTargetErr) throw saveTargetErr;
+      }
+
+      // Log notification
+      await supabase.from('notifications_log').insert([{
+        title: '🚚 Viaje / Ruta Modificado',
+        message: `El administrador/supervisor modificó el viaje #${editingTrip.trip_number} de ${editingTrip.driverName}. Nueva Ruta: ${editTripRoute}. Nueva carga: ${totalQty} g.`,
+        created_at: new Date().toISOString(),
+        is_read: false
+      }]);
+
+      alert('¡Viaje editado con éxito!');
+      setEditingTrip(null);
+      await fetchTodayAttendance();
+      await fetchSales();
+    } catch (e: any) {
+      alert('Error al guardar cambios: ' + e.message);
+    }
+  };
 
   const calculateTotalVolume = () => {
     let total = 0;
@@ -710,16 +901,25 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       })
       .subscribe();
 
+    const attendanceChannel = supabase
+      .channel('attendance_sync_all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_attendance' }, () => {
+        fetchTodayAttendance();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(salesChannel);
       supabase.removeChannel(customersChannel);
       supabase.removeChannel(employeesChannel);
+      supabase.removeChannel(attendanceChannel);
     };
   }, [initialTab, activeTab]);
 
   const fetchSales = async () => {
     setLoadingSales(true);
     try {
+      fetchTodayAttendance();
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -945,6 +1145,29 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         columns = ['Nombre', 'Rol', 'Teléfono', 'Estatus'];
         const list = employeesList.length > 0 ? employeesList : SELLER_PERFORMANCE;
         data = list.map(e => [e.name, e.role, e.phone || '-', e.status || 'active']);
+      } else if (activeTab === 'employee_sales') {
+        filename = 'Reporte_Ventas_Por_Empleado';
+        columns = ['Nombre', 'Rol / Puesto', 'Total Pedidos', 'Monto Total Ventas'];
+        data = employeesList.map(e => {
+          const empSales = salesList.filter(s => namesMatch(s.assigned_to_name, e.name));
+          const totalAmount = empSales.reduce((sum, s) => sum + Number(s.total_price || 0), 0);
+          return [
+            e.name,
+            e.role === 'driver' ? 'Repartidor' : e.role === 'operator' ? 'Operador Planta' : e.role === 'supervisor' ? 'Supervisor' : 'Administrador',
+            String(empSales.length),
+            `$${totalAmount.toFixed(2)}`
+          ];
+        });
+      } else if (type === 'Corte de Caja' || activeTab === 'plant_cut') {
+        filename = 'Corte_Caja_Planta';
+        columns = ['Concepto', 'Detalle', 'Valor'];
+        const plantStats = getPlantSalesToday();
+        data = [
+          ['Total Mostrador Hoy', 'Ventas realizadas físicamente en mostrador', `$${plantStats.counterTotal.toFixed(2)}`],
+          ['Total WhatsApp Hoy', 'Ventas de planta coordinadas vía WhatsApp', `$${plantStats.whatsappTotal.toFixed(2)}`],
+          ['Total Neto Recaudado', 'Suma acumulada de ingresos en planta', `$${plantStats.totalRevenue.toFixed(2)}`],
+          ['Pedidos Registrados', 'Número de transacciones procesadas hoy', String(plantStats.totalCount)]
+        ];
       } else {
         // Fallback for Metrics
         filename = 'Metricas_Operativas';
@@ -995,6 +1218,19 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         columns = ['Nombre', 'Rol', 'Teléfono', 'Estatus'];
         const list = employeesList.length > 0 ? employeesList : SELLER_PERFORMANCE;
         data = list.map(e => [e.name, e.role, e.phone || '-', e.status || 'active']);
+      } else if (activeTab === 'employee_sales') {
+        filename = 'Reporte_Ventas_Por_Empleado';
+        columns = ['Nombre', 'Rol / Puesto', 'Total Pedidos', 'Monto Total Ventas'];
+        data = employeesList.map(e => {
+          const empSales = salesList.filter(s => namesMatch(s.assigned_to_name, e.name));
+          const totalAmount = empSales.reduce((sum, s) => sum + Number(s.total_price || 0), 0);
+          return [
+            e.name,
+            e.role === 'driver' ? 'Repartidor' : e.role === 'operator' ? 'Operador Planta' : e.role === 'supervisor' ? 'Supervisor' : 'Administrador',
+            String(empSales.length),
+            Number(totalAmount || 0).toFixed(2)
+          ];
+        });
       } else if (type === 'Corte de Caja') {
         filename = 'Corte_Caja_Planta';
         columns = ['Concepto', 'Detalle', 'Valor'];
@@ -1239,6 +1475,45 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         }
       }, 1000);
     }
+  };
+
+  const handleExportIndividualEmployeeExcel = (emp: any) => {
+    // Filter sales made by this employee
+    const employeeSales = salesList.filter(s => namesMatch(s.assigned_to_name, emp.name));
+    
+    const columns = ['Folio', 'Cliente', 'Artículos', 'Dirección', 'Medio', 'Total ($)', 'Fecha / Hora'];
+    const data = employeeSales.map(s => [
+      s.id.slice(0, 8).toUpperCase(),
+      s.customer_name || 'Venta de Mostrador',
+      s.items || '',
+      s.address || '-',
+      s.source === 'local' ? 'Planta' : s.source === 'whatsapp' ? 'WhatsApp' : s.source === 'pos' ? 'Venta POS' : 'Teléfono',
+      Number(s.total_price || 0).toFixed(2),
+      new Date(s.created_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+    ]);
+
+    const totalCalculated = employeeSales.reduce((acc, s) => acc + Number(s.total_price || 0), 0);
+
+    data.push(['', '', '', '', '', '', '']); // spacing row
+    data.push(['CONSOLIDADO DE VENTAS INDIVIDUAL', '', '', '', '', '', '']);
+    data.push(['Total de Pedidos Entregados', '', '', '', '', '', `${employeeSales.length} pedidos`]);
+    data.push(['Monto Total Recaudado / Ventas', '', '', '', '', '', `$${totalCalculated.toFixed(2)}`]);
+
+    const filename = `Reporte_Ventas_${emp.name.replace(/\s+/g, '_')}`;
+
+    const csvContent = [
+      columns.join(','),
+      ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleNewCustomerSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -2533,6 +2808,99 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 </div>
               </div>
 
+              {/* Sección de Edición de Viajes/Rutas Activas (Agregada por solicitud de edición de viajes para Admin/Supervisor) */}
+              {(userRole === 'admin' || userRole === 'supervisor') && (
+                <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
+                  <div>
+                    <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest flex items-center gap-2">
+                      🚚 Monitoreo y Edición de Viajes / Rutas Despachadas
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 italic tracking-widest">
+                      Edita las rutas, asignaciones y cargas de garrafones en cualquier momento
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-100">
+                        <tr>
+                          <th className="px-6 py-4">Repartidor</th>
+                          <th className="px-6 py-4">Viaje #</th>
+                          <th className="px-6 py-4">Ruta Asignada</th>
+                          <th className="px-6 py-4">Carga de Garrafones</th>
+                          <th className="px-6 py-4">Estatus</th>
+                          <th className="px-6 py-4 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100/50">
+                        {(() => {
+                          const todayTripsList: any[] = [];
+                          todayAttendances.forEach(att => {
+                            const loc = parseJsonObj(att.last_location);
+                            const trips = loc.trips || [];
+                            trips.forEach((t: any) => {
+                              todayTripsList.push({
+                                attendanceId: att.id,
+                                driverName: att.user_name,
+                                workDate: att.work_date,
+                                ...t
+                              });
+                            });
+                          });
+
+                          if (todayTripsList.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={6} className="text-center py-8 text-slate-400 text-xs font-semibold uppercase italic">
+                                  No hay viajes despachados para el día de hoy.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return todayTripsList.map((trip) => (
+                            <tr key={trip.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 font-black text-slate-800 text-xs italic">{trip.driverName}</td>
+                              <td className="px-6 py-4 font-mono text-[10px] font-bold text-slate-500">Viaje #{trip.trip_number}</td>
+                              <td className="px-6 py-4 text-[10px] font-bold text-slate-800">
+                                <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg">
+                                  {trip.assigned_route || 'Sin Ruta'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-wrap gap-1 text-[9px] font-black">
+                                  {(Number(trip.loaded_qty_rosa) || 0) > 0 && <span className="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-100/50">🌸 {trip.loaded_qty_rosa} R</span>}
+                                  {(Number(trip.loaded_qty_azul) || 0) > 0 && <span className="bg-sky-50 text-sky-600 px-2 py-0.5 rounded-md border border-sky-100/50">🔷 {trip.loaded_qty_azul} A</span>}
+                                  {(Number(trip.loaded_qty_color) || 0) > 0 && <span className="bg-purple-50 text-purple-600 px-2 py-0.5 rounded-md border border-purple-100/50">🌈 {trip.loaded_qty_color} C</span>}
+                                  {(Number(trip.loaded_qty_pequeno) || 0) > 0 && <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-md border border-amber-100/50">🍼 {trip.loaded_qty_pequeno} P</span>}
+                                  {(Number(trip.loaded_qty_lavar) || 0) > 0 && <span className="bg-slate-50 text-slate-600 px-2 py-0.5 rounded-md border border-slate-100/50">🧼 {trip.loaded_qty_lavar} L</span>}
+                                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-100/50">Total: {trip.loaded_qty}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
+                                  trip.status === 'active' ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                }`}>
+                                  {trip.status === 'active' ? 'En Ruta' : 'Liquidado'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <button
+                                  onClick={() => handleStartEditTrip(trip)}
+                                  className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl transition-all font-black text-[9px] uppercase tracking-wider flex items-center gap-1 ml-auto border border-sky-100/40"
+                                >
+                                  <Edit3 size={11} /> Editar
+                                </button>
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
@@ -2803,6 +3171,307 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     <p className="text-[10px] font-black uppercase tracking-widest opacity-60 leading-none mb-1">Mejora Estimada</p>
                     <p className="text-lg font-black leading-none">+$3,150.00 / Mensual</p>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'employee_sales' && (
+            <div className="space-y-6">
+              {/* Buscador inteligente */}
+              <div className="bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 p-6 rounded-[32px] text-white shadow-xl shadow-sky-500/10">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                      <Award size={18} className="text-yellow-300 animate-pulse" />
+                      Historial de Ventas por Colaborador
+                    </h3>
+                    <p className="text-[10px] text-sky-100/80 font-bold uppercase mt-1">
+                      Buscador inteligente con filtros rápidos por puesto. Monitorea comisiones y entregas de repartidores y personal de planta.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => handleExport('employee_sales')}
+                      className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
+                    >
+                      <Download size={14} /> PDF General
+                    </button>
+                    <button
+                      onClick={() => handleExportExcel('employee_sales')}
+                      className="flex items-center gap-1.5 bg-emerald-500/80 hover:bg-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
+                    >
+                      <Download size={14} /> Excel General
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                  <div className="relative md:col-span-2">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="text"
+                      placeholder="Escribe el nombre del repartidor o empleado de planta..."
+                      value={empSalesSearch}
+                      onChange={(e) => setEmpSalesSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 bg-white text-slate-800 rounded-2xl text-xs font-bold shadow-inner outline-none focus:ring-2 focus:ring-white/50 placeholder-slate-400"
+                    />
+                    {empSalesSearch && (
+                      <button 
+                        onClick={() => setEmpSalesSearch('')}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <select
+                      value={empSalesRoleFilter}
+                      onChange={(e) => setEmpSalesRoleFilter(e.target.value)}
+                      className="w-full bg-white text-slate-800 p-3 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-white/50 appearance-none border-none shadow-inner"
+                    >
+                      <option value="all">⚡ Todos los Puestos</option>
+                      <option value="driver">🚚 Repartidores / Choferes</option>
+                      <option value="operator">🌱 Planta / Mostrador</option>
+                      <option value="supervisor">👮 Supervisores</option>
+                      <option value="admin">💼 Administradores</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contenedor principal de dos columnas */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Columna Izquierda: Lista de Empleados con sus métricas */}
+                <div className="lg:col-span-5 bg-white rounded-[40px] border border-slate-200 shadow-sm p-6 space-y-4">
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center justify-between">
+                    <span>Directorio de Colaboradores ({employeesList.length})</span>
+                    <span className="text-[10px] font-bold text-slate-400 normal-case">Haz clic para ver historial</span>
+                  </h4>
+
+                  <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                    {(() => {
+                      const filteredEmployees = employeesList.filter(emp => {
+                        // Filter by search text
+                        const matchesSearch = emp.name.toLowerCase().includes(empSalesSearch.toLowerCase()) ||
+                          (emp.role || '').toLowerCase().includes(empSalesSearch.toLowerCase());
+                        
+                        // Filter by role
+                        if (empSalesRoleFilter === 'all') return matchesSearch;
+                        return matchesSearch && emp.role === empSalesRoleFilter;
+                      });
+
+                      if (filteredEmployees.length === 0) {
+                        return (
+                          <div className="text-center py-12 text-slate-400 italic font-semibold text-xs uppercase tracking-wider">
+                            No se encontraron empleados con los filtros aplicados.
+                          </div>
+                        );
+                      }
+
+                      return filteredEmployees.map((emp) => {
+                        const empSales = salesList.filter(s => namesMatch(s.assigned_to_name, emp.name));
+                        const totalSalesAmount = empSales.reduce((acc, s) => acc + Number(s.total_price || 0), 0);
+                        const isSelected = selectedEmployeeForSales && emp.id === selectedEmployeeForSales.id;
+
+                        return (
+                          <button
+                            key={emp.id}
+                            onClick={() => setSelectedEmployeeForSales(emp)}
+                            className={`w-full flex items-center justify-between p-4 rounded-3xl transition-all border text-left ${
+                              isSelected
+                                ? 'bg-sky-50/50 border-sky-200 shadow-sm'
+                                : 'bg-slate-50/50 hover:bg-slate-50 border-transparent'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm uppercase ${
+                                emp.role === 'driver' ? 'bg-sky-100 text-sky-600' : 'bg-emerald-100 text-emerald-600'
+                              }`}>
+                                {emp.name.charAt(0)}
+                              </div>
+                              <div>
+                                <h5 className="font-black text-slate-800 text-xs italic uppercase tracking-wider">{emp.name}</h5>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                                    emp.role === 'driver' ? 'bg-sky-50 text-sky-600 border border-sky-100/40' :
+                                    emp.role === 'operator' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100/40' :
+                                    'bg-purple-50 text-purple-600 border border-purple-100/40'
+                                  }`}>
+                                    {emp.role === 'driver' ? 'Chofer' : emp.role === 'operator' ? 'Planta' : emp.role === 'supervisor' ? 'Supervisor' : 'Admin'}
+                                  </span>
+                                  {emp.status === 'inactive' && (
+                                    <span className="bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Inactivo</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <p className="text-[11px] font-black text-slate-800">${totalSalesAmount.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{empSales.length} Ventas</p>
+                            </div>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+
+                {/* Columna Derecha: Historial y Detalles del Empleado Seleccionado */}
+                <div className="lg:col-span-7 bg-white rounded-[40px] border border-slate-200 shadow-sm p-6">
+                  {selectedEmployeeForSales ? (
+                    (() => {
+                      const empSales = salesList.filter(s => namesMatch(s.assigned_to_name, selectedEmployeeForSales.name));
+                      const totalSalesAmount = empSales.reduce((acc, s) => acc + Number(s.total_price || 0), 0);
+                      const salesToday = empSales.filter(s => {
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const dateStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
+                        return dateStr === todayStr;
+                      });
+                      const totalTodayAmount = salesToday.reduce((acc, s) => acc + Number(s.total_price || 0), 0);
+
+                      // Métodos de Pago
+                      const cashSales = empSales.filter(s => s.payment_method === 'cash').reduce((acc, s) => acc + Number(s.total_price || 0), 0);
+                      const transferSales = empSales.filter(s => s.payment_method === 'transfer').reduce((acc, s) => acc + Number(s.total_price || 0), 0);
+
+                      // Canales / Source
+                      const posCount = empSales.filter(s => s.source === 'pos' || s.source === 'local').length;
+                      const whatsappCount = empSales.filter(s => s.source === 'whatsapp').length;
+
+                      return (
+                        <div className="space-y-6">
+                          {/* Tarjeta de Encabezado del Empleado Seleccionado */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                            <div className="flex items-center gap-4">
+                              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-400 to-indigo-500 text-white flex items-center justify-center font-black text-xl shadow-lg shadow-sky-500/10">
+                                {selectedEmployeeForSales.name.charAt(0)}
+                              </div>
+                              <div>
+                                <h4 className="text-base font-black text-slate-800 uppercase tracking-widest leading-none">{selectedEmployeeForSales.name}</h4>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1.5 flex items-center gap-2">
+                                  <span>ID: {selectedEmployeeForSales.id.slice(0, 8).toUpperCase()}</span>
+                                  <span>&bull;</span>
+                                  <span>{selectedEmployeeForSales.phone || 'Sin Teléfono'}</span>
+                                </p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <span className="bg-slate-900 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md tracking-wider">
+                                    {selectedEmployeeForSales.role === 'driver' ? '🚚 Chofer Repartidor' : '🌱 Operador de Planta'}
+                                  </span>
+                                  <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md tracking-wider ${
+                                    selectedEmployeeForSales.status === 'inactive' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'
+                                  }`}>
+                                    {selectedEmployeeForSales.status === 'inactive' ? 'Inactivo' : 'Activo'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                              <button
+                                onClick={() => handleExportIndividualEmployeeReport(selectedEmployeeForSales)}
+                                title="Exportar PDF Individual"
+                                className="p-2.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all shadow-md active:scale-95"
+                              >
+                                <Download size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleExportIndividualEmployeeExcel(selectedEmployeeForSales)}
+                                title="Exportar Excel Individual"
+                                className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-md active:scale-95"
+                              >
+                                <Download size={14} className="rotate-180" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Tarjetas de Métricas Rápidas */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Monto Total</span>
+                              <p className="text-sm font-black text-slate-800">${totalSalesAmount.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{empSales.length} Ventas</p>
+                            </div>
+
+                            <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Ventas de Hoy</span>
+                              <p className="text-sm font-black text-emerald-600">${totalTodayAmount.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{salesToday.length} Ventas</p>
+                            </div>
+
+                            <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Método de Pago</span>
+                              <p className="text-[10px] font-black text-slate-700">💵 ${cashSales.toFixed(0)} Efe</p>
+                              <p className="text-[10px] font-black text-indigo-500 mt-1">💳 ${transferSales.toFixed(0)} Trf</p>
+                            </div>
+
+                            <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Canales / Origen</span>
+                              <p className="text-[10px] font-black text-slate-700">🏪 {posCount} Mostrador</p>
+                              <p className="text-[10px] font-black text-emerald-600 mt-1">💬 {whatsappCount} WhatsApp</p>
+                            </div>
+                          </div>
+
+                          {/* Tabla de Historial */}
+                          <div className="space-y-3">
+                            <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Listado de Ventas Entregadas ({empSales.length})</h5>
+                            {empSales.length === 0 ? (
+                              <div className="text-center py-16 bg-slate-50 rounded-2xl border border-slate-100 border-dashed text-slate-400 italic text-xs uppercase tracking-wider">
+                                No se registran ventas para este empleado.
+                              </div>
+                            ) : (
+                              <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-inner max-h-[350px] overflow-y-auto">
+                                <table className="w-full text-left border-collapse">
+                                  <thead className="bg-slate-50 text-[9px] font-black uppercase text-slate-400 tracking-widest sticky top-0 border-b border-slate-100">
+                                    <tr>
+                                      <th className="px-4 py-3">Folio</th>
+                                      <th className="px-4 py-3">Cliente</th>
+                                      <th className="px-4 py-3">Artículos</th>
+                                      <th className="px-4 py-3">Fuente</th>
+                                      <th className="px-4 py-3 text-right">Total</th>
+                                      <th className="px-4 py-3 text-right">Fecha</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 text-xs">
+                                    {empSales.map((sale) => (
+                                      <tr key={sale.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-4 py-3.5 font-mono text-[9px] font-black text-slate-400">#{sale.id.slice(0, 8).toUpperCase()}</td>
+                                        <td className="px-4 py-3.5 font-black text-slate-700 italic">{sale.customer_name || 'Mostrador'}</td>
+                                        <td className="px-4 py-3.5 text-slate-500 max-w-[150px] truncate" title={sale.items}>{sale.items || '-'}</td>
+                                        <td className="px-4 py-3.5">
+                                          <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${
+                                            sale.source === 'whatsapp' ? 'bg-emerald-50 text-emerald-600' :
+                                            sale.source === 'pos' || sale.source === 'local' ? 'bg-sky-50 text-sky-600' :
+                                            'bg-slate-100 text-slate-600'
+                                          }`}>
+                                            {sale.source === 'whatsapp' ? 'WhatsApp' : sale.source === 'pos' || sale.source === 'local' ? 'Mostrador' : 'Reparto'}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3.5 text-right font-black text-slate-800">${Number(sale.total_price || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                        <td className="px-4 py-3.5 text-right text-[10px] text-slate-400">{new Date(sale.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-24 text-center">
+                      <div className="w-16 h-16 rounded-[24px] bg-sky-50 text-sky-500 flex items-center justify-center mb-4 border border-sky-100 shadow-sm shadow-sky-500/5">
+                        <Award size={28} className="animate-bounce" />
+                      </div>
+                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest leading-none">Ningún Colaborador Seleccionado</h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase mt-2 max-w-sm leading-relaxed">
+                        Selecciona un empleado de la lista para analizar a detalle su volumen de ventas, métodos de cobro, historial de entregas y generar sus reportes PDF y Excel individuales.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -3082,6 +3751,190 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                       <span>Confirmar Cobro y Liquidar</span>
                     </>
                   )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* MODAL DE EDICIÓN DE VIAJE/RUTA */}
+        {editingTrip && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[32px] w-full max-w-lg p-6 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-sky-50 text-sky-600 rounded-xl">
+                    <Truck size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-800 uppercase text-xs tracking-wider">
+                      Editar Viaje #{editingTrip.trip_number}
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                      {editingTrip.driverName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setEditingTrip(null)}
+                  className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Form Content */}
+              <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+                {/* Repartidor */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Asignar a Repartidor (Cambiar si es necesario)
+                  </label>
+                  <select
+                    value={editTripDriver}
+                    onChange={(e) => setEditTripDriver(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-sky-500/20"
+                  >
+                    {employeesList.filter(e => e.role === 'driver' || e.role === 'repartidor').map(drv => (
+                      <option key={drv.id} value={drv.name}>{drv.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Ruta */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Ruta de Asignación
+                  </label>
+                  <select
+                    value={editTripRoute}
+                    onChange={(e) => setEditTripRoute(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-sky-500/20"
+                  >
+                    <option value="1.- Santa Cruz">1.- Santa Cruz</option>
+                    <option value="2.- San Miguel-Centro">2.- San Miguel-Centro</option>
+                    <option value="3.- La Francia-Los Reyes">3.- La Francia-Los Reyes</option>
+                    <option value="4.- Planta o Local">4.- Planta o Local</option>
+                    <option value="5.- Llamadas Telefónicas">5.- Llamadas Telefónicas</option>
+                    <option value="6.- WhatsApp">6.- WhatsApp</option>
+                  </select>
+                </div>
+
+                {/* Cantidades cargadas */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                    Carga de Envases
+                  </span>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Rosas */}
+                    <div className="flex flex-col gap-1 bg-rose-50/40 p-3 rounded-xl border border-rose-100">
+                      <span className="text-[9px] font-black text-rose-700 uppercase">🌸 Rosas</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editTripRosa}
+                        onChange={(e) => setEditTripRosa(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full bg-white border border-rose-200/55 rounded-lg px-2.5 py-1.5 text-xs font-black text-rose-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      />
+                    </div>
+
+                    {/* Azules */}
+                    <div className="flex flex-col gap-1 bg-sky-50/40 p-3 rounded-xl border border-sky-100">
+                      <span className="text-[9px] font-black text-sky-700 uppercase">🔷 Azules</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editTripAzul}
+                        onChange={(e) => setEditTripAzul(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full bg-white border border-sky-200/55 rounded-lg px-2.5 py-1.5 text-xs font-black text-sky-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    {/* Color */}
+                    <div className="flex flex-col gap-1 bg-purple-50/40 p-3 rounded-xl border border-purple-100">
+                      <span className="text-[9px] font-black text-purple-700 uppercase">🌈 De Color</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editTripColor}
+                        onChange={(e) => setEditTripColor(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full bg-white border border-purple-200/55 rounded-lg px-2.5 py-1.5 text-xs font-black text-purple-800 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    {/* Pequeño */}
+                    <div className="flex flex-col gap-1 bg-amber-50/40 p-3 rounded-xl border border-amber-100">
+                      <span className="text-[9px] font-black text-amber-700 uppercase">🍼 Pequeños</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editTripPequeno}
+                        onChange={(e) => setEditTripPequeno(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full bg-white border border-amber-200/55 rounded-lg px-2.5 py-1.5 text-xs font-black text-amber-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    {/* Lavar */}
+                    <div className="flex flex-col gap-1 bg-slate-50 p-3 rounded-xl border border-slate-200 col-span-2">
+                      <span className="text-[9px] font-black text-slate-700 uppercase">🧼 A Lavar</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editTripLavar}
+                        onChange={(e) => setEditTripLavar(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-black text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Estatus */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Estatus del Viaje
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditTripStatus('active')}
+                      className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider border transition-all ${
+                        editTripStatus === 'active'
+                          ? 'bg-amber-50 border-amber-300 text-amber-700 shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      En Ruta
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditTripStatus('closed')}
+                      className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider border transition-all ${
+                        editTripStatus === 'closed'
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Liquidado
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="pt-4 border-t border-slate-100 shrink-0">
+                <button
+                  onClick={handleSaveTripEdit}
+                  className="w-full bg-sky-500 text-white py-3 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-sky-500/20 hover:bg-sky-600 transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 size={14} />
+                  Guardar Cambios del Viaje
                 </button>
               </div>
             </motion.div>

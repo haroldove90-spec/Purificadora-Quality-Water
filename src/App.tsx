@@ -27,6 +27,7 @@ import {
   BookOpen,
   Settings,
   Database,
+  Award,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
@@ -595,6 +596,7 @@ export default function App() {
         { id: 'sales', label: 'Métricas', icon: History },
         { id: 'customers', label: 'Clientes', icon: Users },
         { id: 'driver_sales', label: 'Empleados', icon: Truck },
+        { id: 'employee_sales', label: 'Ventas por Empleado', icon: Award },
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
@@ -636,6 +638,7 @@ export default function App() {
         { id: 'attendance', label: 'Registrar Mi Asistencia', icon: Clock },
         { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Users },
         { id: 'driver_sales', label: 'Empleados', icon: Truck },
+        { id: 'employee_sales', label: 'Ventas por Empleado', icon: Award },
         { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
         { id: 'supervisor_cash_closure', label: 'Supervisar Cortes', icon: ShieldCheck },
         { id: 'profile', label: 'Perfil', icon: User },
@@ -982,6 +985,7 @@ export default function App() {
                  activeView === 'sales' ? <Finances initialTab="sales" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'customers' ? <Finances initialTab="customers" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'driver_sales' ? <Finances initialTab="driver_sales" userRole={currentRoleView} userName={userName} /> :
+                 activeView === 'employee_sales' ? <Finances initialTab="employee_sales" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'plant_cut' ? <Finances initialTab="plant_cut" userRole={currentRoleView} userName={userName} /> :
                  activeView === 'attendance' ? <Attendance userRole={currentRoleView} userName={userName} /> :
                  activeView === 'cash_float' ? <CashFloat userRole={currentRoleView} userName={userName} /> :

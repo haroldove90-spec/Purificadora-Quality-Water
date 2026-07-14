@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle, Download, Trash2, Settings, PenTool as Tool, Eye, Edit3 as Edit } from 'lucide-react';
+import { Droplets, Thermometer, ShieldCheck, ClipboardList, Plus, Search, CheckCircle2, X, Loader2, AlertCircle, Download, Trash2, Settings, PenTool as Tool, Eye, Edit3 as Edit, FileText } from 'lucide-react';
 import { useQualityEngine } from '../hooks/useQualityEngine';
 import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 import { exportToPDF } from '../utils/pdfExport';
@@ -59,6 +59,51 @@ export default function QualityLog({ userRole }: QualityLogProps) {
     });
   };
 
+  const handleExportSingleExcel = (log: any) => {
+    try {
+      let parsedNotes: any = {};
+      try {
+        if (log.notes) parsedNotes = JSON.parse(log.notes);
+      } catch (_) {}
+
+      const columns = ['Parámetro', 'Valor Registrado / Especificación'];
+      const data = [
+        ['ID de Registro', log.id || '-'],
+        ['Supervisor Titular', log.supervisor_name || '-'],
+        ['Fecha de Captura', new Date(log.created_at).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })],
+        ['Volumen de Agua Cruda', `${log.volume_received || 0} Litros`],
+        ['Dosificación de Cloro', `${log.chlorine_dosage || 0} ppm`],
+        ['Potencial de Hidrógeno (pH)', `${parsedNotes.ph || '7.2'}`],
+        ['Sólidos Totales Disueltos (TDS)', `${parsedNotes.tds || '150'} ppm`],
+        ['Mantenimiento Preventivo', parsedNotes.maintenance || 'Ninguno / Normal'],
+        ['Condición General Hidráulica', log.pipeline_status === 'good' ? 'ÓPTIMO / OPERACIÓN NORMAL' : 'REVISIÓN REQUERIDA / MANTENIMIENTO urgente'],
+        ['Observaciones Técnicas', parsedNotes.additional_notes || '-']
+      ];
+
+      if (parsedNotes.custom_params && Array.isArray(parsedNotes.custom_params)) {
+        parsedNotes.custom_params.forEach((p: any) => {
+          data.push([`Especial: ${p.name || 'Parámetro'}`, `${p.value || '-'} ${p.unit || ''}`]);
+        });
+      }
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Reporte_Individual_Calidad_${log.id?.substring(0, 8)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleEditClick = (log: any) => {
     setEditingLog(log);
     let parsed: any = {};
@@ -101,6 +146,44 @@ export default function QualityLog({ userRole }: QualityLogProps) {
       console.error(e);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      const columns = ['Supervisor', 'Agua Cruda (L)', 'Cloro (ppm)', 'pH', 'TDS (ppm)', 'Mantenimiento', 'Estatus', 'Fecha'];
+      const data = dbLogs.map(l => {
+        let parsed = { ph: '-', tds: '-', maintenance: 'Ninguno' };
+        try {
+          if (l.notes) parsed = JSON.parse(l.notes);
+        } catch (_) {}
+        return [
+          l.supervisor_name,
+          `${l.volume_received}L`,
+          `${l.chlorine_dosage} ppm`,
+          parsed.ph || '-',
+          parsed.tds || '-',
+          parsed.maintenance || 'Ninguno',
+          l.pipeline_status === 'good' ? 'Óptimo' : 'Revisión',
+          new Date(l.created_at).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })
+        ];
+      });
+
+      const csvContent = [
+        columns.join(','),
+        ...data.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Reporte_Calidad_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -221,7 +304,7 @@ export default function QualityLog({ userRole }: QualityLogProps) {
           <h2 className="text-3xl font-black text-slate-800 italic uppercase">Bitácoras de <span className="text-sky-500">Calidad</span></h2>
           <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest italic font-mono">Monitoreo Físico-Químico • NORMA-127-SSA1</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button 
             type="button"
             onClick={handleExportPDF}
@@ -230,6 +313,15 @@ export default function QualityLog({ userRole }: QualityLogProps) {
           >
             {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
             PDF Auditoría
+          </button>
+          <button 
+            type="button"
+            onClick={handleExportExcel}
+            disabled={isExporting || dbLogs.length === 0}
+            className="flex items-center gap-3 bg-emerald-50 text-emerald-700 border border-emerald-100 px-6 py-4 rounded-3xl font-black uppercase tracking-widest text-[10px] hover:bg-emerald-100 transition-all disabled:opacity-50"
+          >
+            <Download size={18} />
+            Excel Auditoría
           </button>
           <button 
             type="button"
@@ -354,6 +446,14 @@ export default function QualityLog({ userRole }: QualityLogProps) {
                               title="Generar PDF de esta bitácora"
                             >
                               <Download size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExportSingleExcel(log)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                              title="Generar Excel de esta bitácora"
+                            >
+                              <FileText size={14} />
                             </button>
                             <button
                               type="button"
