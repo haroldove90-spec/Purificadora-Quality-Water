@@ -429,7 +429,7 @@ export default function App() {
   const fetchUserRole = async (userId: string, defaultName?: string) => {
     try {
       console.log('Cargando rol para:', userId);
-      // Timeout para la consulta a la base de datos (4 segundos máximo)
+      // Timeout para la consulta a la base de datos (12 segundos máximo para cold-starts de Supabase)
       const rolePromise = supabase
         .from('employees')
         .select('id, role, name, status')
@@ -437,7 +437,7 @@ export default function App() {
         .maybeSingle();
 
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout en DB')), 4000)
+        setTimeout(() => reject(new Error('Timeout en DB')), 12000)
       );
 
       const { data, error }: any = await Promise.race([rolePromise, timeoutPromise]);
