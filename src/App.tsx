@@ -45,6 +45,8 @@ import Notifications from './components/Notifications';
 import POS from './components/POS';
 import CashFloat from './components/CashFloat';
 import SalesHistory from './components/SalesHistory';
+import SalesHistoryCustomers from './components/SalesHistoryCustomers';
+import SalesHistoryEmployees from './components/SalesHistoryEmployees';
 import BackupManager from './components/BackupManager';
 import { normalizeEmployeeName } from './utils/nameHelper';
 
@@ -53,7 +55,7 @@ import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure' | 'sales_history' | 'backup';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure' | 'sales_history' | 'sales_history_customers' | 'sales_history_employees' | 'backup';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
@@ -587,7 +589,8 @@ export default function App() {
       items = [
         { id: 'dashboard', label: 'Pedidos', icon: LayoutDashboard },
         { id: 'pos', label: 'Venta POS', icon: CreditCard },
-        { id: 'sales_history', label: 'Historial de Ventas', icon: History },
+        { id: 'sales_history_customers', label: 'Historial por Clientes', icon: Users },
+        { id: 'sales_history_employees', label: 'Historial por Empleados', icon: Truck },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
@@ -634,7 +637,8 @@ export default function App() {
     } else if (currentRoleView === 'supervisor') {
       items = [
         { id: 'dashboard', label: 'Gestión de Pedidos', icon: LayoutDashboard },
-        { id: 'sales_history', label: 'Historial de Ventas', icon: History },
+        { id: 'sales_history_customers', label: 'Historial por Clientes', icon: Users },
+        { id: 'sales_history_employees', label: 'Historial por Empleados', icon: Truck },
         { id: 'attendance', label: 'Registrar Mi Asistencia', icon: Clock },
         { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Users },
         { id: 'driver_sales', label: 'Empleados', icon: Truck },
@@ -995,6 +999,8 @@ export default function App() {
                  activeView === 'notifications' ? <Notifications userRole={currentRoleView} /> :
                  activeView === 'manual' ? <Manual role={currentRoleView} /> :
                  activeView === 'sales_history' ? <SalesHistory userRole={currentRoleView} /> :
+                 activeView === 'sales_history_customers' ? <SalesHistoryCustomers userRole={currentRoleView || 'admin'} /> :
+                 activeView === 'sales_history_employees' ? <SalesHistoryEmployees userRole={currentRoleView || 'admin'} /> :
                  activeView === 'backup' ? <BackupManager /> :
                  <Profile />}
               </motion.div>
