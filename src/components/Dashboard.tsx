@@ -96,6 +96,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
   const [pickupFinalPrice, setPickupFinalPrice] = useState('');
   const [pickupFinalPayment, setPickupFinalPayment] = useState<'cash' | 'card' | 'transfer'>('cash');
   const [isSavingPickupConfirmation, setIsSavingPickupConfirmation] = useState(false);
+  const [dispatchRoute, setDispatchRoute] = useState<string>('1.- Santa Cruz');
 
   const [newOrder, setNewOrder] = useState({
     customer_name: '',
@@ -104,7 +105,8 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
     total_price: '',
     source: 'local' as 'local' | 'phone' | 'whatsapp',
     assigned_to: '',
-    assigned_to_name: ''
+    assigned_to_name: '',
+    assigned_route: '1.- Santa Cruz'
   });
 
   const fetchOrders = async () => {
@@ -217,16 +219,34 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       const isPickupOrder = selectedOrder.status === 'pickup_pending';
       const nextStatus = isPickupOrder ? 'pickup_assigned' : 'assigned';
       
+      const currentItems = selectedOrder.items || '';
+      const updatedItems = currentItems.toLowerCase().includes('[ruta:')
+        ? currentItems
+        : `${currentItems} [Ruta: ${dispatchRoute}]`;
+
       const { error } = await supabase
         .from('orders')
         .update({ 
           status: nextStatus,
           assigned_to: driverId,
-          assigned_to_name: driverName
+          assigned_to_name: driverName,
+          assigned_route: dispatchRoute,
+          items: updatedItems
         })
         .eq('id', selectedOrder.id);
 
-      if (error) throw error;
+      if (error) {
+        // Fallback update if assigned_route column is missing
+        await supabase
+          .from('orders')
+          .update({ 
+            status: nextStatus,
+            assigned_to: driverId,
+            assigned_to_name: driverName,
+            items: updatedItems
+          })
+          .eq('id', selectedOrder.id);
+      }
 
       // Crear notificación para el repartidor
       await supabase.from('notifications_log').insert([
@@ -390,6 +410,11 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       const isAssigned = isPickup ? (newOrder.assigned_to !== '') : (newOrder.source !== 'local' && newOrder.assigned_to !== '');
       const finalItems = isPickup ? `[RECOGER DE CLIENTE-LAVADO] ${pickupJugsCount} Garrafones` : newOrder.items;
       
+      const selectedRoute = newOrder.assigned_route || (newOrder.source === 'local' ? '4.- Planta o Local' : newOrder.source === 'whatsapp' ? '6.- WhatsApp' : '1.- Santa Cruz');
+      const routeTaggedItems = finalItems.toLowerCase().includes('[ruta:')
+        ? finalItems
+        : `${finalItems} [Ruta: ${selectedRoute}]`;
+
       if (editingOrder) {
         // Mode: Update/Edit existing order
         let updatedStatus = editingOrder.status;
@@ -402,16 +427,32 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           .update({
             customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
             address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
-            items: finalItems,
+            items: routeTaggedItems,
             total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
             source: newOrder.source,
             status: updatedStatus,
             assigned_to: isAssigned ? newOrder.assigned_to : null,
-            assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
+            assigned_to_name: isAssigned ? newOrder.assigned_to_name : null,
+            assigned_route: selectedRoute
           })
           .eq('id', editingOrder.id);
 
-        if (error) throw error;
+        if (error) {
+          // Fallback update if assigned_route column is missing
+          await supabase
+            .from('orders')
+            .update({
+              customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
+              address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
+              items: routeTaggedItems,
+              total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
+              source: newOrder.source,
+              status: updatedStatus,
+              assigned_to: isAssigned ? newOrder.assigned_to : null,
+              assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
+            })
+            .eq('id', editingOrder.id);
+        }
 
         // Notifications
         const sourceType = isPickup ? 'Pedido a Recoger' : (newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono');
@@ -449,15 +490,30 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           .insert([{
             customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
             address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
-            items: finalItems,
+            items: routeTaggedItems,
             total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
             source: newOrder.source,
             status: isPickup ? (isAssigned ? 'pickup_assigned' : 'pickup_pending') : (newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending')),
             assigned_to: isAssigned ? newOrder.assigned_to : null,
-            assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
+            assigned_to_name: isAssigned ? newOrder.assigned_to_name : null,
+            assigned_route: selectedRoute
           }]);
 
-        if (error) throw error;
+        if (error) {
+          // Fallback if assigned_route column doesn't exist
+          await supabase
+            .from('orders')
+            .insert([{
+              customer_name: isPickup ? `🔄 [RECOGER] ${newOrder.customer_name}` : newOrder.customer_name,
+              address: (newOrder.source === 'local' && !isPickup ? 'Venta en Planta' : newOrder.address) + (userRole === 'operator' ? ' | Planta' : ''),
+              items: routeTaggedItems,
+              total_price: isPickup ? 0.00 : (parseFloat(newOrder.total_price) || 0),
+              source: newOrder.source,
+              status: isPickup ? (isAssigned ? 'pickup_assigned' : 'pickup_pending') : (newOrder.source === 'local' ? 'delivered' : (isAssigned ? 'assigned' : 'pending')),
+              assigned_to: isAssigned ? newOrder.assigned_to : null,
+              assigned_to_name: isAssigned ? newOrder.assigned_to_name : null
+            }]);
+        }
 
         // Notificación para todos los roles relevantes
         const sourceType = isPickup ? 'Pedido a Recoger' : (newOrder.source === 'local' ? 'Venta Local' : newOrder.source === 'whatsapp' ? 'WhatsApp' : 'Teléfono');
@@ -889,6 +945,22 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                     <span className="text-lg font-black text-slate-800">{drivers.length}</span>
                   </div>
                   <Truck size={32} className="text-sky-500 opacity-20" />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 block">Ruta / Zona a Asignar *</label>
+                  <select
+                    value={dispatchRoute}
+                    onChange={(e) => setDispatchRoute(e.target.value)}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-800 text-xs focus:ring-2 focus:ring-sky-500 outline-none"
+                  >
+                    <option value="1.- Santa Cruz">1.- Santa Cruz</option>
+                    <option value="2.- San Miguel-Centro">2.- San Miguel-Centro</option>
+                    <option value="3.- La Francia-Los Reyes">3.- La Francia-Los Reyes</option>
+                    <option value="4.- Planta o Local">4.- Planta o Local</option>
+                    <option value="5.- Llamadas Telefónicas">5.- Llamadas Telefónicas</option>
+                    <option value="6.- WhatsApp">6.- WhatsApp</option>
+                  </select>
                 </div>
 
                 <div className="space-y-3">
@@ -1399,6 +1471,22 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                         </select>
                       </div>
                     )}
+
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Ruta / Zona Asignada *</label>
+                      <select 
+                        value={newOrder.assigned_route}
+                        onChange={(e) => setNewOrder({...newOrder, assigned_route: e.target.value})}
+                        className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
+                      >
+                        <option value="1.- Santa Cruz">1.- Santa Cruz</option>
+                        <option value="2.- San Miguel-Centro">2.- San Miguel-Centro</option>
+                        <option value="3.- La Francia-Los Reyes">3.- La Francia-Los Reyes</option>
+                        <option value="4.- Planta o Local">4.- Planta o Local</option>
+                        <option value="5.- Llamadas Telefónicas">5.- Llamadas Telefónicas</option>
+                        <option value="6.- WhatsApp">6.- WhatsApp</option>
+                      </select>
+                    </div>
                   </>
                 )}
 

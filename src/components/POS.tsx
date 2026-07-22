@@ -418,6 +418,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'gift' | 'debt' | 'borrowed'>('cash');
   const [saleChannel, setSaleChannel] = useState<'mostrador' | 'whatsapp'>('mostrador');
+  const [assignedRoute, setAssignedRoute] = useState<string>('4.- Planta o Local');
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -987,11 +988,16 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       }
     }
 
+    const effectiveRoute = assignedRoute || (saleChannel === 'whatsapp' ? '6.- WhatsApp' : '4.- Planta o Local');
+    const finalSavedItems = saveItems.toLowerCase().includes('[ruta:')
+      ? saveItems
+      : `${saveItems} [Ruta: ${effectiveRoute}]`;
+
     const payload: any = {
       id: generateOrderUUID(),
       customer_name: isPickupOrder ? `🔄 [RECOGER] ${generatedTicket.customer_name}` : (generatedTicket.customer_name || 'Venta Mostrador'),
       address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : (saleChannel === 'whatsapp' ? 'Planta | WhatsApp' : 'Planta | Mostrador'),
-      items: saveItems,
+      items: finalSavedItems,
       total_price: savePrice,
       status: orderStatus,
       source: isPickupOrder ? 'phone' : (saleChannel === 'whatsapp' ? 'whatsapp' : 'pos'),
@@ -999,6 +1005,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       is_borrowed: paymentMethod === 'borrowed',
       borrowed_jugs_count: paymentMethod === 'borrowed' ? cart.reduce((acc, item) => acc + item.quantity, 0) : 0,
       assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
+      assigned_route: effectiveRoute,
       assigned_to_name: (() => {
         if (isPickupOrder && assignedDriverName) return assignedDriverName;
         let baseRole = userRole;

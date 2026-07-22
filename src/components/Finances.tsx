@@ -2111,6 +2111,70 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                 );
               })()}
 
+              {/* BORROWED / LOANED JUGS METRICS CARD */}
+              {(() => {
+                const scopedOrders = getScopedSalesList();
+                const borrowedOrders = scopedOrders.filter(o => o.is_borrowed || o.payment_method === 'Garrafones Prestados' || (o.items && o.items.toLowerCase().includes('prestado')) || (o.items && o.items.toLowerCase().includes('fiado')));
+                
+                const pendingBorrowed = borrowedOrders.filter(o => o.status === 'pending_payment' || o.borrowed_status === 'pending' || !o.borrowed_paid_at);
+                const paidBorrowed = borrowedOrders.filter(o => o.status === 'delivered' || o.borrowed_status === 'paid' || o.borrowed_paid_at);
+
+                const pendingJugs = pendingBorrowed.reduce((sum, o) => sum + (Number(o.borrowed_jugs_count) || (o.items ? parseInt((o.items.match(/\d+/) || ['1'])[0]) : 1)), 0);
+                const pendingAmount = pendingBorrowed.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+
+                const paidJugs = paidBorrowed.reduce((sum, o) => sum + (Number(o.borrowed_jugs_count) || (o.items ? parseInt((o.items.match(/\d+/) || ['1'])[0]) : 1)), 0);
+                const paidAmount = paidBorrowed.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
+
+                return (
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-6 rounded-[32px] border border-amber-200/60 shadow-sm mb-6 mt-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 border-b border-amber-200/40 pb-3">
+                      <div>
+                        <h3 className="font-black text-amber-900 uppercase text-[11px] tracking-widest flex items-center gap-2">
+                          <Gift size={16} className="text-amber-600" />
+                          Métricas de Garrafones Prestados o Fiados ({timePeriod})
+                        </h3>
+                        <p className="text-[9px] font-bold text-amber-700/80 uppercase tracking-widest mt-0.5">
+                          Seguimiento de envases entregados fiados y recuperación de cobro en caja
+                        </p>
+                      </div>
+                      <span className="bg-amber-500 text-white font-black text-[9px] uppercase px-3 py-1.5 rounded-xl shadow-md shadow-amber-200">
+                        Control de Inventario & Adeudos
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-white/80 backdrop-blur p-4 rounded-2xl border border-amber-100 shadow-sm">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Garrafones Fiados Pendientes</span>
+                        <span className="text-2xl font-black text-amber-600">{pendingJugs} <span className="text-xs text-slate-500 font-bold">g.</span></span>
+                        <span className="text-[10px] font-bold text-amber-700 block mt-1">${pendingAmount.toFixed(2)} por cobrar</span>
+                      </div>
+
+                      <div className="bg-white/80 backdrop-blur p-4 rounded-2xl border border-emerald-100 shadow-sm">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Garrafones Recaudados / Pagados</span>
+                        <span className="text-2xl font-black text-emerald-600">{paidJugs} <span className="text-xs text-slate-500 font-bold">g.</span></span>
+                        <span className="text-[10px] font-bold text-emerald-700 block mt-1">${paidAmount.toFixed(2)} liquidados</span>
+                      </div>
+
+                      <div className="bg-white/80 backdrop-blur p-4 rounded-2xl border border-sky-100 shadow-sm">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Total Registros Fiados</span>
+                        <span className="text-2xl font-black text-sky-600">{borrowedOrders.length}</span>
+                        <span className="text-[10px] font-bold text-slate-500 block mt-1">En el período seleccionado</span>
+                      </div>
+
+                      <div className="bg-white/80 backdrop-blur p-4 rounded-2xl border border-indigo-100 shadow-sm">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1">Tasa de Recuperación</span>
+                        <span className="text-2xl font-black text-indigo-600">
+                          {pendingAmount + paidAmount > 0 
+                            ? `${Math.round((paidAmount / (pendingAmount + paidAmount)) * 100)}%` 
+                            : '100%'}
+                        </span>
+                        <span className="text-[10px] font-bold text-indigo-700 block mt-1">Efectividad de Cobranza</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
                   <h3 className="font-black text-slate-800 mb-6 uppercase text-[10px] tracking-widest">Rendimiento Histórico (Ventas x Día)</h3>
