@@ -9,7 +9,7 @@ export const getOrderRoute = (order: any): string => {
   if (match) rawRoute = match[1];
 
   // 3. Normalize route if rawRoute is present
-  if (rawRoute) {
+  if (rawRoute && rawRoute.trim()) {
     const routeLower = rawRoute.toLowerCase();
     if (routeLower.includes('santa cruz') || routeLower.includes('1.-') || routeLower.includes('ruta 1') || routeLower.includes('santa_cruz')) return '1.- Santa Cruz';
     if (routeLower.includes('san miguel') || routeLower.includes('centro') || routeLower.includes('2.-') || routeLower.includes('ruta 2')) return '2.- San Miguel-Centro';
@@ -17,6 +17,9 @@ export const getOrderRoute = (order: any): string => {
     if (routeLower.includes('planta') || routeLower.includes('local') || routeLower.includes('mostrador') || routeLower.includes('4.-') || routeLower.includes('ruta 4')) return '4.- Planta o Local';
     if (routeLower.includes('whatsapp') || routeLower.includes('6.-') || routeLower.includes('ruta 6')) return '6.- WhatsApp';
     if (routeLower.includes('llamadas') || routeLower.includes('telefono') || routeLower.includes('5.-') || routeLower.includes('ruta 5')) return '5.- Llamadas Telefónicas';
+    
+    // Return custom new zone/route directly if specified
+    return rawRoute.trim();
   }
   
   // 4. Fallbacks based on source and driver assignments

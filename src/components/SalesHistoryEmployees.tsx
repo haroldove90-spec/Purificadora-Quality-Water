@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -97,6 +97,26 @@ export default function SalesHistoryEmployees({ userRole }: { userRole: string }
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [channelFilter, setChannelFilter] = useState<string>('all');
   const [routeFilter, setRouteFilter] = useState<string>('all');
+
+  // Base default registered zones
+  const defaultZones = [
+    '1.- Santa Cruz',
+    '2.- San Miguel-Centro',
+    '3.- La Francia-Los Reyes',
+    '4.- Planta o Local',
+    '5.- Llamadas Telefónicas',
+    '6.- WhatsApp'
+  ];
+
+  // Dynamically compute all registered zones from database orders
+  const registeredZones = useMemo(() => {
+    const dynamicFromOrders = orders
+      .map(o => getOrderRoute(o))
+      .filter((r): r is string => Boolean(r));
+
+    const setOfZones = new Set([...defaultZones, ...dynamicFromOrders]);
+    return Array.from(setOfZones).sort();
+  }, [orders]);
 
   useEffect(() => {
     fetchInitialData();
@@ -447,7 +467,7 @@ export default function SalesHistoryEmployees({ userRole }: { userRole: string }
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Role Filter Selector matching user UI spec */}
             <div className="bg-slate-800/90 border border-slate-700/60 rounded-2xl p-1.5 shadow-lg">
               <select
@@ -460,6 +480,25 @@ export default function SalesHistoryEmployees({ userRole }: { userRole: string }
                 <option value="planta" className="bg-slate-900 text-white">🪴 Planta / Mostrador</option>
                 <option value="supervisor" className="bg-slate-900 text-white">👮 Supervisores</option>
                 <option value="admin" className="bg-slate-900 text-white">💼 Administradores</option>
+              </select>
+            </div>
+
+            {/* Dynamic Zones & Routes Selector in Header Banner */}
+            <div className="bg-slate-800/90 border border-slate-700/60 rounded-2xl p-1.5 shadow-lg">
+              <select
+                value={routeFilter}
+                onChange={(e) => setRouteFilter(e.target.value)}
+                className="bg-transparent text-white font-black text-xs px-3 py-1.5 outline-none cursor-pointer uppercase"
+              >
+                <option value="all" className="bg-slate-900 text-white">
+                  🗺️ Todas las Zonas ({registeredZones.length} Registradas)
+                </option>
+                {registeredZones.map(zone => (
+                  <option key={zone} value={zone} className="bg-slate-900 text-white">
+                    {zone.includes('WhatsApp') ? '💬 ' : zone.includes('Planta') || zone.includes('Local') ? '🏪 ' : zone.includes('Llamadas') ? '📞 ' : '📍 '}
+                    {zone}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -682,20 +721,20 @@ export default function SalesHistoryEmployees({ userRole }: { userRole: string }
               {/* Zona / Ruta Asignada Filter */}
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block ml-1 flex items-center gap-1">
-                  <MapPin size={10} className="text-emerald-500" /> Zona Asignada
+                  <MapPin size={10} className="text-emerald-500" /> Zona Asignada ({registeredZones.length})
                 </label>
                 <select
                   value={routeFilter}
                   onChange={(e) => setRouteFilter(e.target.value)}
                   className="w-full bg-white p-2.5 border-none rounded-xl font-bold text-[9px] focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 appearance-none uppercase"
                 >
-                  <option value="all">🗺️ TODAS LAS ZONAS</option>
-                  <option value="1.- Santa Cruz">📍 Ruta 1: Santa Cruz</option>
-                  <option value="2.- San Miguel-Centro">📍 Ruta 2: San Miguel - Centro</option>
-                  <option value="3.- La Francia-Los Reyes">📍 Ruta 3: La Francia - Los Reyes</option>
-                  <option value="4.- Planta o Local">🏪 Ruta 4: Planta / Mostrador</option>
-                  <option value="5.- Llamadas Telefónicas">📞 Ruta 5: Llamadas Telefónicas</option>
-                  <option value="6.- WhatsApp">💬 Ruta 6: Pedidos WhatsApp</option>
+                  <option value="all">🗺️ TODAS LAS ZONAS ({registeredZones.length})</option>
+                  {registeredZones.map(zone => (
+                    <option key={zone} value={zone}>
+                      {zone.includes('WhatsApp') ? '💬 ' : zone.includes('Planta') || zone.includes('Local') ? '🏪 ' : zone.includes('Llamadas') ? '📞 ' : '📍 '}
+                      {zone}
+                    </option>
+                  ))}
                 </select>
               </div>
 
