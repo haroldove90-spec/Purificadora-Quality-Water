@@ -18,7 +18,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Gift,
-  Truck
+  Truck,
+  PackageCheck
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { normalizeEmployeeName, namesMatch, getLocalDateString } from '../utils/nameHelper';
@@ -415,7 +416,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     return 0;
   });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'gift' | 'debt'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer' | 'gift' | 'debt' | 'borrowed'>('cash');
   const [saleChannel, setSaleChannel] = useState<'mostrador' | 'whatsapp'>('mostrador');
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -923,7 +924,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       customer_name: finalCustomerName,
       items: ticketItems,
       total: paymentMethod === 'gift' ? 0.00 : total,
-      payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'gift' ? 'Obsequio / Regalo' : paymentMethod === 'debt' ? 'Debe / Crédito' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
+      payment_method: paymentMethod === 'cash' ? 'Efectivo' : paymentMethod === 'gift' ? 'Obsequio / Regalo' : paymentMethod === 'debt' ? 'Debe / Crédito' : paymentMethod === 'borrowed' ? 'Garrafones Prestados (Fiado)' : paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia',
       date: new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }),
       phone: manualCustomerPhone
     });
@@ -967,6 +968,12 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       saveItems = `${itemsDescription} [OBSEQUIO/REGALO]`;
     }
 
+    if (paymentMethod === 'borrowed') {
+      orderStatus = 'pending_payment';
+      const totalJugsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+      saveItems = `${itemsDescription} [GARRAFONES PRESTADOS FIADOS: ${totalJugsCount}]`;
+    }
+
     if (isActuallyDebt) {
       if (debtAmount <= 0) {
         orderStatus = 'delivered';
@@ -980,7 +987,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       }
     }
 
-    const payload = {
+    const payload: any = {
       id: generateOrderUUID(),
       customer_name: isPickupOrder ? `🔄 [RECOGER] ${generatedTicket.customer_name}` : (generatedTicket.customer_name || 'Venta Mostrador'),
       address: userRole === 'driver' ? (manualCustomerAddress.trim() === 'Mostrador' ? 'Reparto' : manualCustomerAddress) : (saleChannel === 'whatsapp' ? 'Planta | WhatsApp' : 'Planta | Mostrador'),
@@ -988,7 +995,9 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       total_price: savePrice,
       status: orderStatus,
       source: isPickupOrder ? 'phone' : (saleChannel === 'whatsapp' ? 'whatsapp' : 'pos'),
-      payment_method: paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
+      payment_method: paymentMethod === 'borrowed' ? 'Garrafones Prestados' : paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
+      is_borrowed: paymentMethod === 'borrowed',
+      borrowed_jugs_count: paymentMethod === 'borrowed' ? cart.reduce((acc, item) => acc + item.quantity, 0) : 0,
       assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
       assigned_to_name: (() => {
         if (isPickupOrder && assignedDriverName) return assignedDriverName;
@@ -1670,12 +1679,13 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
               <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider block">
                 Método de Pago
               </label>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-5 gap-1">
                 {[
                   { id: 'cash', label: 'Efectivo', icon: DollarSign, disabled: false },
                   { id: 'gift', label: 'Obsequio', icon: Gift, disabled: false },
                   { id: 'debt', label: 'Debe', icon: AlertCircle, disabled: false },
-                  { id: 'transfer', label: 'Transferencia', icon: Share2, disabled: false }
+                  { id: 'borrowed', label: 'Prestados', icon: PackageCheck, disabled: false },
+                  { id: 'transfer', label: 'Transf.', icon: Share2, disabled: false }
                 ].map((meth) => {
                   const Icon = meth.icon;
                   const active = paymentMethod === meth.id;

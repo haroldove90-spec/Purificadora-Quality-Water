@@ -28,6 +28,7 @@ import {
   Settings,
   Database,
   Award,
+  PackageCheck
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
@@ -48,6 +49,7 @@ import SalesHistory from './components/SalesHistory';
 import SalesHistoryCustomers from './components/SalesHistoryCustomers';
 import SalesHistoryEmployees from './components/SalesHistoryEmployees';
 import BackupManager from './components/BackupManager';
+import BorrowedJugs from './components/BorrowedJugs';
 import { normalizeEmployeeName } from './utils/nameHelper';
 
 import Lobby from './components/Lobby';
@@ -591,6 +593,7 @@ export default function App() {
         { id: 'pos', label: 'Venta POS', icon: CreditCard },
         { id: 'sales_history_customers', label: 'Historial por Clientes', icon: Users },
         { id: 'sales_history_employees', label: 'Historial por Empleados', icon: Truck },
+        { id: 'borrowed_jugs', label: 'Garrafones Fiados', icon: PackageCheck },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
         { id: 'metrics', label: 'Métricas', icon: TrendingUp },
@@ -609,6 +612,7 @@ export default function App() {
     } else if (currentRoleView === 'driver') {
       items = [
         { id: 'pos', label: 'Venta POS', icon: CreditCard },
+        { id: 'borrowed_jugs', label: 'Garrafones Fiados', icon: PackageCheck },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
         { id: 'sales', label: 'Mis Ventas', icon: History },
@@ -981,7 +985,7 @@ export default function App() {
                   <SupervisorDashboard initialTab="attendance" userName={userName} userRole={currentRoleView || 'supervisor'} />
                 ) : activeView === 'supervisor_cash_closure' ? (
                   <SupervisorDashboard initialTab="cash_closure" userName={userName} userRole={currentRoleView || 'supervisor'} />
-                ) : activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
+                ) : activeView === 'borrowed_jugs' ? <BorrowedJugs userRole={currentRoleView || 'admin'} userName={userName} /> : activeView === 'dashboard' ? <Dashboard userRole={currentRoleView} /> : 
                  activeView === 'inventory' ? <Inventory userRole={currentRoleView} /> :
                  activeView === 'pos' ? <POS userRole={currentRoleView} userName={userName} /> :
                  activeView === 'finances' ? <Finances userRole={currentRoleView} userName={userName} /> :
