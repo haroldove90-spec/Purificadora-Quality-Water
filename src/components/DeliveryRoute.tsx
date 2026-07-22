@@ -506,14 +506,22 @@ export default function DeliveryRoute() {
     return namesMatch(d.assigned_to_name, loggedInDriver);
   });
 
-  // Dividir en Active (incluyendo pickup_assigned, assigned, pending, pickup_pending) vs Completed
+  // Dividir en Active (incluyendo pickup_assigned, assigned, pending, pickup_pending) vs Completed (Últimos 2 días)
   const activeDeliveries = driverDeliveries.filter(d => 
     d.status === 'assigned' || d.status === 'pending' || d.status === 'pickup_assigned' || d.status === 'pickup_pending'
   );
 
-  const completedDeliveries = driverDeliveries.filter(d => 
-    d.status === 'delivered' || d.status === 'pickup_confirmed'
-  );
+  const twoDaysAgo = new Date();
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+  twoDaysAgo.setHours(0, 0, 0, 0);
+
+  const completedDeliveries = driverDeliveries.filter(d => {
+    if (d.status !== 'delivered' && d.status !== 'pickup_confirmed') return false;
+    // Driver history limited strictly to the last 2 days
+    const createdDate = new Date(d.created_at || d.updated_at || Date.now());
+    return createdDate >= twoDaysAgo;
+  });
+
 
   const displayedDeliveries = activeSubTab === 'active' ? activeDeliveries : completedDeliveries;
 

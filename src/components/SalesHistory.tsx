@@ -64,6 +64,8 @@ interface Customer {
 }
 
 export default function SalesHistory({ userRole }: { userRole: string }) {
+  const isDriver = userRole === 'driver' || userRole?.startsWith('driver');
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,9 +75,14 @@ export default function SalesHistory({ userRole }: { userRole: string }) {
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 30); // Default 30 days ago
+    if (isDriver) {
+      d.setDate(d.getDate() - 2); // Limit driver to last 2 days
+    } else {
+      d.setDate(d.getDate() - 30); // Default 30 days ago
+    }
     return d.toISOString().split('T')[0];
   });
+
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
