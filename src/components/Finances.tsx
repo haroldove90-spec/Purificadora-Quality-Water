@@ -31,7 +31,8 @@ import {
   Loader2,
   Trash2,
   Edit3,
-  Award
+  Award,
+  Gift
 } from 'lucide-react';
 import { 
   BarChart, 
