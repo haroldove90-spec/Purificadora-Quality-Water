@@ -162,9 +162,9 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   const isPlantSale = (sale: any) => {
     if (!sale) return true;
-    const nameLower = (sale.assigned_to_name || '').toLowerCase();
+    const nameLower = (sale.assigned_to_name || '').toLowerCase().trim();
     
-    // If assigned to an actual driver, it is NOT a plant sale
+    // If assigned to an actual driver/employee (not Mostrador/Planta/Operador), it is a driver sale
     if (nameLower && 
         !nameLower.includes('mostrador') && 
         !nameLower.includes('planta') && 
@@ -174,21 +174,27 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         !nameLower.includes('llamada')) {
       return false;
     }
+
+    // Check if assigned_route points to a driver delivery route
+    const route = (sale.assigned_route || sale.route || '').toLowerCase();
+    if (route.includes('santa cruz') || route.includes('san miguel') || route.includes('la francia') || route.includes('reyes') || route.includes('ruta 1') || route.includes('ruta 2') || route.includes('ruta 3')) {
+      return false;
+    }
     
-    // If address is specifically labeled Planta or Mostrador, it is a plant sale
-    if (sale.address) {
+    // If address is specifically labeled Planta or Mostrador without an assigned driver name, it is a plant sale
+    if (sale.address && !nameLower) {
       const addressLower = sale.address.toLowerCase();
       if (addressLower.includes('planta') || addressLower.includes('mostrador')) {
         return true;
       }
     }
     
-    // If it has no assigned driver, but is local/pos source, it is plant/mostrador
-    if (!sale.assigned_to_name && (sale.source === 'pos' || sale.source === 'local')) {
+    // If it has no assigned driver name, but is local/pos source, it is plant/mostrador
+    if (!nameLower && (sale.source === 'pos' || sale.source === 'local')) {
       return true;
     }
     
-    return true;
+    return false;
   };
 
   const getScopedSalesList = () => {

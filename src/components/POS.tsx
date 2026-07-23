@@ -788,27 +788,24 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
 
       if (!activeTrip) {
         setNotification({
-          type: 'error',
-          message: '⚠️ Debes iniciar un viaje antes de poder agregar garrafones al carrito.'
+          type: 'success',
+          message: 'ℹ️ Registrando venta en ruta. Recuerda iniciar un viaje para llevar control de inventario de camión.'
         });
-        return;
-      }
-
-      const currentQtyInCart = getCartCount(product.id);
-      
-      let availableStock = 0;
-      if (isSmallG) {
-        availableStock = Math.max(0, (Number(activeTrip.loaded_qty_pequeno) || 0) - (Number(activeTrip.sold_qty_pequeno) || 0));
       } else {
-        availableStock = Math.max(0, (Number(activeTrip.loaded_qty) || 0) - (Number(activeTrip.sold_qty) || 0));
-      }
+        const currentQtyInCart = getCartCount(product.id);
+        let availableStock = 0;
+        if (isSmallG) {
+          availableStock = Math.max(0, (Number(activeTrip.loaded_qty_pequeno) || 0) - (Number(activeTrip.sold_qty_pequeno) || 0));
+        } else {
+          availableStock = Math.max(0, (Number(activeTrip.loaded_qty) || 0) - (Number(activeTrip.sold_qty) || 0));
+        }
 
-      if (currentQtyInCart >= availableStock) {
-        setNotification({
-          type: 'error',
-          message: `⚠️ No tienes suficientes garrafones ${isSmallG ? 'pequeños' : 'de 19L/20L'} en tu camión. Solo quedan ${availableStock} disponibles.`
-        });
-        return;
+        if (currentQtyInCart >= availableStock && availableStock > 0) {
+          setNotification({
+            type: 'success',
+            message: `⚠️ Excediendo carga inicial del viaje (${availableStock} disps). La venta se registrará de todos modos.`
+          });
+        }
       }
     }
 
@@ -1004,22 +1001,29 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       payment_method: paymentMethod === 'borrowed' ? 'Garrafones Prestados' : paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
       is_borrowed: paymentMethod === 'borrowed',
       borrowed_jugs_count: paymentMethod === 'borrowed' ? cart.reduce((acc, item) => acc + item.quantity, 0) : 0,
-      assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : null,
+      assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : (userRole === 'driver' ? (userName || 'Repartidor') : null),
       assigned_route: effectiveRoute,
       assigned_to_name: (() => {
         if (isPickupOrder && assignedDriverName) return assignedDriverName;
         let baseRole = userRole;
+        let sessionDriverName = userName || '';
         try {
           const backupStr = localStorage.getItem('quality_water_session_backup');
           if (backupStr) {
             const backup = JSON.parse(backupStr);
             if (backup?.userRole) baseRole = backup.userRole;
+            if (!sessionDriverName && backup?.userName) sessionDriverName = backup.userName;
+          }
+          const qwSessionStr = localStorage.getItem('qw_session');
+          if (qwSessionStr) {
+            const qwSess = JSON.parse(qwSessionStr);
+            if (!sessionDriverName && qwSess?.user_name) sessionDriverName = qwSess.user_name;
           }
         } catch (_) {}
         if (baseRole === 'driver' && userRole === 'operator') {
-          return `${userName || 'Empleado'} (Planta)`;
+          return `${sessionDriverName || 'Empleado'} (Planta)`;
         }
-        return userRole === 'driver' ? (userName || 'Repartidor') : (userName || 'Mostrador');
+        return userRole === 'driver' ? (sessionDriverName || 'Repartidor') : (sessionDriverName || 'Mostrador');
       })(),
       created_at: new Date().toISOString()
     };
