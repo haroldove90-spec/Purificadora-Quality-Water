@@ -288,32 +288,89 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     return (n.includes('garrafón') || n.includes('garrafon')) && !isSmallGarrafon(name);
   };
 
-  const updateDriverAttendanceJugs = async () => {
-    if (userRole !== 'driver' || !activeAttendance) return;
+  const parseJugsFromItemsString = (itemsStr: string) => {
+    let regular = 0;
+    let small = 0;
+    if (!itemsStr) return { regular, small };
 
-    let totalRegularGarrafonesSold = 0;
-    let totalSmallGarrafonesSold = 0;
-    cart.forEach(item => {
-      if (isSmallGarrafon(item.product.name)) {
-        totalSmallGarrafonesSold += item.quantity;
-      } else if (isRegularGarrafon(item.product.name)) {
-        totalRegularGarrafonesSold += item.quantity;
+    const parts = itemsStr.split(',');
+    parts.forEach(part => {
+      const pLower = part.toLowerCase();
+      const qtyMatch = part.match(/(\d+)\s*x?/i);
+      const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+
+      if (pLower.includes('pequeño') || pLower.includes('pequeno') || pLower.includes('chico') || pLower.includes('10l')) {
+        small += qty;
+      } else if (pLower.includes('garrafón') || pLower.includes('garrafon') || pLower.includes('azul') || pLower.includes('rosa') || pLower.includes('color') || pLower.includes('envase')) {
+        regular += qty;
       }
     });
 
+    return { regular, small };
+  };
+
+  const updateDriverAttendanceJugs = async (
+    overrideDriverName?: string, 
+    overrideRegularSold?: number, 
+    overrideSmallSold?: number
+  ) => {
+    let totalRegularGarrafonesSold = overrideRegularSold ?? 0;
+    let totalSmallGarrafonesSold = overrideSmallSold ?? 0;
+
+    if (overrideRegularSold === undefined && overrideSmallSold === undefined) {
+      cart.forEach(item => {
+        if (isSmallGarrafon(item.product.name)) {
+          totalSmallGarrafonesSold += item.quantity;
+        } else if (isRegularGarrafon(item.product.name)) {
+          totalRegularGarrafonesSold += item.quantity;
+        }
+      });
+    }
+
     if (totalRegularGarrafonesSold <= 0 && totalSmallGarrafonesSold <= 0) return;
 
+    const targetDriverName = overrideDriverName || userName || '';
+    if (!targetDriverName) return;
+
     try {
-      const lastLoc = parseJsonFields(activeAttendance.last_location);
+      let targetAtt = activeAttendance;
+
+      if (!targetAtt || !namesMatch(targetAtt.user_name, targetDriverName)) {
+        try {
+          const backupStr = localStorage.getItem('local_active_attendance_backup');
+          if (backupStr) {
+            const parsedBackup = JSON.parse(backupStr);
+            if (namesMatch(parsedBackup.user_name, targetDriverName)) {
+              targetAtt = parsedBackup;
+            }
+          }
+        } catch (_) {}
+
+        if (navigator.onLine) {
+          const today = getLocalDateString();
+          const { data: dbAtt } = await supabase
+            .from('daily_attendance')
+            .select('*')
+            .eq('work_date', today);
+
+          const found = (dbAtt || []).find(a => namesMatch(a.user_name, targetDriverName));
+          if (found) {
+            targetAtt = found;
+          }
+        }
+      }
+
+      const todayStr = getLocalDateString();
+      const lastLoc = targetAtt ? parseJsonFields(targetAtt.last_location) : {};
       const trips = lastLoc.trips || [];
       
-      const activeTrip = trips.find((t: any) => t.status === 'active');
+      let activeTrip = trips.find((t: any) => t.status === 'active');
 
       if (activeTrip) {
         activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularGarrafonesSold;
         activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallGarrafonesSold;
       } else {
-        const newTrip = {
+        activeTrip = {
           id: 'T-' + Math.floor(10000 + Math.random() * 90000),
           trip_number: trips.length + 1,
           loaded_qty: 20,
@@ -329,7 +386,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
           status: 'active',
           loaded_at: new Date().toISOString()
         };
-        trips.push(newTrip);
+        trips.push(activeTrip);
       }
 
       const updatedLocation = {
@@ -338,17 +395,37 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       };
 
       const updatedAtt = {
-        ...activeAttendance,
+        ...(targetAtt || {
+          user_name: targetDriverName,
+          user_role: 'driver',
+          work_date: todayStr,
+          check_in: new Date().toISOString()
+        }),
         last_location: updatedLocation
       };
-      setActiveAttendance(updatedAtt);
+
+      if (!overrideDriverName || namesMatch(targetDriverName, userName)) {
+        setActiveAttendance(updatedAtt);
+      }
       localStorage.setItem('local_active_attendance_backup', JSON.stringify(updatedAtt));
 
       if (navigator.onLine) {
-        await supabase
-          .from('daily_attendance')
-          .update({ last_location: updatedLocation })
-          .eq('id', activeAttendance.id);
+        if (targetAtt?.id) {
+          await supabase
+            .from('daily_attendance')
+            .update({ last_location: updatedLocation })
+            .eq('id', targetAtt.id);
+        } else {
+          await supabase
+            .from('daily_attendance')
+            .upsert({
+              user_name: targetDriverName,
+              user_role: 'driver',
+              work_date: todayStr,
+              check_in: new Date().toISOString(),
+              last_location: updatedLocation
+            }, { onConflict: 'user_name, work_date' });
+        }
       }
     } catch (e) {
       console.error('Error updating driver attendance jugs:', e);
@@ -645,6 +722,13 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
           );
           if (!error || isDuplicate) {
             successfulIndexes.push(i);
+
+            // Sincronizar estadísticas de la partida de asignación de viaje en Supabase para ventas offline
+            const { regular, small } = parseJugsFromItemsString(payload.items || '');
+            const driverName = payload.assigned_to_name || payload.assigned_to;
+            if (driverName && (regular > 0 || small > 0)) {
+              await updateDriverAttendanceJugs(driverName, regular, small);
+            }
           } else {
             console.error('Error insertando venta offline:', error);
           }
@@ -1057,7 +1141,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         setOfflineSalesCount(pendingList.length);
         
         // Simular éxito para liberar la interfaz del chofer inmediatamente
-        updateDriverAttendanceJugs();
+        updateDriverAttendanceJugs(payload.assigned_to_name || payload.assigned_to);
         clearCart();
         setShowTicketModal(false);
         setIsPickupOrder(false);
@@ -1086,11 +1170,11 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     }
 
     try {
-      // Timeout seguro de 3 segundos para que si la red del repartidor está defectuosa, guarde offline sin congelarle la pantalla
+      // Timeout seguro de 15 segundos para dar tiempo suficiente a redes celulares 3G/4G en ruta
       const savePromise = safeInsertOrder(payload);
 
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT_CONEXION_DEBIL')), 3000)
+        setTimeout(() => reject(new Error('TIMEOUT_CONEXION_DEBIL')), 15000)
       );
 
       const { error }: any = await Promise.race([savePromise, timeoutPromise]);
@@ -1117,7 +1201,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       }
 
       // Clear operational states on success
-      await updateDriverAttendanceJugs();
+      await updateDriverAttendanceJugs(payload.assigned_to_name || payload.assigned_to);
       clearCart();
       setShowTicketModal(false);
       setIsPickupOrder(false);

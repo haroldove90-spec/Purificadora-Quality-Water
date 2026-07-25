@@ -286,7 +286,21 @@ export default function DeliveryRoute() {
         .select('*')
         .eq('work_date', today);
 
-      const existing = (todayAtt || []).find(a => namesMatch(a.user_name, driverName));
+      let existing = (todayAtt || []).find(a => namesMatch(a.user_name, driverName));
+      if (!existing) {
+        const { data: createdAtt } = await supabase
+          .from('daily_attendance')
+          .insert([{
+            user_name: driverName,
+            user_role: 'driver',
+            work_date: today,
+            check_in: new Date().toISOString(),
+            last_location: { trips: [] }
+          }])
+          .select()
+          .single();
+        if (createdAtt) existing = createdAtt;
+      }
       if (!existing) return;
 
       const lastLoc = parseJsonFields(existing.last_location);
