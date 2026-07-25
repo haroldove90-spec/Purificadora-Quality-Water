@@ -647,7 +647,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     let cleanedPayload = { ...payload };
     let attempts = 0;
     
-    while (attempts < 5) {
+    while (attempts < 10) {
       try {
         const { data, error } = await supabase.from('orders').insert([cleanedPayload]).select();
         
@@ -667,25 +667,51 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
           return { data: null, error: null };
         }
         
-        // Self-heal: Check for missing columns error (PostgREST PGRST204)
+        // Self-heal: Dynamic extraction of missing columns (PostgREST PGRST204 / 42703)
         let modified = false;
-        if ((errMsg.toLowerCase().includes('payment_method') || errMsg.toLowerCase().includes('schema cache')) && 'payment_method' in cleanedPayload) {
-          const pm = cleanedPayload.payment_method;
-          delete cleanedPayload.payment_method;
-          cleanedPayload.items = `${cleanedPayload.items || ''} [Método de Pago: ${pm}]`;
-          modified = true;
+
+        // Try regex extraction of missing column name from PostgreSQL / PostgREST error messages
+        const colMatches = [
+          ...errMsg.matchAll(/column ["']?([a-zA-Z0-9_]+)["']? of relation/gi),
+          ...errMsg.matchAll(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/gi),
+          ...errMsg.matchAll(/['"]([a-zA-Z0-9_]+)['"] in the schema cache/gi),
+          ...errMsg.matchAll(/column ['"]?([a-zA-Z0-9_]+)['"]? does not exist/gi)
+        ];
+
+        for (const match of colMatches) {
+          const colName = match[1];
+          if (colName && colName in cleanedPayload) {
+            const val = cleanedPayload[colName];
+            delete cleanedPayload[colName];
+            if (val !== null && val !== undefined && val !== '') {
+              cleanedPayload.items = `${cleanedPayload.items || ''} [${colName}: ${val}]`;
+            }
+            modified = true;
+          }
         }
-        if (errMsg.toLowerCase().includes('whatsapp_number') && 'whatsapp_number' in cleanedPayload) {
-          const wa = cleanedPayload.whatsapp_number;
-          delete cleanedPayload.whatsapp_number;
-          cleanedPayload.items = `${cleanedPayload.items || ''} [WA: ${wa}]`;
-          modified = true;
+
+        // Specific fallbacks for known optional columns
+        const optionalCols = [
+          'assigned_route', 
+          'assigned_to_name', 
+          'is_borrowed', 
+          'borrowed_jugs_count', 
+          'whatsapp_number', 
+          'payment_method', 
+          'metadata'
+        ];
+
+        for (const col of optionalCols) {
+          if (col in cleanedPayload && errMsg.toLowerCase().includes(col.toLowerCase())) {
+            const val = cleanedPayload[col];
+            delete cleanedPayload[col];
+            if (val !== null && val !== undefined && val !== '') {
+              cleanedPayload.items = `${cleanedPayload.items || ''} [${col}: ${val}]`;
+            }
+            modified = true;
+          }
         }
-        if (errMsg.toLowerCase().includes('metadata') && 'metadata' in cleanedPayload) {
-          delete cleanedPayload.metadata;
-          modified = true;
-        }
-        
+
         if (!modified) {
           return { data: null, error };
         }
