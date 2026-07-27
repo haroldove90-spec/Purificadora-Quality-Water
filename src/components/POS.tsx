@@ -642,9 +642,21 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     }
   };
 
-  // Self-healing database insert helper to safely handle missing table schema columns
+  // Self-healing database insert helper to safely handle missing table schema columns and UUID mismatches
   const safeInsertOrder = async (payload: any): Promise<{ data: any; error: any }> => {
     let cleanedPayload = { ...payload };
+
+    // Helper: Is a string a valid UUID v4 / UUID format?
+    const isUUID = (str: any) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    // Pre-clean: If assigned_to is a text name instead of UUID, move it to assigned_to_name
+    if (cleanedPayload.assigned_to && !isUUID(cleanedPayload.assigned_to)) {
+      if (!cleanedPayload.assigned_to_name) {
+        cleanedPayload.assigned_to_name = cleanedPayload.assigned_to;
+      }
+      cleanedPayload.assigned_to = null;
+    }
+
     let attempts = 0;
     
     while (attempts < 10) {
@@ -667,10 +679,21 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
           return { data: null, error: null };
         }
         
-        // Self-heal: Dynamic extraction of missing columns (PostgREST PGRST204 / 42703)
         let modified = false;
 
-        // Try regex extraction of missing column name from PostgreSQL / PostgREST error messages
+        // Self-heal 1: Handle UUID format errors (22P02 or invalid input syntax for type uuid)
+        if (errCode === '22P02' || errMsg.toLowerCase().includes('uuid') || errMsg.toLowerCase().includes('22p02')) {
+          if (cleanedPayload.assigned_to && !isUUID(cleanedPayload.assigned_to)) {
+            cleanedPayload.assigned_to_name = cleanedPayload.assigned_to_name || cleanedPayload.assigned_to;
+            cleanedPayload.assigned_to = null;
+            modified = true;
+          } else if (cleanedPayload.assigned_to) {
+            delete cleanedPayload.assigned_to;
+            modified = true;
+          }
+        }
+
+        // Self-heal 2: Dynamic extraction of missing columns (PostgREST PGRST204 / 42703)
         const colMatches = [
           ...errMsg.matchAll(/column ["']?([a-zA-Z0-9_]+)["']? of relation/gi),
           ...errMsg.matchAll(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/gi),
@@ -690,10 +713,11 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
           }
         }
 
-        // Specific fallbacks for known optional columns
+        // Self-heal 3: Specific fallbacks for known optional columns
         const optionalCols = [
           'assigned_route', 
           'assigned_to_name', 
+          'assigned_to',
           'is_borrowed', 
           'borrowed_jugs_count', 
           'whatsapp_number', 
@@ -1111,7 +1135,10 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       payment_method: paymentMethod === 'borrowed' ? 'Garrafones Prestados' : paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
       is_borrowed: paymentMethod === 'borrowed',
       borrowed_jugs_count: paymentMethod === 'borrowed' ? cart.reduce((acc, item) => acc + item.quantity, 0) : 0,
-      assigned_to: isPickupOrder && assignedDriverId ? assignedDriverId : (userRole === 'driver' ? (userName || 'Repartidor') : null),
+      assigned_to: (()=>{
+        const raw = isPickupOrder && assignedDriverId ? assignedDriverId : null;
+        return (typeof raw === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) ? raw : null;
+      })(),
       assigned_route: effectiveRoute,
       assigned_to_name: (() => {
         if (isPickupOrder && assignedDriverName) return assignedDriverName;
