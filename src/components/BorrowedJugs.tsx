@@ -120,11 +120,11 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
     
     const twoDaysAgo = new Date();
     twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
+    const twoDaysAgoStr = getLocalDateString(twoDaysAgo);
 
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
-    weekAgo.toISOString().split('T')[0];
+    const weekAgoStr = getLocalDateString(weekAgo);
 
     return orders.filter(o => {
       // Driver view restriction: if role is driver, only show their assigned orders or orders created by them
@@ -153,7 +153,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
       if (statusFilter === 'paid' && !isPaid) return false;
 
       // Period filter
-      const orderDate = o.created_at?.split('T')[0];
+      const orderDate = o.created_at ? getLocalDateString(o.created_at) : '';
 
       // Drivers only see last 2 days by default per policy
       if (isDriver) {
@@ -161,7 +161,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
       } else {
         if (periodFilter === 'today' && orderDate !== todayStr) return false;
         if (periodFilter === '2days' && orderDate < twoDaysAgoStr) return false;
-        if (periodFilter === 'week' && orderDate < weekAgo.toISOString().split('T')[0]) return false;
+        if (periodFilter === 'week' && orderDate < weekAgoStr) return false;
       }
 
       return true;
@@ -199,8 +199,9 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
         pendingJugs += jugs;
         pendingAmount += amount;
       } else {
-        const orderDate = o.created_at?.split('T')[0];
-        if (orderDate === todayStr || o.borrowed_paid_at?.split('T')[0] === todayStr) {
+        const orderDate = o.created_at ? getLocalDateString(o.created_at) : '';
+        const paidDate = o.borrowed_paid_at ? getLocalDateString(o.borrowed_paid_at) : '';
+        if (orderDate === todayStr || paidDate === todayStr) {
           paidJugsToday += jugs;
           paidAmountToday += amount;
         }

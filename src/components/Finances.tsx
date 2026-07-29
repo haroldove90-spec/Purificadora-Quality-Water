@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabaseClient';
 import { namesMatch, normalizeEmployeeName } from '../utils/nameHelper';
 import { getOrderRoute } from '../utils/routeHelper';
+import { getGarrafonesCount } from '../utils/garrafonHelper';
+import { getLocalDateString } from '../utils/dateHelper';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -128,12 +130,8 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const [timePeriod, setTimePeriod] = useState<'today' | 'week' | 'month' | 'all'>('all');
 
   const filterByTimePeriod = (list: any[]) => {
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - 7);
     weekStart.setHours(0, 0, 0, 0);
@@ -147,7 +145,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       const saleDate = new Date(sale.created_at);
       
       if (timePeriod === 'today') {
-        const dStr = saleDate.toISOString().split('T')[0];
+        const dStr = getLocalDateString(sale.created_at);
         return dStr === todayStr;
       }
       if (timePeriod === 'week') {
@@ -457,41 +455,28 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   const calculateTotalVolume = () => {
     let total = 0;
     const scopedList = getScopedSalesList();
-    const list = scopedList.length > 0 ? scopedList : GLOBAL_SALES;
-    list.forEach(sale => {
-      const match = (sale.items || '').match(/(\d+)\s*(garrafón|garrafon|garrafones|garr|pza|pzas|L|l|envase|botella)/i);
-      if (match) {
-        total += parseInt(match[1]);
-      } else {
-        const nums = (sale.items || '').match(/\d+/g);
-        if (nums) {
-          nums.forEach(n => { total += parseInt(n); });
-        }
-      }
+    scopedList.forEach(sale => {
+      total += getGarrafonesCount(sale.items);
     });
-    return total || 1240;
+    return total;
   };
 
   const calculateVentasHoy = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     const scopedList = getScopedSalesList();
     const todaySales = scopedList.filter(s => {
-      const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
+      const dStr = s.created_at ? getLocalDateString(s.created_at) : '';
       return dStr === todayStr;
     });
     
-    const total = todaySales.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
-    if (total === 0 && scopedList.length > 0) {
-      return scopedList.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
-    }
-    return total || 14580;
+    return todaySales.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
   };
 
   const calculateTicketPromedio = () => {
     const scopedList = getScopedSalesList();
-    const list = scopedList.length > 0 ? scopedList : GLOBAL_SALES;
-    const total = list.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
-    return Math.round(total / list.length) || 240;
+    if (scopedList.length === 0) return 0;
+    const total = scopedList.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
+    return Math.round(total / scopedList.length);
   };
 
   const calculateTotalCustomers = () => {
@@ -504,30 +489,25 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       const d = new Date();
       d.setDate(d.getDate() - i);
       return {
-        dateStr: d.toISOString().split('T')[0],
+        dateStr: getLocalDateString(d),
         dayLabel: daysOfWeek[d.getDay()],
         sales: 0
       };
     }).reverse();
 
     const scopedList = getScopedSalesList();
-    if (scopedList.length > 0) {
-      scopedList.forEach(sale => {
-        const saleDateStr = sale.created_at ? new Date(sale.created_at).toISOString().split('T')[0] : '';
-        const foundDay = last7Days.find(d => d.dateStr === saleDateStr);
-        if (foundDay) {
-          foundDay.sales += Number(sale.total_price || sale.amount || 0);
-        }
-      });
-      const hasData = last7Days.some(d => d.sales > 0);
-      if (hasData) {
-        return last7Days.map(d => ({
-          day: d.dayLabel,
-          sales: d.sales
-        }));
+    scopedList.forEach(sale => {
+      const saleDateStr = sale.created_at ? getLocalDateString(sale.created_at) : '';
+      const foundDay = last7Days.find(d => d.dateStr === saleDateStr);
+      if (foundDay) {
+        foundDay.sales += Number(sale.total_price || sale.amount || 0);
       }
-    }
-    return SALES_DATA;
+    });
+
+    return last7Days.map(d => ({
+      day: d.dayLabel,
+      sales: d.sales
+    }));
   };
 
   const getDynamicChannelData = () => {
@@ -537,7 +517,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     const scopedList = getScopedSalesList();
     const total = scopedList.length;
 
-    if (total === 0) return CHANNEL_DATA;
+    if (total === 0) return [];
 
     scopedList.forEach(s => {
       const src = (s.source || '').toLowerCase();
@@ -546,21 +526,19 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       else phoneCount++;
     });
 
-    const list = [
+    return [
       { name: 'WhatsApp', value: Math.round((whatsappCount / total) * 100) || 0, color: '#0ea5e9' },
       { name: 'Mostrador/POS', value: Math.round((posCount / total) * 100) || 0, color: '#f43f5e' },
       { name: 'Teléfono', value: Math.round((phoneCount / total) * 100) || 0, color: '#8b5cf6' },
     ].filter(c => c.value > 0);
-
-    return list.length > 0 ? list : CHANNEL_DATA;
   };
 
   const getPlantAndFieldSalesToday = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     const list = getScopedSalesList();
     const activeSales = timePeriod === 'today' 
       ? list.filter(s => {
-          const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
+          const dStr = s.created_at ? getLocalDateString(s.created_at) : '';
           return dStr === todayStr;
         })
       : list;
@@ -670,9 +648,9 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   };
 
   const getPlantSalesToday = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     const plantSales = salesList.filter(s => {
-      const dStr = s.created_at ? new Date(s.created_at).toISOString().split('T')[0] : '';
+      const dStr = s.created_at ? getLocalDateString(s.created_at) : '';
       const isToday = dStr === todayStr;
       const isPlant = !s.assigned_to_name || 
                       namesMatch(s.assigned_to_name, 'Mostrador') || 
