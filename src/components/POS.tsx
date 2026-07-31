@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { normalizeEmployeeName, namesMatch, getLocalDateString } from '../utils/nameHelper';
+import { getOrderRoute } from '../utils/routeHelper';
 
 interface Product {
   id: string;
@@ -1119,7 +1120,40 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       }
     }
 
-    const effectiveRoute = assignedRoute || (saleChannel === 'whatsapp' ? '6.- WhatsApp' : '4.- Planta o Local');
+    const resolvedDriverName = (() => {
+      if (isPickupOrder && assignedDriverName) return assignedDriverName;
+      let baseRole = userRole;
+      let sessionDriverName = userName || '';
+      try {
+        const backupStr = localStorage.getItem('quality_water_session_backup');
+        if (backupStr) {
+          const backup = JSON.parse(backupStr);
+          if (backup?.userRole) baseRole = backup.userRole;
+          if (!sessionDriverName && backup?.userName) sessionDriverName = backup.userName;
+        }
+        const qwSessionStr = localStorage.getItem('qw_session');
+        if (qwSessionStr) {
+          const qwSess = JSON.parse(qwSessionStr);
+          if (!sessionDriverName && qwSess?.user_name) sessionDriverName = qwSess.user_name;
+        }
+      } catch (_) {}
+      if (baseRole === 'driver' && userRole === 'operator') {
+        return `${sessionDriverName || 'Empleado'} (Planta)`;
+      }
+      return userRole === 'driver' ? (sessionDriverName || 'Repartidor') : (sessionDriverName || 'Mostrador');
+    })();
+
+    let effectiveRoute = assignedRoute;
+    if (!assignedRoute || assignedRoute === '4.- Planta o Local') {
+      if (userRole === 'driver' || (isPickupOrder && assignedDriverName)) {
+        effectiveRoute = getOrderRoute({ assigned_to_name: resolvedDriverName, assigned_route: assignedRoute });
+      } else if (saleChannel === 'whatsapp') {
+        effectiveRoute = '6.- WhatsApp';
+      } else {
+        effectiveRoute = '4.- Planta o Local';
+      }
+    }
+
     const finalSavedItems = saveItems.toLowerCase().includes('[ruta:')
       ? saveItems
       : `${saveItems} [Ruta: ${effectiveRoute}]`;
@@ -1140,28 +1174,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         return (typeof raw === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) ? raw : null;
       })(),
       assigned_route: effectiveRoute,
-      assigned_to_name: (() => {
-        if (isPickupOrder && assignedDriverName) return assignedDriverName;
-        let baseRole = userRole;
-        let sessionDriverName = userName || '';
-        try {
-          const backupStr = localStorage.getItem('quality_water_session_backup');
-          if (backupStr) {
-            const backup = JSON.parse(backupStr);
-            if (backup?.userRole) baseRole = backup.userRole;
-            if (!sessionDriverName && backup?.userName) sessionDriverName = backup.userName;
-          }
-          const qwSessionStr = localStorage.getItem('qw_session');
-          if (qwSessionStr) {
-            const qwSess = JSON.parse(qwSessionStr);
-            if (!sessionDriverName && qwSess?.user_name) sessionDriverName = qwSess.user_name;
-          }
-        } catch (_) {}
-        if (baseRole === 'driver' && userRole === 'operator') {
-          return `${sessionDriverName || 'Empleado'} (Planta)`;
-        }
-        return userRole === 'driver' ? (sessionDriverName || 'Repartidor') : (sessionDriverName || 'Mostrador');
-      })(),
+      assigned_to_name: resolvedDriverName,
       created_at: new Date().toISOString()
     };
 

@@ -1,6 +1,17 @@
 export const getOrderRoute = (order: any): string => {
   if (!order) return '4.- Planta o Local';
   
+  const driverName = (order.assigned_to_name || '').toLowerCase().trim();
+  const isDriverAssigned = Boolean(
+    driverName && 
+    !driverName.includes('mostrador') && 
+    !driverName.includes('planta') && 
+    !driverName.includes('operador') &&
+    !driverName.includes('whatsapp') &&
+    !driverName.includes('teléfono') &&
+    !driverName.includes('llamada')
+  );
+
   // 1. If explicit route or assigned_route column exists, try matching it
   let rawRoute = order.route || order.assigned_route || '';
   
@@ -14,43 +25,40 @@ export const getOrderRoute = (order: any): string => {
     if (routeLower.includes('santa cruz') || routeLower.includes('1.-') || routeLower.includes('ruta 1') || routeLower.includes('santa_cruz')) return '1.- Santa Cruz';
     if (routeLower.includes('san miguel') || routeLower.includes('centro') || routeLower.includes('2.-') || routeLower.includes('ruta 2')) return '2.- San Miguel-Centro';
     if (routeLower.includes('la francia') || routeLower.includes('reyes') || routeLower.includes('los reyes') || routeLower.includes('3.-') || routeLower.includes('ruta 3')) return '3.- La Francia-Los Reyes';
-    if (routeLower.includes('planta') || routeLower.includes('local') || routeLower.includes('mostrador') || routeLower.includes('4.-') || routeLower.includes('ruta 4')) return '4.- Planta o Local';
     if (routeLower.includes('whatsapp') || routeLower.includes('6.-') || routeLower.includes('ruta 6')) return '6.- WhatsApp';
     if (routeLower.includes('llamadas') || routeLower.includes('telefono') || routeLower.includes('5.-') || routeLower.includes('ruta 5')) return '5.- Llamadas Telefónicas';
     
-    // Return custom new zone/route directly if specified
-    return rawRoute.trim();
+    // If rawRoute is "4.- Planta o Local" BUT an actual driver is assigned, fall through to driver route resolution
+    if (routeLower.includes('planta') || routeLower.includes('local') || routeLower.includes('mostrador') || routeLower.includes('4.-') || routeLower.includes('ruta 4')) {
+      if (!isDriverAssigned) {
+        return '4.- Planta o Local';
+      }
+    } else {
+      return rawRoute.trim();
+    }
   }
   
-  // 4. Fallbacks based on source and driver assignments
-  const source = (order.source || '').toLowerCase();
-  const driverName = (order.assigned_to_name || '').toLowerCase();
-
-  // If order items specifies origin or is labeled WhatsApp
-  if (order.items?.includes('[Origen: WhatsApp]') || source === 'whatsapp' || source === 'whatsapp_chat') {
-    return '6.- WhatsApp';
-  }
-  if (order.items?.includes('[Origen: Mostrador]') || source === 'pos' || source === 'local' || order.address?.includes('| Planta') || order.address?.includes('Mostrador')) {
-    if (!order.assigned_to_name || driverName.includes('mostrador') || driverName.includes('planta')) {
-      return '4.- Planta o Local';
-    }
-  }
-
-  if (source === 'phone') {
-    return '5.- Llamadas Telefónicas';
-  }
-
-  if (order.assigned_to_name) {
-    if (driverName.includes('mario') || driverName.includes('santos') || driverName.includes('santa cruz')) {
+  // 4. Driver name mapping
+  if (isDriverAssigned) {
+    if (driverName.includes('juan') || driverName.includes('mario') || driverName.includes('santos') || driverName.includes('santa cruz')) {
       return '1.- Santa Cruz';
     }
-    if (driverName.includes('mostrador') || driverName.includes('planta')) {
-      return '4.- Planta o Local';
+    if (driverName.includes('hector') || driverName.includes('héctor') || driverName.includes('miguel')) {
+      return '2.- San Miguel-Centro';
     }
-    if (driverName.includes('francia') || driverName.includes('reyes')) {
+    if (driverName.includes('luis') || driverName.includes('francia') || driverName.includes('reyes') || driverName.includes('la francia')) {
       return '3.- La Francia-Los Reyes';
     }
     return '2.- San Miguel-Centro';
+  }
+
+  // 5. Fallbacks based on source
+  const source = (order.source || '').toLowerCase();
+  if (order.items?.includes('[Origen: WhatsApp]') || source === 'whatsapp' || source === 'whatsapp_chat') {
+    return '6.- WhatsApp';
+  }
+  if (source === 'phone') {
+    return '5.- Llamadas Telefónicas';
   }
 
   return '4.- Planta o Local';

@@ -31,6 +31,7 @@ import {
 import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
 import { normalizeEmployeeName } from '../utils/nameHelper';
+import { getOrderRoute } from '../utils/routeHelper';
 
 interface Employee {
   id: string;
@@ -219,10 +220,11 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       const isPickupOrder = selectedOrder.status === 'pickup_pending';
       const nextStatus = isPickupOrder ? 'pickup_assigned' : 'assigned';
       
+      const effectiveRoute = getOrderRoute({ assigned_to_name: driverName, assigned_route: dispatchRoute });
       const currentItems = selectedOrder.items || '';
       const updatedItems = currentItems.toLowerCase().includes('[ruta:')
         ? currentItems
-        : `${currentItems} [Ruta: ${dispatchRoute}]`;
+        : `${currentItems} [Ruta: ${effectiveRoute}]`;
 
       const { error } = await supabase
         .from('orders')
@@ -230,7 +232,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
           status: nextStatus,
           assigned_to: driverId,
           assigned_to_name: driverName,
-          assigned_route: dispatchRoute,
+          assigned_route: effectiveRoute,
           items: updatedItems
         })
         .eq('id', selectedOrder.id);
@@ -1262,10 +1264,12 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                         value={newOrder.assigned_to}
                         onChange={(e) => {
                           const driver = drivers.find(d => d.id === e.target.value);
+                          const driverName = driver ? driver.name : '';
                           setNewOrder({
                             ...newOrder, 
                             assigned_to: e.target.value,
-                            assigned_to_name: driver ? driver.name : ''
+                            assigned_to_name: driverName,
+                            assigned_route: driverName ? getOrderRoute({ assigned_to_name: driverName }) : newOrder.assigned_route
                           });
                         }}
                         className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none"
@@ -1454,10 +1458,12 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
                           value={newOrder.assigned_to}
                           onChange={(e) => {
                             const driver = drivers.find(d => d.id === e.target.value);
+                            const driverName = driver ? driver.name : '';
                             setNewOrder({
                               ...newOrder, 
                               assigned_to: e.target.value,
-                              assigned_to_name: driver ? driver.name : ''
+                              assigned_to_name: driverName,
+                              assigned_route: driverName ? getOrderRoute({ assigned_to_name: driverName }) : newOrder.assigned_route
                             });
                           }}
                           className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-sky-500 outline-none appearance-none"
