@@ -2450,11 +2450,15 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <p className="text-xs font-black text-slate-800 uppercase italic leading-none">{sale.customer_name}</p>
-                              {sale.status === 'pending_payment' && (
+                              {(sale.is_borrowed || sale.payment_method === 'Garrafones Prestados' || (sale.items && (sale.items.toLowerCase().includes('prestado') || sale.items.toLowerCase().includes('fiado')))) ? (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shrink-0">
+                                  🪣 Garrafones Prestados
+                                </span>
+                              ) : sale.status === 'pending_payment' ? (
                                 <span className="bg-rose-100 text-rose-800 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shrink-0 animate-pulse border border-rose-200">
                                   Adeudo
                                 </span>
-                              )}
+                              ) : null}
                               {sale.items && (sale.items.includes('[OBSEQUIO/REGALO]') || sale.items.includes('[OBSEQUIO]')) && (
                                 <span className="bg-emerald-100 text-emerald-700 text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide shrink-0 border border-emerald-200">
                                   Obsequio

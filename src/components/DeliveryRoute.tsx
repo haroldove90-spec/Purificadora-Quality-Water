@@ -174,6 +174,7 @@ export default function DeliveryRoute() {
   const [soldColor, setSoldColor] = useState(0);
   const [soldPequeno, setSoldPequeno] = useState(0);
   const [pequenosReceived, setPequenosReceived] = useState(0);
+  const [isBorrowed, setIsBorrowed] = useState(false);
 
   const fetchProducts = async () => {
     try {
@@ -194,6 +195,7 @@ export default function DeliveryRoute() {
       setDeliveryTotal(currentDelivery.total_price || 0);
       setIsDebt(false);
       setIsGift(false);
+      setIsBorrowed(false);
       setAmountPaidToday(0);
       setSoldRosa(0);
       setSoldAzul(0);
@@ -366,6 +368,27 @@ export default function DeliveryRoute() {
           setSelectedDelivery(null);
         } else {
           alert('Error al confirmar obsequio: ' + result.error);
+        }
+      } else if (isBorrowed) {
+        const totalJugsCount = totalRegularSold + totalSmallSold || 1;
+        const result = await handleCompleteDelivery(
+          selectedDelivery,
+          `${deliveryItems} [GARRAFONES PRESTADOS FIADOS: ${totalJugsCount}]`,
+          deliveryTotal,
+          'pending_payment',
+          {
+            payment_method: 'Garrafones Prestados',
+            is_borrowed: true,
+            borrowed_jugs_count: totalJugsCount
+          }
+        );
+        if (result.success) {
+          await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
+          await fetchDeliveries();
+          setStep(1);
+          setSelectedDelivery(null);
+        } else {
+          alert('Error al registrar garrafones prestados: ' + result.error);
         }
       } else if (isDebt) {
         const debtAmount = Number(deliveryTotal) - Number(amountPaidToday);
@@ -746,11 +769,26 @@ export default function DeliveryRoute() {
                   </div>
                 </div>
                 
-                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
-                  <div className="flex gap-2">
+                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[10px] bg-slate-50 text-slate-500 px-2 py-1 rounded-lg font-bold">
                       {delivery.items}
                     </span>
+                    {(delivery.is_borrowed || delivery.payment_method === 'Garrafones Prestados' || (delivery.items && (delivery.items.toLowerCase().includes('prestado') || delivery.items.toLowerCase().includes('fiado')))) && (
+                      <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wide">
+                        🪣 Garrafones Prestados (Fiado)
+                      </span>
+                    )}
+                    {(delivery.payment_method === 'Obsequio / Regalo' || (delivery.items && (delivery.items.toLowerCase().includes('obsequio') || delivery.items.toLowerCase().includes('regalo')))) && (
+                      <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wide">
+                        🎁 Obsequio / Regalo
+                      </span>
+                    )}
+                    {delivery.status === 'pending_payment' && !delivery.is_borrowed && delivery.payment_method !== 'Garrafones Prestados' && (
+                      <span className="bg-rose-100 text-rose-800 border border-rose-300 font-black text-[9px] px-2 py-0.5 rounded-md uppercase tracking-wide">
+                        ⚠️ Saldo Pendiente (Adeudo)
+                      </span>
+                    )}
                   </div>
                   {!isCompleted && (
                     <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-sky-500 group-hover:text-white transition-colors">
@@ -1091,6 +1129,32 @@ export default function DeliveryRoute() {
                   </div>
                 </div>
 
+                {/* Control de Garrafones Prestados (Fiado) */}
+                <div className="bg-amber-50 p-4 rounded-3xl border border-amber-200 text-left space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <PackageCheck size={14} className="text-amber-600" />
+                        ¿Garrafones / Líquidos Prestados (Fiado)?
+                      </p>
+                      <p className="text-[10px] text-amber-700 font-semibold uppercase">Marcar si los garrafones/envases quedan prestados sin cobro inmediato</p>
+                    </div>
+                    <input 
+                      type="checkbox"
+                      id="isBorrowedCheckbox"
+                      checked={isBorrowed}
+                      onChange={(e) => {
+                        setIsBorrowed(e.target.checked);
+                        if (e.target.checked) {
+                          setIsGift(false);
+                          setIsDebt(false);
+                        }
+                      }}
+                      className="w-5 h-5 text-amber-600 accent-amber-600 rounded border-amber-300 focus:ring-amber-500 h-[44px] cursor-pointer"
+                    />
+                  </div>
+                </div>
+
                 {/* Control de Obsequios */}
                 <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 text-left space-y-2">
                   <div className="flex items-center justify-between">
@@ -1109,6 +1173,7 @@ export default function DeliveryRoute() {
                         setIsGift(e.target.checked);
                         if (e.target.checked) {
                           setIsDebt(false);
+                          setIsBorrowed(false);
                         }
                       }}
                       className="w-5 h-5 text-emerald-500 accent-emerald-500 rounded border-slate-300 focus:ring-emerald-500 h-[44px] cursor-pointer"
@@ -1117,7 +1182,7 @@ export default function DeliveryRoute() {
                 </div>
 
                 {/* Control de Adeudos (Cuentas por cobrar) */}
-                {!isGift && (
+                {!isGift && !isBorrowed && (
                   <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 space-y-4 text-left">
                     <div className="flex items-center justify-between">
                       <div>
