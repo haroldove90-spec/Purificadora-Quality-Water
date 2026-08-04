@@ -13,7 +13,8 @@ import {
   ArrowLeft,
   Loader2,
   Download,
-  Gift
+  Gift,
+  PackageCheck
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Order } from '../lib/types.supabase';
