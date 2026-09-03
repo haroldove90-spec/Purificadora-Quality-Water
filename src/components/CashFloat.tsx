@@ -29,12 +29,13 @@ import { exportToPDF } from '../utils/pdfExport';
 import { namesMatch, normalizeEmployeeName, getLocalDateString } from '../utils/nameHelper';
 
 interface CashFloatProps {
-  userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
+  userRole?: 'admin' | 'operator' | 'driver' | 'client' | 'supervisor' | string | null;
   userName?: string | null;
 }
 
 interface Employee {
   id: string;
+  user_id?: string;
   name: string;
   role: string;
   phone?: string;
@@ -55,6 +56,12 @@ interface OrderItemSummary {
   driverName: string;
   salesTotal: number;
   ordersCount: number;
+  transferTotal: number;
+  transferOrdersCount: number;
+  loansTotal: number;
+  loansCount: number;
+  recoveredLoansTotal: number;
+  recoveredLoansCount: number;
 }
 
 export default function CashFloat({ userRole, userName }: CashFloatProps) {
@@ -126,7 +133,19 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const activeDriverSession = getResolvedDriverSession(rawActiveDriverSession);
   const setActiveDriverSession = setRawActiveDriverSession;
 
-  const getDriverSalesObj = (driverName: string) => {
+  const getDriverSalesObj = (driverName: string): OrderItemSummary => {
+    const defaultObj: OrderItemSummary = {
+      driverName: driverName,
+      salesTotal: 0,
+      ordersCount: 0,
+      transferTotal: 0,
+      transferOrdersCount: 0,
+      loansTotal: 0,
+      loansCount: 0,
+      recoveredLoansTotal: 0,
+      recoveredLoansCount: 0
+    };
+
     const emp = employees.find(e => namesMatch(e.name, driverName));
     const isOperator = emp?.role === 'operator' || currentUser.role === 'operator';
 
@@ -134,18 +153,24 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const ownKey = Object.keys(todaySales).find(k => namesMatch(k, driverName));
       const mostradorKey = Object.keys(todaySales).find(k => namesMatch(k, 'Mostrador'));
       
-      const ownSales = ownKey ? todaySales[ownKey] : { salesTotal: 0, ordersCount: 0 };
-      const mostradorSales = mostradorKey ? todaySales[mostradorKey] : { salesTotal: 0, ordersCount: 0 };
+      const ownSales = ownKey ? todaySales[ownKey] : defaultObj;
+      const mostradorSales = mostradorKey ? todaySales[mostradorKey] : defaultObj;
       
       return {
         driverName: driverName,
         salesTotal: (ownSales.salesTotal || 0) + (mostradorSales.salesTotal || 0),
-        ordersCount: (ownSales.ordersCount || 0) + (mostradorSales.ordersCount || 0)
+        ordersCount: (ownSales.ordersCount || 0) + (mostradorSales.ordersCount || 0),
+        transferTotal: (ownSales.transferTotal || 0) + (mostradorSales.transferTotal || 0),
+        transferOrdersCount: (ownSales.transferOrdersCount || 0) + (mostradorSales.transferOrdersCount || 0),
+        loansTotal: (ownSales.loansTotal || 0) + (mostradorSales.loansTotal || 0),
+        loansCount: (ownSales.loansCount || 0) + (mostradorSales.loansCount || 0),
+        recoveredLoansTotal: (ownSales.recoveredLoansTotal || 0) + (mostradorSales.recoveredLoansTotal || 0),
+        recoveredLoansCount: (ownSales.recoveredLoansCount || 0) + (mostradorSales.recoveredLoansCount || 0)
       };
     }
 
     const foundKey = Object.keys(todaySales).find(k => namesMatch(k, driverName));
-    return foundKey ? todaySales[foundKey] : { salesTotal: 0, ordersCount: 0 };
+    return foundKey ? todaySales[foundKey] : defaultObj;
   };
   
   // Toggle for admins and operators to view either the master list or personal drawer
@@ -210,7 +235,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const todayDate = getLocalDateString();
 
   // Get current logger info
-  const [currentUser, setCurrentUser] = useState({
+  const [currentUser, setCurrentUser] = useState<{ name: string; role: string }>({
     name: 'Empleado Demo',
     role: userRole || 'driver'
   });
@@ -320,7 +345,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const { data: ordersData } = await supabase
         .from('orders')
         .select('*')
-        .eq('status', 'delivered')
+        .in('status', ['delivered', 'pending_payment'])
         .gte('created_at', startOfYesterday)
         .lte('created_at', endOfTomorrow);
 
@@ -331,7 +356,13 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         salesSummary[drv.name] = {
           driverName: drv.name,
           salesTotal: 0,
-          ordersCount: 0
+          ordersCount: 0,
+          transferTotal: 0,
+          transferOrdersCount: 0,
+          loansTotal: 0,
+          loansCount: 0,
+          recoveredLoansTotal: 0,
+          recoveredLoansCount: 0
         };
       });
 
@@ -342,8 +373,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
           if (rawName) {
             const name = normalizeEmployeeName(rawName);
             // Match order date: either UTC matches or local format matches
-            const orderUtcDate = o.created_at.split('T')[0];
-            const orderLocalDate = new Date(o.created_at).toLocaleDateString('en-CA');
+            const orderUtcDate = o.created_at ? o.created_at.split('T')[0] : '';
+            const orderLocalDate = o.created_at ? new Date(o.created_at).toLocaleDateString('en-CA') : '';
             const isTodayOrder = (orderUtcDate === today) || (orderLocalDate === localToday);
             
             if (!isTodayOrder) {
@@ -354,21 +385,66 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
               salesSummary[name] = {
                 driverName: name,
                 salesTotal: 0,
-                ordersCount: 0
+                ordersCount: 0,
+                transferTotal: 0,
+                transferOrdersCount: 0,
+                loansTotal: 0,
+                loansCount: 0,
+                recoveredLoansTotal: 0,
+                recoveredLoansCount: 0
               };
             }
             
-            // Safe payment method check supporting both standard column or self-healed fallback format inside items description
-            const isTransfer = 
-              String(o.payment_method || '').toLowerCase() === 'transfer' || 
-              String(o.items || '').toLowerCase().includes('[método de pago: transfer]') || 
-              String(o.items || '').toLowerCase().includes('[método de pago: transferencia]') || 
-              String(o.items || '').toLowerCase().includes('transferencia');
+            const itemsLower = String(o.items || '').toLowerCase();
+            const pmLower = String(o.payment_method || '').toLowerCase();
 
-            if (!isTransfer) {
+            // 1. Is this a loan / credit that has NOT been collected yet?
+            const isLoan = 
+              o.is_borrowed === true ||
+              o.status === 'pending_payment' ||
+              pmLower.includes('prestado') ||
+              pmLower.includes('fiado') ||
+              pmLower.includes('borrowed') ||
+              pmLower.includes('crédito') ||
+              pmLower.includes('credito') ||
+              itemsLower.includes('garrafones prestados') ||
+              itemsLower.includes('(se debe)') ||
+              itemsLower.includes('[saldo pendiente]') ||
+              itemsLower.includes('[is_borrowed: true]');
+
+            // 2. Is this a recovered / paid loan?
+            const isRecoveredLoan = 
+              o.borrowed_paid === true ||
+              itemsLower.includes('pago garrafones fiados') ||
+              itemsLower.includes('[adeudo liquidado') ||
+              itemsLower.includes('[adeudo parcialmente recaudado');
+
+            // 3. Is this a transfer?
+            const isTransfer = 
+              pmLower === 'transfer' || 
+              pmLower === 'transferencia' ||
+              itemsLower.includes('[método de pago: transfer]') || 
+              itemsLower.includes('[método de pago: transferencia]') || 
+              itemsLower.includes('[payment_method: transfer') ||
+              itemsLower.includes('transferencia');
+
+            if (isLoan) {
+              // Strict rule: Loans MUST NOT be added to cash sales!
+              salesSummary[name].loansTotal += Number(o.total_price || 0);
+              salesSummary[name].loansCount += 1;
+            } else if (isRecoveredLoan) {
+              // Recovered loans are tracked in their own category so they don't corrupt cash sales
+              salesSummary[name].recoveredLoansTotal += Number(o.total_price || 0);
+              salesSummary[name].recoveredLoansCount += 1;
+            } else if (isTransfer) {
+              // Transfers go directly to bank account, not to driver cash
+              salesSummary[name].transferTotal += Number(o.total_price || 0);
+              salesSummary[name].transferOrdersCount += 1;
+            } else {
+              // Genuine cash sales
               salesSummary[name].salesTotal += Number(o.total_price || 0);
+              salesSummary[name].ordersCount += 1;
             }
-            salesSummary[name].ordersCount += 1;
           }
         });
       }
@@ -647,30 +723,34 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
 
       if (error) throw error;
 
-      // Log notifications for target employee, admin and supervisor
-      await supabase.from('notifications_log').insert([
-        {
-          title: '📌 Caja Cerrada y Liquidada',
-          message: `Tu caja ha sido cerrada con éxito. Total liquidado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
-          type: 'finance',
-          user_role: targetUserRole === 'driver' && targetUserId ? `driver_${targetUserId}` : targetUserRole,
-          is_read: false
-        },
-        {
-          title: '🚨 Cierre de Caja Realizado',
-          message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
-          type: 'finance',
-          user_role: 'admin',
-          is_read: false
-        },
-        {
-          title: '🚨 Cierre de Caja Realizado',
-          message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
-          type: 'finance',
-          user_role: 'supervisor',
-          is_read: false
-        }
-      ]);
+      // Log notifications for target employee, admin and supervisor (non-blocking)
+      try {
+        await supabase.from('notifications_log').insert([
+          {
+            title: '📌 Caja Cerrada y Liquidada',
+            message: `Tu caja ha sido cerrada con éxito. Total liquidado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
+            type: 'finance',
+            user_role: targetUserRole === 'driver' && targetUserId ? `driver_${targetUserId}` : targetUserRole,
+            is_read: false
+          },
+          {
+            title: '🚨 Cierre de Caja Realizado',
+            message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
+            type: 'finance',
+            user_role: 'admin',
+            is_read: false
+          },
+          {
+            title: '🚨 Cierre de Caja Realizado',
+            message: `Arqueo y liquidación completados para ${employeeName}. Total entregado: $${totalToDeliver} pesos (Fondo: $${cleanFloatAmount} + Ventas: $${cleanSalesAmount}).`,
+            type: 'finance',
+            user_role: 'supervisor',
+            is_read: false
+          }
+        ]);
+      } catch (notifErr) {
+        console.warn('No se pudo registrar notificación (no crítico):', notifErr);
+      }
 
       await loadData();
       setSelectedDriverForClose(null);
@@ -2646,8 +2726,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     value={customFloatAmount}
                     onChange={(e) => setCustomFloatAmount(e.target.value)}
                     placeholder="Ej. 600"
-                    placeholderClassName="placeholder:font-bold"
-                    className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-base font-black text-slate-800 outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
+                    className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl text-base font-black text-slate-800 placeholder:font-bold outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
                   />
                 </div>
 

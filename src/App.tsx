@@ -50,6 +50,9 @@ import SalesHistoryCustomers from './components/SalesHistoryCustomers';
 import SalesHistoryEmployees from './components/SalesHistoryEmployees';
 import BackupManager from './components/BackupManager';
 import BorrowedJugs from './components/BorrowedJugs';
+import TransferSales from './components/TransferSales';
+import SmartSupabaseButton from './components/SmartSupabaseButton';
+import ErrorBoundary from './components/ErrorBoundary';
 import { normalizeEmployeeName } from './utils/nameHelper';
 
 import Lobby from './components/Lobby';
@@ -57,7 +60,7 @@ import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure' | 'sales_history' | 'sales_history_customers' | 'sales_history_employees' | 'backup';
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'employee_sales' | 'borrowed_jugs' | 'transfer_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure' | 'sales_history' | 'sales_history_customers' | 'sales_history_employees' | 'backup';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
@@ -593,6 +596,7 @@ export default function App() {
         { id: 'pos', label: 'Venta POS', icon: CreditCard },
         { id: 'sales_history_customers', label: 'Historial por Clientes', icon: Users },
         { id: 'sales_history_employees', label: 'Historial por Empleados', icon: Truck },
+        { id: 'transfer_sales', label: 'Ventas Transferencia', icon: CreditCard },
         { id: 'borrowed_jugs', label: 'Garrafones Fiados', icon: PackageCheck },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'inventory', label: 'Gestión de Productos', icon: Package },
@@ -612,6 +616,7 @@ export default function App() {
     } else if (currentRoleView === 'driver') {
       items = [
         { id: 'pos', label: 'Venta POS', icon: CreditCard },
+        { id: 'transfer_sales', label: 'Mis Transferencias', icon: CreditCard },
         { id: 'borrowed_jugs', label: 'Garrafones Fiados', icon: PackageCheck },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
@@ -643,6 +648,7 @@ export default function App() {
         { id: 'dashboard', label: 'Gestión de Pedidos', icon: LayoutDashboard },
         { id: 'sales_history_customers', label: 'Historial por Clientes', icon: Users },
         { id: 'sales_history_employees', label: 'Historial por Empleados', icon: Truck },
+        { id: 'transfer_sales', label: 'Ventas Transferencia', icon: CreditCard },
         { id: 'attendance', label: 'Registrar Mi Asistencia', icon: Clock },
         { id: 'supervisor_attendance', label: 'Supervisar Asistencias', icon: Users },
         { id: 'driver_sales', label: 'Empleados', icon: Truck },
@@ -813,6 +819,7 @@ export default function App() {
                 <span className="text-[8px] font-black uppercase tracking-tight">Instalar</span>
               </button>
             )}
+            <SmartSupabaseButton />
             <NotificationHub userRole={currentRoleView} onViewAll={() => setActiveView('notifications')} />
             <button 
               onClick={() => setDarkMode(!darkMode)}
@@ -911,6 +918,7 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-6">
+            <SmartSupabaseButton />
             <NotificationHub userRole={currentRoleView} onViewAll={() => setActiveView('notifications')} />
             {isInstallable && (
               <button
@@ -981,6 +989,7 @@ export default function App() {
                 transition={{ duration: 0.2 }}
                 className="flex-1"
               >
+                <ErrorBoundary fallbackTitle={`Error en la vista: ${activeView}`}>
                 {activeView === 'supervisor_attendance' ? (
                   <SupervisorDashboard initialTab="attendance" userName={userName} userRole={currentRoleView || 'supervisor'} />
                 ) : activeView === 'supervisor_cash_closure' ? (
@@ -1005,8 +1014,10 @@ export default function App() {
                  activeView === 'sales_history' ? <SalesHistory userRole={currentRoleView} /> :
                  activeView === 'sales_history_customers' ? <SalesHistoryCustomers userRole={currentRoleView || 'admin'} /> :
                  activeView === 'sales_history_employees' ? <SalesHistoryEmployees userRole={currentRoleView || 'admin'} /> :
+                 activeView === 'transfer_sales' ? <TransferSales userRole={currentRoleView || 'admin'} userName={userName} /> :
                  activeView === 'backup' ? <BackupManager /> :
                  <Profile />}
+                </ErrorBoundary>
               </motion.div>
             </AnimatePresence>
           </div>

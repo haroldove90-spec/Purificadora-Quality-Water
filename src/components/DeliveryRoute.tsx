@@ -23,7 +23,7 @@ import { handleCompleteDelivery } from '../services/deliveryService';
 import { exportToPDF } from '../utils/pdfExport';
 import { namesMatch } from '../utils/nameHelper';
 
-export default function DeliveryRoute() {
+export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) {
   const [deliveries, setDeliveries] = useState<Order[]>([]);
   const [customersList, setCustomersList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

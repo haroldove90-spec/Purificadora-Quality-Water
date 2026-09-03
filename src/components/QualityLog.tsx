@@ -7,7 +7,7 @@ import { exportToPDF } from '../utils/pdfExport';
 import { supabase } from '../lib/supabaseClient';
 
 interface QualityLogProps {
-  userRole?: 'admin' | 'operator' | 'driver' | 'client' | null;
+  userRole?: 'admin' | 'operator' | 'driver' | 'client' | 'supervisor' | string | null;
 }
 
 export default function QualityLog({ userRole }: QualityLogProps) {

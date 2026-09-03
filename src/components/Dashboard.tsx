@@ -48,6 +48,7 @@ interface Order {
   status: string;
   assigned_to?: string;
   assigned_to_name?: string;
+  assigned_route?: string;
   source?: string;
   created_at: string;
 }
@@ -556,7 +557,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       setEditingOrder(null);
       setIsNewOrderPickup(false);
       setPickupJugsCount(1);
-      setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '' });
+      setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '', assigned_route: '1.- Santa Cruz' });
       fetchOrders();
     } catch (e: any) {
       console.error('Order Save Error:', e);
@@ -658,7 +659,8 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
       total_price: order.total_price.toString(),
       source: (order.source || 'whatsapp') as any,
       assigned_to: order.assigned_to || '',
-      assigned_to_name: order.assigned_to_name || ''
+      assigned_to_name: order.assigned_to_name || '',
+      assigned_route: order.assigned_route || '1.- Santa Cruz'
     });
     setShowRegisterModal(true);
   };
@@ -678,7 +680,7 @@ export default function Dashboard({ userRole }: { userRole: string | null }) {
               setEditingOrder(null);
               setIsNewOrderPickup(false);
               setPickupJugsCount(1);
-              setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '' });
+              setNewOrder({ customer_name: '', address: '', items: '', total_price: '', source: 'local', assigned_to: '', assigned_to_name: '', assigned_route: '1.- Santa Cruz' });
               setShowRegisterModal(true);
             }}
             className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all active:scale-95 shrink-0"

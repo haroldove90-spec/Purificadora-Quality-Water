@@ -14,12 +14,28 @@ export interface Order {
   customer_name: string;
   address: string;
   items: string; // e.g. "2 Garrafones"
-  status: 'pending' | 'assigned' | 'delivered' | 'cancelled';
+  status: 'pending' | 'assigned' | 'delivered' | 'cancelled' | 'pending_payment' | 'pickup_assigned' | 'pickup_pending' | 'pickup_confirmed' | string;
   driver_id?: string;
   total_price: number;
-  payment_method: 'cash' | 'card' | 'transfer';
+  payment_method: 'cash' | 'card' | 'transfer' | string;
   created_at: string;
+  updated_at?: string;
   whatsapp_number?: string;
+  neighborhood?: string;
+  source?: string;
+  assigned_to?: string;
+  assigned_to_name?: string;
+  assigned_route?: string;
+  is_borrowed?: boolean;
+  borrowed_paid?: boolean;
+  borrowed_paid_at?: string;
+  borrowed_status?: string;
+  transfer_validated?: boolean;
+  transfer_validated_by?: string;
+  transfer_validated_at?: string;
+  transfer_reference?: string;
+  delivery_lat?: number;
+  delivery_lng?: number;
 }
 
 export interface Attendance {

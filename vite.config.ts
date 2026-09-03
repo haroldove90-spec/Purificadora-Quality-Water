@@ -12,6 +12,9 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'prompt',
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        },
         manifest: {
           name: 'Purificadora Quality Water',
           short_name: 'QualityWater',
