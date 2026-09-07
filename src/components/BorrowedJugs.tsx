@@ -110,8 +110,27 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
     }
   };
 
+  const isOrderPaid = (o: BorrowedOrder) => {
+    if (o.borrowed_paid === true) return true;
+    if ((o as any).borrowed_status === 'paid') return true;
+    const items = (o.items || '').toLowerCase();
+    if (items.includes('[pago garrafones fiados registrado')) return true;
+    return false;
+  };
+
   useEffect(() => {
     fetchBorrowedOrders();
+
+    const channel = supabase
+      .channel('borrowed_jugs_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        fetchBorrowedOrders();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Filtered orders list
@@ -148,7 +167,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
       }
 
       // Status filter
-      const isPaid = o.status === 'delivered' || o.borrowed_paid === true;
+      const isPaid = isOrderPaid(o);
       if (statusFilter === 'pending' && isPaid) return false;
       if (statusFilter === 'paid' && !isPaid) return false;
 
@@ -192,7 +211,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
 
     orders.forEach(o => {
       const jugs = getJugsCount(o);
-      const isPaid = o.status === 'delivered' || o.borrowed_paid === true;
+      const isPaid = isOrderPaid(o);
       const amount = Number(o.total_price || 0);
 
       if (!isPaid) {
@@ -240,12 +259,13 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
           payment_method: paymentMethod,
           items: updatedItems,
           borrowed_paid: true,
+          borrowed_status: 'paid',
           borrowed_paid_at: nowIso
         })
         .eq('id', selectedOrder.id);
 
       if (error) {
-        // Fallback update if borrowed_paid column isn't present
+        // Fallback update if borrowed_paid/borrowed_status columns aren't present
         await supabase
           .from('orders')
           .update({
@@ -256,16 +276,20 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
           .eq('id', selectedOrder.id);
       }
 
-      // Log notification
-      await supabase.from('notifications_log').insert([
-        {
-          title: '💵 Pago de Garrafones Fiados Registrado',
-          message: `Se cobraron $${paymentAmount} de garrafones fiados a ${selectedOrder.customer_name}. Cobrado por ${userName || 'Repartidor'}.`,
-          type: 'finance',
-          user_role: 'admin',
-          is_read: false
-        }
-      ]);
+      // Log notification in try/catch so any log error doesn't abort the payment
+      try {
+        await supabase.from('notifications_log').insert([
+          {
+            title: '💵 Pago de Garrafones Fiados Registrado',
+            message: `Se cobraron $${paymentAmount} de garrafones fiados a ${selectedOrder.customer_name}. Cobrado por ${userName || 'Repartidor'}.`,
+            type: 'finance',
+            user_role: 'admin',
+            is_read: false
+          }
+        ]);
+      } catch (notifErr) {
+        console.warn('notifications_log insert skipped or error:', notifErr);
+      }
 
       alert(`¡Pago de $${paymentAmount} registrado con éxito para ${selectedOrder.customer_name}!`);
       setSelectedOrder(null);
@@ -281,7 +305,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
   const handleExportPDF = () => {
     const columns = ['Fecha', 'Cliente', 'Dirección', 'Repartidor', 'Garrafones', 'Monto ($)', 'Estatus'];
     const data = filteredOrders.map(o => {
-      const isPaid = o.status === 'delivered' || o.borrowed_paid === true;
+      const isPaid = isOrderPaid(o);
       return [
         o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A',
         o.customer_name || 'Venta Mostrador',
@@ -306,7 +330,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
   const handleExportExcel = () => {
     const columns = ['Fecha', 'Cliente', 'Dirección', 'Repartidor', 'Garrafones', 'Monto ($)', 'Estatus', 'Detalles'];
     const data = filteredOrders.map(o => {
-      const isPaid = o.status === 'delivered' || o.borrowed_paid === true;
+      const isPaid = isOrderPaid(o);
       return [
         o.created_at ? new Date(o.created_at).toLocaleDateString() : 'N/A',
         o.customer_name || 'Venta Mostrador',
@@ -541,7 +565,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {filteredOrders.map(o => {
-                  const isPaid = o.status === 'delivered' || o.borrowed_paid === true;
+                  const isPaid = isOrderPaid(o);
                   const jugsCount = getJugsCount(o);
 
                   return (

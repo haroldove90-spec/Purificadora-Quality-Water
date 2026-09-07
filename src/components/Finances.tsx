@@ -127,7 +127,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   // Master scope filter for admin: 'all' (unified/global), 'plant' (planta), 'drivers' (repartidores)
   const [adminSalesScope, setAdminSalesScope] = useState<'all' | 'plant' | 'drivers'>('all');
-  const [timePeriod, setTimePeriod] = useState<'today' | 'week' | 'month' | 'all'>('all');
+  const [timePeriod, setTimePeriod] = useState<'today' | 'week' | 'month' | 'all'>(userRole === 'driver' ? 'today' : 'all');
 
   const filterByTimePeriod = (list: any[]) => {
     const todayStr = getLocalDateString();
@@ -824,6 +824,9 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
         sale.source === 'pos'
       );
     }
+
+    // Filter by time period (Defaults to today for driver, so they only see today's sales!)
+    list = filterByTimePeriod(list);
 
     // Filter by search query
     if (salesSearch.trim()) {
@@ -2355,30 +2358,63 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
           {activeTab === 'sales' && (
             <div className="space-y-6">
               {!(userRole === 'admin' || userRole === 'supervisor') && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Mis Ventas del Día</p>
-                      <p className="text-3xl font-black text-slate-800 mt-3">
-                        ${getFilteredSales().reduce((acc, sale) => acc + Number(sale.total_price || 0), 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <span className="text-[10px] text-slate-400 block mt-2 font-bold italic">Total de efectivo y crédito recaudado hoy</span>
-                    <div className="absolute top-6 right-6 w-10 h-10 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center">
-                      <DollarSign size={20} />
+                <div className="space-y-4">
+                  {/* Period filter for driver / operator */}
+                  <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">
+                      Período de Ventas:
+                    </span>
+                    <div className="bg-slate-100 p-1 rounded-xl flex gap-1">
+                      {[
+                        { id: 'today', label: 'Hoy' },
+                        { id: 'week', label: 'Semana' },
+                        { id: 'month', label: 'Mes' },
+                        { id: 'all', label: 'Histórico' },
+                      ].map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => setTimePeriod(p.id as any)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                            timePeriod === p.id 
+                              ? 'bg-white text-sky-600 shadow-sm font-black' 
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Mis Pedidos Entregados</p>
-                      <p className="text-3xl font-black text-slate-800 mt-3">
-                        {getFilteredSales().length}
-                      </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                          {timePeriod === 'today' ? 'Mis Ventas del Día' : timePeriod === 'week' ? 'Mis Ventas de la Semana' : timePeriod === 'month' ? 'Mis Ventas del Mes' : 'Mis Ventas Históricas'}
+                        </p>
+                        <p className="text-3xl font-black text-slate-800 mt-3">
+                          ${getFilteredSales().reduce((acc, sale) => acc + Number(sale.total_price || 0), 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-2 font-bold italic">
+                        {timePeriod === 'today' ? 'Total de efectivo y crédito recaudado hoy' : 'Total acumulado en el período seleccionado'}
+                      </span>
+                      <div className="absolute top-6 right-6 w-10 h-10 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center">
+                        <DollarSign size={20} />
+                      </div>
                     </div>
-                    <span className="text-[10px] text-slate-400 block mt-2 font-bold italic">Registrados en tu sesión como {userName || 'Usuario'}</span>
-                    <div className="absolute top-6 right-6 w-10 h-10 bg-sky-50 text-sky-500 rounded-2xl flex items-center justify-center">
-                      <ShoppingBag size={20} />
+
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Mis Pedidos Entregados</p>
+                        <p className="text-3xl font-black text-slate-800 mt-3">
+                          {getFilteredSales().length}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-2 font-bold italic">Registrados en tu sesión como {userName || 'Usuario'}</span>
+                      <div className="absolute top-6 right-6 w-10 h-10 bg-sky-50 text-sky-500 rounded-2xl flex items-center justify-center">
+                        <ShoppingBag size={20} />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2392,7 +2428,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
                     </h3>
                     <p className="text-[10px] text-slate-400 font-bold mt-1">
                       {userRole === 'driver' 
-                        ? `Mostrando únicamente tus ventas registradas hoy como ${userName || 'Repartidor'}`
+                        ? `Mostrando tus ventas ${timePeriod === 'today' ? 'de hoy' : timePeriod === 'week' ? 'de la semana' : timePeriod === 'month' ? 'del mes' : 'históricas'} como ${userName || 'Repartidor'}`
                         : userRole === 'operator'
                         ? 'Mostrando las ventas de mostrador / planta registradas en el día'
                         : 'Mostrando todas las ventas entregadas y liquidadas en el sistema'

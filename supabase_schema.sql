@@ -49,10 +49,21 @@ CREATE TABLE public.orders (
   address TEXT NOT NULL,
   items TEXT NOT NULL,
   total_price DECIMAL(10, 2) DEFAULT 0,
-  status TEXT DEFAULT 'pending', -- 'pending', 'assigned', 'delivered', 'cancelled'
+  status TEXT DEFAULT 'pending', -- 'pending', 'assigned', 'delivered', 'cancelled', 'pending_payment'
   source TEXT DEFAULT 'whatsapp', -- 'local', 'phone', 'whatsapp'
   assigned_to UUID, -- ID del repartidor
   assigned_to_name TEXT, -- Nombre del repartidor
+  assigned_route TEXT, -- Ruta asignada (ej. '1.- Santa Cruz')
+  payment_method TEXT DEFAULT 'cash', -- 'cash', 'transfer', 'card', 'borrowed'
+  borrowed_paid BOOLEAN DEFAULT false,
+  borrowed_paid_at TIMESTAMP WITH TIME ZONE,
+  borrowed_status TEXT,
+  transfer_validated BOOLEAN DEFAULT false,
+  transfer_validated_by TEXT,
+  transfer_validated_at TIMESTAMP WITH TIME ZONE,
+  transfer_reference TEXT,
+  delivery_lat DECIMAL(10, 7),
+  delivery_lng DECIMAL(10, 7),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
@@ -193,15 +204,30 @@ BEGIN;
 COMMIT;
 
 -- ======================================================
--- SCRIPT DE ACTUALIZACIÓN (MIGRACIÓN IN SITU)
--- Correr este fragmento si ya cuentas con base de datos existente y no deseas borrar tus datos:
+-- SCRIPT DE ACTUALIZACIÓN RÁPIDA (MIGRACIÓN IN SITU)
+-- Si YA tienes tu base de datos funcionando con datos y NO deseas borrarlos,
+-- simplemente copia y ejecuta estas líneas en tu SQL Editor de Supabase:
 -- ======================================================
---
--- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved BOOLEAN DEFAULT false;
--- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved_at TIMESTAMP WITH TIME ZONE;
--- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved_by TEXT;
--- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved BOOLEAN DEFAULT false;
--- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved_at TIMESTAMP WITH TIME ZONE;
--- ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved_by TEXT;
---
+
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS assigned_route TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cash';
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS borrowed_paid BOOLEAN DEFAULT false;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS borrowed_paid_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS borrowed_status TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS transfer_validated BOOLEAN DEFAULT false;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS transfer_validated_by TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS transfer_validated_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS transfer_reference TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivery_lat DECIMAL(10, 7);
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivery_lng DECIMAL(10, 7);
+
+ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved BOOLEAN DEFAULT false;
+ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_attendance_approved_by TEXT;
+ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved BOOLEAN DEFAULT false;
+ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.daily_attendance ADD COLUMN IF NOT EXISTS supervisor_cash_approved_by TEXT;
+
+-- Recargar el esquema en PostgREST
+NOTIFY pgrst, 'reload schema';
 -- ======================================================

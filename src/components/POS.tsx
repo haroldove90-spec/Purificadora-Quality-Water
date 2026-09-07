@@ -467,6 +467,31 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     }
   }, [propUserName]);
 
+  // Auto-detect assignedRoute for driver or active trip
+  useEffect(() => {
+    if (userRole === 'driver') {
+      let detectedRoute = '';
+      if (activeAttendance) {
+        const trips = Array.isArray(activeAttendance.trips) ? activeAttendance.trips : [];
+        const activeTrip = trips.find((t: any) => t.status === 'in_progress' || !t.closed_at);
+        if (activeTrip?.assigned_route) {
+          detectedRoute = getOrderRoute({ assigned_route: activeTrip.assigned_route });
+        } else if (trips[trips.length - 1]?.assigned_route) {
+          detectedRoute = getOrderRoute({ assigned_route: trips[trips.length - 1].assigned_route });
+        }
+      }
+      if (!detectedRoute && userName) {
+        const driverRoute = getOrderRoute({ assigned_to_name: userName });
+        if (driverRoute && driverRoute !== '4.- Planta o Local') {
+          detectedRoute = driverRoute;
+        }
+      }
+      if (detectedRoute && detectedRoute !== '4.- Planta o Local') {
+        setAssignedRoute(detectedRoute);
+      }
+    }
+  }, [userRole, userName, activeAttendance]);
+
   // Products & Customers from DB
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -1144,9 +1169,9 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
     })();
 
     let effectiveRoute = assignedRoute;
-    if (!assignedRoute || assignedRoute === '4.- Planta o Local') {
+    if (!effectiveRoute) {
       if (userRole === 'driver' || (isPickupOrder && assignedDriverName)) {
-        effectiveRoute = getOrderRoute({ assigned_to_name: resolvedDriverName, assigned_route: assignedRoute });
+        effectiveRoute = getOrderRoute({ assigned_to_name: resolvedDriverName });
       } else if (saleChannel === 'whatsapp') {
         effectiveRoute = '6.- WhatsApp';
       } else {
@@ -1169,6 +1194,8 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       payment_method: paymentMethod === 'borrowed' ? 'Garrafones Prestados' : paymentMethod === 'cash' ? 'cash' : paymentMethod === 'transfer' ? 'transfer' : paymentMethod === 'gift' ? 'cash' : 'cash',
       is_borrowed: paymentMethod === 'borrowed',
       borrowed_jugs_count: paymentMethod === 'borrowed' ? cart.reduce((acc, item) => acc + item.quantity, 0) : 0,
+      borrowed_paid: false,
+      borrowed_status: paymentMethod === 'borrowed' ? 'pending' : null,
       assigned_to: (()=>{
         const raw = isPickupOrder && assignedDriverId ? assignedDriverId : null;
         return (typeof raw === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) ? raw : null;
@@ -2009,7 +2036,10 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setSaleChannel('mostrador')}
+                    onClick={() => {
+                      setSaleChannel('mostrador');
+                      if (userRole !== 'driver') setAssignedRoute('4.- Planta o Local');
+                    }}
                     className={`py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
                       saleChannel === 'mostrador'
                         ? 'bg-sky-500 border-sky-500 text-white shadow-sm'
@@ -2020,7 +2050,10 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSaleChannel('whatsapp')}
+                    onClick={() => {
+                      setSaleChannel('whatsapp');
+                      setAssignedRoute('6.- WhatsApp');
+                    }}
                     className={`py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
                       saleChannel === 'whatsapp'
                         ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
@@ -2032,6 +2065,32 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                 </div>
               </div>
             )}
+
+            {/* Selector de Ruta / Departamento para imputación inmediata */}
+            <div className="space-y-1.5 border-t border-slate-100 dark:border-slate-800 pt-3 text-left">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black uppercase text-slate-400 block tracking-wider">
+                  📍 Ruta / Departamento de Venta
+                </label>
+                {userRole === 'driver' && (
+                  <span className="text-[9px] font-black text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded-md uppercase">
+                    Tu Ruta
+                  </span>
+                )}
+              </div>
+              <select
+                value={assignedRoute}
+                onChange={(e) => setAssignedRoute(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-sky-500 focus:outline-none cursor-pointer"
+              >
+                <option value="1.- Santa Cruz">1.- Santa Cruz</option>
+                <option value="2.- San Miguel-Centro">2.- San Miguel-Centro</option>
+                <option value="3.- La Francia-Los Reyes">3.- La Francia-Los Reyes</option>
+                <option value="4.- Planta o Local">4.- Planta o Local</option>
+                <option value="5.- Llamadas Telefónicas">5.- Llamadas Telefónicas</option>
+                <option value="6.- WhatsApp">6.- WhatsApp</option>
+              </select>
+            </div>
             
           </div>
 
