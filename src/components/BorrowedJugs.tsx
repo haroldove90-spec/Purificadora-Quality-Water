@@ -19,7 +19,8 @@ import {
   Building,
   Check,
   MapPin,
-  Phone
+  Phone,
+  Plus
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { exportToPDF } from '../utils/pdfExport';
@@ -61,6 +62,20 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
   const [paymentNotes, setPaymentNotes] = useState<string>('');
   const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
 
+  // Modal for registering NEW borrowed jugs
+  const [showNewBorrowedModal, setShowNewBorrowedModal] = useState<boolean>(false);
+  const [newCustomerName, setNewCustomerName] = useState<string>('');
+  const [newAddress, setNewAddress] = useState<string>('');
+  const [newPhone, setNewPhone] = useState<string>('');
+  const [newJugsCount, setNewJugsCount] = useState<number>(1);
+  const [newJugType, setNewJugType] = useState<string>('Azul 20L');
+  const [newTotalPrice, setNewTotalPrice] = useState<number>(35);
+  const [newAssignedDriver, setNewAssignedDriver] = useState<string>('');
+  const [newAssignedRoute, setNewAssignedRoute] = useState<string>('1.- Santa Cruz');
+  const [newNotes, setNewNotes] = useState<string>('');
+  const [isSubmittingNew, setIsSubmittingNew] = useState<boolean>(false);
+  const [employeesList, setEmployeesList] = useState<string[]>([]);
+
   const normalizedUser = useMemo(() => {
     return userName ? normalizeEmployeeName(userName) : '';
   }, [userName]);
@@ -83,22 +98,29 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
           const itemsLower = (o.items || '').toLowerCase();
           const pmLower = (o.payment_method || '').toLowerCase();
           
-          const isExplicitBorrowed = o.is_borrowed === true || o.borrowed_jugs_count > 0;
-          const isBorrowedText = itemsLower.includes('garrafon') && (
+          const isExplicitBorrowed = o.is_borrowed === true || Number(o.borrowed_jugs_count) > 0;
+          const isPaymentMethodBorrowed = 
+            pmLower === 'borrowed' || 
+            pmLower.includes('prestado') || 
+            pmLower.includes('fiado');
+          const isItemsBorrowed = 
             itemsLower.includes('prestado') || 
             itemsLower.includes('fiado') || 
-            pmLower.includes('prestado') || 
-            pmLower.includes('fiado')
-          );
-          const isPendingLoan = o.status === 'pending_payment' && (
-            pmLower.includes('prestado') || 
-            pmLower.includes('fiado') || 
+            itemsLower.includes('borrowed') ||
+            itemsLower.includes('garrafones prestados') ||
+            itemsLower.includes('[pago garrafones fiados') ||
+            itemsLower.includes('is_borrowed: true');
+          const isPendingDebt = o.status === 'pending_payment' && (
+            isPaymentMethodBorrowed ||
+            isItemsBorrowed ||
             pmLower.includes('debe') || 
-            itemsLower.includes('prestado') || 
-            itemsLower.includes('fiado')
+            itemsLower.includes('se debe') || 
+            itemsLower.includes('saldo pendiente') ||
+            itemsLower.includes('pago parcial')
           );
+          const isMarkedBorrowedPaid = o.borrowed_paid === true || o.borrowed_status === 'paid' || o.borrowed_status === 'pending';
 
-          return isExplicitBorrowed || isBorrowedText || isPendingLoan;
+          return isExplicitBorrowed || isPaymentMethodBorrowed || isItemsBorrowed || isPendingDebt || isMarkedBorrowedPaid;
         });
 
         setOrders(borrowedList);
@@ -114,7 +136,13 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
     if (o.borrowed_paid === true) return true;
     if ((o as any).borrowed_status === 'paid') return true;
     const items = (o.items || '').toLowerCase();
-    if (items.includes('[pago garrafones fiados registrado')) return true;
+    if (items.includes('[pago garrafones fiados')) return true;
+    if (items.includes('[adeudo liquidado')) return true;
+    if (o.status === 'delivered' && (items.includes('pago') || o.payment_method === 'cash' || o.payment_method === 'transfer')) {
+      if (items.includes('prestado') || items.includes('fiado')) {
+        return true;
+      }
+    }
     return false;
   };
 
@@ -301,6 +329,92 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
     }
   };
 
+  const resetNewBorrowedForm = () => {
+    setNewCustomerName('');
+    setNewAddress('');
+    setNewPhone('');
+    setNewJugsCount(1);
+    setNewJugType('Azul 20L');
+    setNewTotalPrice(35);
+    setNewAssignedDriver('');
+    setNewAssignedRoute('1.- Santa Cruz');
+    setNewNotes('');
+  };
+
+  const handleCreateBorrowedOrder = async () => {
+    if (!newCustomerName.trim()) {
+      alert('Por favor ingresa el nombre del cliente');
+      return;
+    }
+    if (newJugsCount <= 0) {
+      alert('La cantidad de garrafones debe ser mayor a 0');
+      return;
+    }
+
+    setIsSubmittingNew(true);
+    try {
+      const itemsDescription = `${newJugsCount}x Garrafón ${newJugType} [GARRAFONES PRESTADOS FIADOS: ${newJugsCount}]${newNotes ? ` [Nota: ${newNotes.trim()}]` : ''}`;
+      const nowIso = new Date().toISOString();
+
+      const newOrderPayload: any = {
+        customer_name: newCustomerName.trim(),
+        address: newAddress.trim() || 'Planta / Mostrador',
+        items: itemsDescription,
+        total_price: Number(newTotalPrice) || 0,
+        status: 'pending_payment',
+        source: 'local',
+        payment_method: 'Garrafones Prestados',
+        is_borrowed: true,
+        borrowed_jugs_count: newJugsCount,
+        borrowed_paid: false,
+        borrowed_status: 'pending',
+        assigned_to_name: newAssignedDriver || userName || 'Planta',
+        assigned_route: newAssignedRoute || '1.- Santa Cruz',
+        created_at: nowIso
+      };
+
+      // Safe insert with column error recovery
+      const res = await supabase.from('orders').insert([newOrderPayload]);
+      if (res.error) {
+        console.warn('Fallback insert without optional borrowed columns:', res.error.message);
+        const safePayload = {
+          customer_name: newOrderPayload.customer_name,
+          address: newOrderPayload.address,
+          items: newOrderPayload.items,
+          total_price: newOrderPayload.total_price,
+          status: 'pending_payment',
+          source: 'local',
+          payment_method: 'Garrafones Prestados',
+          assigned_to_name: newOrderPayload.assigned_to_name,
+          assigned_route: newOrderPayload.assigned_route,
+          created_at: nowIso
+        };
+        const fallbackRes = await supabase.from('orders').insert([safePayload]);
+        if (fallbackRes.error) throw fallbackRes.error;
+      }
+
+      // Notify
+      try {
+        await supabase.from('notifications_log').insert([{
+          title: '🪣 Garrafones Prestados Registrados',
+          message: `${newJugsCount} garrafones prestados/fiados a ${newCustomerName} por ${newAssignedDriver || userName || 'Planta'}.`,
+          type: 'sale',
+          user_role: 'admin',
+          is_read: false
+        }]);
+      } catch (_) {}
+
+      alert(`¡Garrafones prestados a ${newCustomerName} registrados con éxito!`);
+      setShowNewBorrowedModal(false);
+      resetNewBorrowedForm();
+      await fetchBorrowedOrders();
+    } catch (err: any) {
+      alert('Error al registrar garrafones prestados: ' + err.message);
+    } finally {
+      setIsSubmittingNew(false);
+    }
+  };
+
   // Export PDF
   const handleExportPDF = () => {
     const columns = ['Fecha', 'Cliente', 'Dirección', 'Repartidor', 'Garrafones', 'Monto ($)', 'Estatus'];
@@ -379,6 +493,16 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                resetNewBorrowedForm();
+                setShowNewBorrowedModal(true);
+              }}
+              className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-4 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg active:scale-95 cursor-pointer"
+            >
+              <Plus size={16} strokeWidth={3} />
+              Prestar Garrafones
+            </button>
             <button
               onClick={fetchBorrowedOrders}
               className="bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 border border-white/20"
@@ -737,6 +861,191 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
                 >
                   {isProcessingPayment ? <RefreshCw className="animate-spin" size={16} /> : <Check size={16} />}
                   Confirmar Cobro
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal to Register NEW Borrowed Jugs */}
+      <AnimatePresence>
+        {showNewBorrowedModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[32px] p-6 max-w-lg w-full border border-slate-200 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+                    🪣
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 uppercase">Prestar Garrafones / Fiado</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Registrar entrega fiada o préstamo de envases</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowNewBorrowedModal(false)}
+                  className="p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                    Nombre del Cliente *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Tienda Doña Mary / Juan Pérez"
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Dirección / Ubicación
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Calle, número o referencia"
+                      value={newAddress}
+                      onChange={(e) => setNewAddress(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Teléfono (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="983..."
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Cantidad de Garrafones *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newJugsCount}
+                      onChange={(e) => {
+                        const count = parseInt(e.target.value) || 1;
+                        setNewJugsCount(count);
+                        setNewTotalPrice(count * 35);
+                      }}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Tipo de Garrafón
+                    </label>
+                    <select
+                      value={newJugType}
+                      onChange={(e) => setNewJugType(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="Azul 20L">Azul 20L</option>
+                      <option value="Rosa 20L">Rosa 20L</option>
+                      <option value="De Color 20L">De Color 20L</option>
+                      <option value="Pequeño 10L">Pequeño 10L</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Total a Cobrar Después ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newTotalPrice}
+                      onChange={(e) => setNewTotalPrice(parseFloat(e.target.value) || 0)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Ruta Asignada
+                    </label>
+                    <select
+                      value={newAssignedRoute}
+                      onChange={(e) => setNewAssignedRoute(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="1.- Santa Cruz">1.- Santa Cruz</option>
+                      <option value="2.- Saban">2.- Saban</option>
+                      <option value="3.- Huaymax">3.- Huaymax</option>
+                      <option value="4.- Planta Local">4.- Planta Local</option>
+                      <option value="5.- Llamadas telefónicas">5.- Llamadas telefónicas</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                    Repartidor / Responsable
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nombre del repartidor o vendedor"
+                    value={newAssignedDriver}
+                    onChange={(e) => setNewAssignedDriver(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                    Notas adicionales (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Dejó identificación, pasa a pagar el viernes..."
+                    value={newNotes}
+                    onChange={(e) => setNewNotes(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowNewBorrowedModal(false)}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-xs uppercase tracking-widest rounded-2xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingNew}
+                  onClick={handleCreateBorrowedOrder}
+                  className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-amber-950 font-black text-xs uppercase tracking-widest rounded-2xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingNew ? <RefreshCw className="animate-spin" size={16} /> : <Check size={16} />}
+                  Registrar Fiado
                 </button>
               </div>
             </motion.div>

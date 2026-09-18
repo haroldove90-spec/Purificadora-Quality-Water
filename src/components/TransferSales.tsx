@@ -107,13 +107,8 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
     fetchTransfers();
   }, []);
 
-  // Handle validating a transfer
+  // Handle validating a transfer (Permitido tanto a Administrador como a Repartidor)
   const handleValidateTransfer = async (order: TransferOrder, refCode?: string) => {
-    if (!isAdminOrSupervisor) {
-      alert('Solo el Administrador o Supervisor puede validar transferencias bancarias.');
-      return;
-    }
-
     setValidatingId(order.id);
     try {
       const nowIso = new Date().toISOString();
@@ -423,7 +418,7 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
                 <th className="py-4 px-6">Detalle / Productos</th>
                 <th className="py-4 px-6 text-right">Monto</th>
                 <th className="py-4 px-6 text-center">Estado Bancario</th>
-                {isAdminOrSupervisor && <th className="py-4 px-6 text-right">Acción</th>}
+                <th className="py-4 px-6 text-right">Avalar Pago</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
@@ -478,32 +473,30 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
                       )}
                     </td>
 
-                    {isAdminOrSupervisor && (
-                      <td className="py-4 px-6 text-right whitespace-nowrap">
-                        {isVal ? (
-                          <span className="text-[10px] font-bold text-slate-400 italic">Validada</span>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setReferenceModalOrder(t);
-                              setReferenceText('');
-                            }}
-                            disabled={validatingId === t.id}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shadow-sm active:scale-95 flex items-center gap-1 ml-auto"
-                          >
-                            <ShieldCheck size={12} />
-                            <span>Validar en Banco</span>
-                          </button>
-                        )}
-                      </td>
-                    )}
+                    <td className="py-4 px-6 text-right whitespace-nowrap">
+                      {isVal ? (
+                        <span className="text-[10px] font-bold text-slate-400 italic">✓ Avalada</span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setReferenceModalOrder(t);
+                            setReferenceText('');
+                          }}
+                          disabled={validatingId === t.id}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wider transition-all shadow-sm active:scale-95 flex items-center gap-1 ml-auto cursor-pointer"
+                        >
+                          <ShieldCheck size={12} />
+                          <span>Avalar Pago</span>
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
 
               {filteredTransfers.length === 0 && (
                 <tr>
-                  <td colSpan={isAdminOrSupervisor ? 7 : 6} className="py-16 text-center text-slate-400">
+                  <td colSpan={7} className="py-16 text-center text-slate-400">
                     <CreditCard size={40} className="mx-auto mb-3 opacity-20" />
                     <p className="text-xs font-black uppercase tracking-wider">No se encontraron ventas por transferencia</p>
                     <p className="text-[10px] text-slate-400 mt-1">Ajusta los filtros de fecha o búsqueda para ver más registros</p>

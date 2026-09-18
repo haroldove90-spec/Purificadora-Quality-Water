@@ -242,7 +242,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   // States for quick dispatch quantities by bottle type
   const [dispatchRosa, setDispatchRosa] = useState<number>(0);
-  const [dispatchAzul, setDispatchAzul] = useState<number>(20);
+  const [dispatchAzul, setDispatchAzul] = useState<number>(0);
   const [dispatchColor, setDispatchColor] = useState<number>(0);
   const [dispatchPequeno, setDispatchPequeno] = useState<number>(0);
   const [dispatchLavar, setDispatchLavar] = useState<number>(0);
@@ -988,7 +988,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
       const newTrip = {
         id: 'T-' + Math.floor(10000 + Math.random() * 90000),
         trip_number: trips.length + 1,
-        loaded_qty: Number(loadedQty) || 20,
+        loaded_qty: Number(loadedQty) || 0,
         loaded_qty_rosa: Number(details?.rosa || 0),
         loaded_qty_azul: Number(details?.azul || 0),
         loaded_qty_color: Number(details?.deColor || 0),
@@ -2865,7 +2865,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
                       // Reset fields after successful dispatch
                       setDispatchRosa(0);
-                      setDispatchAzul(20);
+                      setDispatchAzul(0);
                       setDispatchColor(0);
                       setDispatchPequeno(0);
                       setDispatchLavar(0);

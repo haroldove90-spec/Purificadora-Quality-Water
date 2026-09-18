@@ -25,17 +25,44 @@ export async function handleCompleteDelivery(
       updateBody.total_price = customTotalPrice;
     }
 
-    // 1. Actualizar estado en Supabase
-    const { data, error } = await supabase
+    // 1. Actualizar estado en Supabase con auto-recuperación ante columnas faltantes
+    let data: any = null;
+    let error: any = null;
+
+    const res = await supabase
       .from('orders')
       .update(updateBody)
       .eq('id', orderId)
       .select()
-      .single();
+      .maybeSingle();
+
+    data = res.data;
+    error = res.error;
+
+    // Si falló por columnas que no existen en orders (ej. is_borrowed, borrowed_jugs_count)
+    if (error) {
+      console.warn('Fallback en update de orden por esquema:', error.message);
+      const safeBody: any = {
+        status: updateBody.status,
+        items: updateBody.items,
+        total_price: updateBody.total_price,
+        payment_method: updateBody.payment_method || 'Garrafones Prestados'
+      };
+
+      const fallbackRes = await supabase
+        .from('orders')
+        .update(safeBody)
+        .eq('id', orderId)
+        .select()
+        .maybeSingle();
+
+      data = fallbackRes.data;
+      error = fallbackRes.error;
+    }
 
     if (error) throw error;
 
-    const order = data as Order;
+    const order = (data || { id: orderId, customer_name: 'Cliente', total_price: updateBody.total_price || 0, items: updateBody.items || '' }) as Order;
 
     // 2. Notificar a Admin y Planta que la venta/entrega se completó
     try {
