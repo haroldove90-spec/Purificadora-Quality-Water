@@ -39,15 +39,14 @@ export async function handleCompleteDelivery(
     data = res.data;
     error = res.error;
 
-    // Si falló por columnas que no existen en orders (ej. is_borrowed, borrowed_jugs_count)
+    // Si falló por columnas que no existen en orders (ej. is_borrowed, borrowed_jugs_count, payment_method)
     if (error) {
       console.warn('Fallback en update de orden por esquema:', error.message);
       const safeBody: any = {
-        status: updateBody.status,
-        items: updateBody.items,
-        total_price: updateBody.total_price,
-        payment_method: updateBody.payment_method || 'Garrafones Prestados'
+        status: updateBody.status
       };
+      if (updateBody.items !== undefined) safeBody.items = updateBody.items;
+      if (updateBody.total_price !== undefined) safeBody.total_price = updateBody.total_price;
 
       const fallbackRes = await supabase
         .from('orders')

@@ -2083,15 +2083,41 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
               {/* BORROWED / LOANED JUGS METRICS CARD */}
               {(() => {
                 const scopedOrders = getScopedSalesList();
-                const borrowedOrders = scopedOrders.filter(o => o.is_borrowed || o.payment_method === 'Garrafones Prestados' || (o.items && o.items.toLowerCase().includes('prestado')) || (o.items && o.items.toLowerCase().includes('fiado')));
+                const borrowedOrders = scopedOrders.filter(o => {
+                  const it = (o.items || '').toLowerCase();
+                  if (it.includes('[is_borrowed: false]') && !it.includes('prestado') && !it.includes('fiado') && !it.includes('[pago garrafones fiados')) return false;
+                  return (
+                    o.is_borrowed === true ||
+                    o.payment_method === 'Garrafones Prestados' ||
+                    it.includes('garrafones prestados') ||
+                    it.includes('[is_borrowed: true]') ||
+                    it.includes('prestado') ||
+                    it.includes('fiado')
+                  );
+                });
                 
-                const pendingBorrowed = borrowedOrders.filter(o => o.status === 'pending_payment' || o.borrowed_status === 'pending' || !o.borrowed_paid_at);
-                const paidBorrowed = borrowedOrders.filter(o => o.status === 'delivered' || o.borrowed_status === 'paid' || o.borrowed_paid_at);
+                const isPaidOrder = (o: any) => {
+                  if (o.borrowed_paid === true || o.borrowed_status === 'paid' || o.borrowed_paid_at) return true;
+                  const it = (o.items || '').toLowerCase();
+                  if (it.includes('[pago garrafones fiados') || it.includes('[adeudo liquidado')) return true;
+                  if (o.status === 'delivered' && (it.includes('pago') || it.includes('liquidado') || it.includes('cobrado'))) return true;
+                  return false;
+                };
 
-                const pendingJugs = pendingBorrowed.reduce((sum, o) => sum + (Number(o.borrowed_jugs_count) || (o.items ? parseInt((o.items.match(/\d+/) || ['1'])[0]) : 1)), 0);
+                const pendingBorrowed = borrowedOrders.filter(o => !isPaidOrder(o) && (o.status === 'pending_payment' || o.borrowed_status === 'pending'));
+                const paidBorrowed = borrowedOrders.filter(o => isPaidOrder(o) || o.status === 'delivered');
+
+                const getJugsNum = (o: any) => {
+                  if (o.borrowed_jugs_count && Number(o.borrowed_jugs_count) > 0) return Number(o.borrowed_jugs_count);
+                  const it = o.items || '';
+                  const m = it.match(/\[GARRAFONES PRESTADOS FIADOS:\s*(\d+)\]/i) || it.match(/\[GARRAFONES PRESTADOS:\s*(\d+)\]/i) || it.match(/(\d+)\s*x/i) || it.match(/(\d+)\s*garraf/i);
+                  return m && m[1] ? parseInt(m[1], 10) : 1;
+                };
+
+                const pendingJugs = pendingBorrowed.reduce((sum, o) => sum + getJugsNum(o), 0);
                 const pendingAmount = pendingBorrowed.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
 
-                const paidJugs = paidBorrowed.reduce((sum, o) => sum + (Number(o.borrowed_jugs_count) || (o.items ? parseInt((o.items.match(/\d+/) || ['1'])[0]) : 1)), 0);
+                const paidJugs = paidBorrowed.reduce((sum, o) => sum + getJugsNum(o), 0);
                 const paidAmount = paidBorrowed.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
 
                 return (

@@ -399,9 +399,14 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
             const pmLower = String(o.payment_method || '').toLowerCase();
 
             // 1. Is this a loan / credit that has NOT been collected yet?
-            const isLoan = 
+            const isFalseBorrowed = itemsLower.includes('[is_borrowed: false]') && 
+                                    !itemsLower.includes('prestado') && 
+                                    !itemsLower.includes('fiado') && 
+                                    !itemsLower.includes('(se debe)');
+
+            const isLoan = !isFalseBorrowed && (
               o.is_borrowed === true ||
-              o.status === 'pending_payment' ||
+              (o.status === 'pending_payment' && !isRecoveredLoan) ||
               pmLower.includes('prestado') ||
               pmLower.includes('fiado') ||
               pmLower.includes('borrowed') ||
@@ -410,7 +415,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
               itemsLower.includes('garrafones prestados') ||
               itemsLower.includes('(se debe)') ||
               itemsLower.includes('[saldo pendiente]') ||
-              itemsLower.includes('[is_borrowed: true]');
+              itemsLower.includes('[is_borrowed: true]')
+            );
 
             // 2. Is this a recovered / paid loan?
             const isRecoveredLoan = 

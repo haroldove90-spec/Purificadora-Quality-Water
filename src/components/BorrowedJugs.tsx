@@ -98,18 +98,25 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
           const itemsLower = (o.items || '').toLowerCase();
           const pmLower = (o.payment_method || '').toLowerCase();
           
-          const isExplicitBorrowed = o.is_borrowed === true || Number(o.borrowed_jugs_count) > 0;
+          // Exclude orders that explicitly marked is_borrowed as false and have no loan markers
+          if (itemsLower.includes('[is_borrowed: false]') && 
+              !itemsLower.includes('prestado') && 
+              !itemsLower.includes('fiado') && 
+              !itemsLower.includes('[pago garrafones fiados')) {
+            return false;
+          }
+
+          const isExplicitBorrowed = o.is_borrowed === true || (Number(o.borrowed_jugs_count) > 0 && o.is_borrowed !== false);
           const isPaymentMethodBorrowed = 
             pmLower === 'borrowed' || 
             pmLower.includes('prestado') || 
             pmLower.includes('fiado');
           const isItemsBorrowed = 
+            itemsLower.includes('garrafones prestados') ||
             itemsLower.includes('prestado') || 
             itemsLower.includes('fiado') || 
-            itemsLower.includes('borrowed') ||
-            itemsLower.includes('garrafones prestados') ||
             itemsLower.includes('[pago garrafones fiados') ||
-            itemsLower.includes('is_borrowed: true');
+            itemsLower.includes('[is_borrowed: true]');
           const isPendingDebt = o.status === 'pending_payment' && (
             isPaymentMethodBorrowed ||
             isItemsBorrowed ||
@@ -118,7 +125,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
             itemsLower.includes('saldo pendiente') ||
             itemsLower.includes('pago parcial')
           );
-          const isMarkedBorrowedPaid = o.borrowed_paid === true || o.borrowed_status === 'paid' || o.borrowed_status === 'pending';
+          const isMarkedBorrowedPaid = o.borrowed_paid === true || o.borrowed_status === 'paid';
 
           return isExplicitBorrowed || isPaymentMethodBorrowed || isItemsBorrowed || isPendingDebt || isMarkedBorrowedPaid;
         });
@@ -138,8 +145,9 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
     const items = (o.items || '').toLowerCase();
     if (items.includes('[pago garrafones fiados')) return true;
     if (items.includes('[adeudo liquidado')) return true;
-    if (o.status === 'delivered' && (items.includes('pago') || o.payment_method === 'cash' || o.payment_method === 'transfer')) {
-      if (items.includes('prestado') || items.includes('fiado')) {
+    if (items.includes('[pago parcial') && o.status === 'delivered') return true;
+    if (o.status === 'delivered') {
+      if (items.includes('pago') || items.includes('liquidado') || items.includes('cobrado')) {
         return true;
       }
     }
@@ -148,6 +156,20 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
 
   useEffect(() => {
     fetchBorrowedOrders();
+
+    const fetchEmployees = async () => {
+      try {
+        const { data } = await supabase
+          .from('employees')
+          .select('name')
+          .order('name');
+        if (data && data.length > 0) {
+          const names = Array.from(new Set(data.map((e: any) => e.name).filter(Boolean)));
+          setEmployeesList(names);
+        }
+      } catch (_) {}
+    };
+    fetchEmployees();
 
     const channel = supabase
       .channel('borrowed_jugs_realtime')
@@ -217,11 +239,17 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
 
   // Extract count of jugs from items text or column
   const getJugsCount = (order: BorrowedOrder): number => {
-    if (order.borrowed_jugs_count && order.borrowed_jugs_count > 0) {
-      return order.borrowed_jugs_count;
+    if (order.borrowed_jugs_count && Number(order.borrowed_jugs_count) > 0) {
+      return Number(order.borrowed_jugs_count);
     }
     const itemsStr = order.items || '';
-    const match = itemsStr.match(/(\d+)\s*x/i) || itemsStr.match(/\[GARRAFONES PRESTADOS:\s*(\d+)\]/i);
+    const matchBorrowed = itemsStr.match(/\[GARRAFONES PRESTADOS FIADOS:\s*(\d+)\]/i) ||
+                          itemsStr.match(/\[GARRAFONES PRESTADOS:\s*(\d+)\]/i) ||
+                          itemsStr.match(/\[borrowed_jugs_count:\s*(\d+)\]/i);
+    if (matchBorrowed && matchBorrowed[1]) {
+      return parseInt(matchBorrowed[1], 10);
+    }
+    const match = itemsStr.match(/(\d+)\s*x/i) || itemsStr.match(/(\d+)\s*garraf/i);
     if (match && match[1]) {
       return parseInt(match[1], 10);
     }
@@ -248,7 +276,8 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
       } else {
         const orderDate = o.created_at ? getLocalDateString(o.created_at) : '';
         const paidDate = o.borrowed_paid_at ? getLocalDateString(o.borrowed_paid_at) : '';
-        if (orderDate === todayStr || paidDate === todayStr) {
+        const isPaidToday = paidDate === todayStr || orderDate === todayStr || (o.items && o.items.includes(todayStr));
+        if (isPaidToday) {
           paidJugsToday += jugs;
           paidAmountToday += amount;
         }
@@ -278,9 +307,10 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
 
     try {
       const nowIso = new Date().toISOString();
-      const updatedItems = `${selectedOrder.items} [PAGO GARRAFONES FIADOS REGISTRADO: $${paymentAmount} (${paymentMethod === 'cash' ? 'EFECTIVO' : 'TRANSFERENCIA'})]`;
+      const updatedItems = `${selectedOrder.items} [PAGO GARRAFONES FIADOS REGISTRADO: $${paymentAmount} (${paymentMethod === 'cash' ? 'EFECTIVO' : 'TRANSFERENCIA'})] [COBRADO POR: ${userName || 'Repartidor'}] [FECHA COBRO: ${new Date().toLocaleDateString('es-MX')}]`;
 
-      const { error } = await supabase
+      // 1. Try full update with optional columns
+      const fullRes = await supabase
         .from('orders')
         .update({
           status: 'delivered',
@@ -292,16 +322,18 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
         })
         .eq('id', selectedOrder.id);
 
-      if (error) {
-        // Fallback update if borrowed_paid/borrowed_status columns aren't present
-        await supabase
+      // 2. Safe fallback if optional columns (payment_method, borrowed_paid, etc.) are missing
+      if (fullRes.error) {
+        console.warn('Fallback update for borrowed order payment:', fullRes.error.message);
+        const safeRes = await supabase
           .from('orders')
           .update({
             status: 'delivered',
-            payment_method: paymentMethod,
             items: updatedItems
           })
           .eq('id', selectedOrder.id);
+
+        if (safeRes.error) throw safeRes.error;
       }
 
       // Log notification in try/catch so any log error doesn't abort the payment
@@ -353,7 +385,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
 
     setIsSubmittingNew(true);
     try {
-      const itemsDescription = `${newJugsCount}x Garrafón ${newJugType} [GARRAFONES PRESTADOS FIADOS: ${newJugsCount}]${newNotes ? ` [Nota: ${newNotes.trim()}]` : ''}`;
+      const itemsDescription = `${newJugsCount}x Garrafón ${newJugType} [GARRAFONES PRESTADOS FIADOS: ${newJugsCount}] [Ruta: ${newAssignedRoute || '1.- Santa Cruz'}] [is_borrowed: true]${newNotes ? ` [Nota: ${newNotes.trim()}]` : ''}`;
       const nowIso = new Date().toISOString();
 
       const newOrderPayload: any = {
@@ -368,15 +400,16 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
         borrowed_jugs_count: newJugsCount,
         borrowed_paid: false,
         borrowed_status: 'pending',
-        assigned_to_name: newAssignedDriver || userName || 'Planta',
+        assigned_to_name: newAssignedDriver.trim() || userName || 'Planta',
         assigned_route: newAssignedRoute || '1.- Santa Cruz',
         created_at: nowIso
       };
 
-      // Safe insert with column error recovery
+      // 1. Try insert with full optional columns
       const res = await supabase.from('orders').insert([newOrderPayload]);
       if (res.error) {
         console.warn('Fallback insert without optional borrowed columns:', res.error.message);
+        // Guaranteed safe payload with strictly validated existing columns in Supabase
         const safePayload = {
           customer_name: newOrderPayload.customer_name,
           address: newOrderPayload.address,
@@ -384,9 +417,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
           total_price: newOrderPayload.total_price,
           status: 'pending_payment',
           source: 'local',
-          payment_method: 'Garrafones Prestados',
           assigned_to_name: newOrderPayload.assigned_to_name,
-          assigned_route: newOrderPayload.assigned_route,
           created_at: nowIso
         };
         const fallbackRes = await supabase.from('orders').insert([safePayload]);
@@ -397,7 +428,7 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
       try {
         await supabase.from('notifications_log').insert([{
           title: '🪣 Garrafones Prestados Registrados',
-          message: `${newJugsCount} garrafones prestados/fiados a ${newCustomerName} por ${newAssignedDriver || userName || 'Planta'}.`,
+          message: `${newJugsCount} garrafones prestados/fiados a ${newCustomerName} por ${newAssignedDriver.trim() || userName || 'Planta'}.`,
           type: 'sale',
           user_role: 'admin',
           is_read: false
@@ -1009,11 +1040,17 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
                   </label>
                   <input
                     type="text"
+                    list="borrowed-employees-datalist"
                     placeholder="Nombre del repartidor o vendedor"
                     value={newAssignedDriver}
                     onChange={(e) => setNewAssignedDriver(e.target.value)}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
                   />
+                  <datalist id="borrowed-employees-datalist">
+                    {employeesList.map(emp => (
+                      <option key={emp} value={emp} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div>
