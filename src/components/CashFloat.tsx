@@ -398,7 +398,14 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
             const itemsLower = String(o.items || '').toLowerCase();
             const pmLower = String(o.payment_method || '').toLowerCase();
 
-            // 1. Is this a loan / credit that has NOT been collected yet?
+            // 1. Is this a recovered / paid loan?
+            const isRecoveredLoan = 
+              o.borrowed_paid === true ||
+              itemsLower.includes('pago garrafones fiados') ||
+              itemsLower.includes('[adeudo liquidado') ||
+              itemsLower.includes('[adeudo parcialmente recaudado');
+
+            // 2. Is this a loan / credit that has NOT been collected yet?
             const isFalseBorrowed = itemsLower.includes('[is_borrowed: false]') && 
                                     !itemsLower.includes('prestado') && 
                                     !itemsLower.includes('fiado') && 
@@ -417,13 +424,6 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
               itemsLower.includes('[saldo pendiente]') ||
               itemsLower.includes('[is_borrowed: true]')
             );
-
-            // 2. Is this a recovered / paid loan?
-            const isRecoveredLoan = 
-              o.borrowed_paid === true ||
-              itemsLower.includes('pago garrafones fiados') ||
-              itemsLower.includes('[adeudo liquidado') ||
-              itemsLower.includes('[adeudo parcialmente recaudado');
 
             // 3. Is this a transfer?
             const isTransfer = 

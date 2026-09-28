@@ -16,7 +16,16 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  
+  // Parse port and host from environment or command line flags
+  const portArgIndex = process.argv.indexOf('--port');
+  const hostArgIndex = process.argv.indexOf('--host');
+  const PORT = portArgIndex !== -1 && process.argv[portArgIndex + 1]
+    ? parseInt(process.argv[portArgIndex + 1], 10)
+    : (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
+  const HOST = hostArgIndex !== -1 && process.argv[hostArgIndex + 1]
+    ? process.argv[hostArgIndex + 1]
+    : (process.env.HOST || "0.0.0.0");
 
   app.use(express.json());
 
@@ -84,9 +93,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
