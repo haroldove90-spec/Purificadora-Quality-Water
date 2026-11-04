@@ -60,10 +60,22 @@ import { usePWA } from './hooks/usePWA';
 
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/supabaseClient';
 
-type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'employee_sales' | 'borrowed_jugs' | 'transfer_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure' | 'sales_history' | 'sales_history_customers' | 'sales_history_employees' | 'backup';
+import DriverPermissions, { DEFAULT_DRIVER_MODULES } from './components/DriverPermissions';
+
+type View = 'lobby' | 'dashboard' | 'inventory' | 'finances' | 'route' | 'profile' | 'metrics' | 'sales' | 'customers' | 'settlement' | 'plant_cut' | 'driver_sales' | 'employee_sales' | 'borrowed_jugs' | 'transfer_sales' | 'attendance' | 'quality' | 'client_status' | 'notifications' | 'manual' | 'pos' | 'cash_float' | 'supervisor' | 'supervisor_attendance' | 'supervisor_cash_closure' | 'sales_history' | 'sales_history_customers' | 'sales_history_employees' | 'backup' | 'driver_permissions';
 
 export default function App() {
   const { isInstallable, installApp, requestPermissions } = usePWA();
+  const [driverEnabledModules, setDriverEnabledModules] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('qw_driver_enabled_modules');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+    return DEFAULT_DRIVER_MODULES;
+  });
   const [activeView, setActiveView] = useState<View>(() => {
     try {
       const saved = localStorage.getItem('activeView');
@@ -164,14 +176,26 @@ export default function App() {
     }
   }, [currentRoleView]);
 
+  // Listener para sincronización en tiempo real de permisos de módulos de repartidor
+  useEffect(() => {
+    const handlePermsChange = (e: any) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setDriverEnabledModules(e.detail);
+      }
+    };
+    window.addEventListener('driver-permissions-changed', handlePermsChange);
+    return () => window.removeEventListener('driver-permissions-changed', handlePermsChange);
+  }, []);
+
   // Event listener for cross-component navigation (e.g. from DeliveryRoute to cash_float)
   useEffect(() => {
     const handleNavEvent = (e: any) => {
       if (e.detail && typeof e.detail === 'string') {
         const targetView = e.detail as View;
-        const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+        const allowedDriverViews = [...driverEnabledModules, 'profile'];
         if (currentRoleView === 'driver' && !allowedDriverViews.includes(targetView)) {
-          setActiveView('route');
+          const fallback = (driverEnabledModules[0] as View) || 'profile';
+          setActiveView(fallback);
         } else {
           setActiveView(targetView);
         }
@@ -179,16 +203,19 @@ export default function App() {
     };
     window.addEventListener('navigate-view', handleNavEvent);
     return () => window.removeEventListener('navigate-view', handleNavEvent);
-  }, [currentRoleView]);
+  }, [currentRoleView, driverEnabledModules]);
 
-  // Security guard: If current role is driver and activeView is forbidden, instantly redirect to 'route'
+  // Security guard: If current role is driver and activeView is forbidden, instantly redirect to first allowed view
   useEffect(() => {
-    const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
-    if (currentRoleView === 'driver' && activeView !== 'lobby' && !allowedDriverViews.includes(activeView)) {
-      console.warn(`Redirigiendo chofer desde vista no autorizada (${activeView}) a 'route'...`);
-      setActiveView('route');
+    if (currentRoleView === 'driver' && activeView !== 'lobby') {
+      const allowedDriverViews = [...driverEnabledModules, 'profile'];
+      if (!allowedDriverViews.includes(activeView)) {
+        const fallback = (driverEnabledModules[0] as View) || 'profile';
+        console.warn(`Redirigiendo chofer desde vista no autorizada (${activeView}) a '${fallback}'...`);
+        setActiveView(fallback);
+      }
     }
-  }, [currentRoleView, activeView]);
+  }, [currentRoleView, activeView, driverEnabledModules]);
 
   useEffect(() => {
     let mounted = true;
@@ -234,9 +261,10 @@ export default function App() {
         lowerMsg.includes('failed to fetch') ||
         lowerMsg.includes('fetch') ||
         lowerMsg.includes('networkerror') ||
-        lowerMsg.includes('network error')
+        lowerMsg.includes('network error') ||
+        lowerMsg.includes('websocket')
       ) {
-        console.warn('Capturado y mitigado error de red offline en background:', message);
+        console.warn('Capturado y mitigado evento de desarrollo/red offline:', message);
         try {
           event.preventDefault();
           event.stopPropagation();
@@ -511,13 +539,14 @@ export default function App() {
         
         // Cambio de vista inmediato respetando la selección previa de localStorage
         const savedActiveView = localStorage.getItem('activeView');
-        const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+        const allowedDriverViews = [...driverEnabledModules, 'profile'];
+        const defaultDriverView = (driverEnabledModules[0] as View) || 'profile';
         
         if (finalRoleView === 'driver') {
           if (savedActiveView && allowedDriverViews.includes(savedActiveView)) {
             setActiveView(savedActiveView as View);
           } else {
-            setActiveView('route');
+            setActiveView(defaultDriverView);
           }
         } else if (savedActiveView && savedActiveView !== 'lobby') {
           setActiveView(savedActiveView as View);
@@ -525,9 +554,9 @@ export default function App() {
           switch(finalRoleView) {
             case 'admin': setActiveView('metrics'); break;
             case 'operator': setActiveView('pos'); break;
-            case 'driver': setActiveView('route'); break;
+            case 'driver': setActiveView(defaultDriverView); break;
             case 'supervisor': setActiveView('supervisor_attendance'); break;
-            default: setActiveView('route');
+            default: setActiveView(defaultDriverView);
           }
         }
       } else {
@@ -562,11 +591,12 @@ export default function App() {
           setUserName(normalizeEmployeeName(defaultName || 'Repartidor'));
           
           const savedActiveView = localStorage.getItem('activeView');
-          const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+          const allowedDriverViews = [...driverEnabledModules, 'profile'];
+          const defaultDriverView = (driverEnabledModules[0] as View) || 'profile';
           if (savedActiveView && allowedDriverViews.includes(savedActiveView)) {
             setActiveView(savedActiveView as View);
           } else {
-            setActiveView('route');
+            setActiveView(defaultDriverView);
           }
         }
       }
@@ -577,11 +607,12 @@ export default function App() {
       setUserName(normalizeEmployeeName(defaultName || 'Usuario'));
       
       const savedActiveView = localStorage.getItem('activeView');
-      const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+      const allowedDriverViews = [...driverEnabledModules, 'profile'];
+      const defaultDriverView = (driverEnabledModules[0] as View) || 'profile';
       if (savedActiveView && allowedDriverViews.includes(savedActiveView)) {
         setActiveView(savedActiveView as View);
       } else {
-        setActiveView('route');
+        setActiveView(defaultDriverView);
       }
     } finally {
       setLoading(false);
@@ -646,26 +677,29 @@ export default function App() {
         { id: 'plant_cut', label: 'Caja Planta', icon: Store },
         { id: 'quality', label: 'Calidad', icon: ShieldCheck },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
+        { id: 'driver_permissions', label: 'Permisos Repartidor', icon: Settings },
         { id: 'backup', label: 'Respaldo y Seguridad', icon: Database },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
     } else if (currentRoleView === 'driver') {
-      items = [
+      const allDriverItems = [
+        { id: 'attendance', label: 'Asistencia GPS', icon: Clock },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
         { id: 'borrowed_jugs', label: 'Garrafones Fiados', icon: PackageCheck },
         { id: 'transfer_sales', label: 'Mis Transferencias', icon: CreditCard },
         { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
-        { id: 'attendance', label: 'Asistencia', icon: Clock },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
+      items = allDriverItems.filter(item => item.id === 'profile' || driverEnabledModules.includes(item.id));
     } else if (currentRoleView === 'operator') {
       items = [
         { id: 'pos', label: 'Rol Ventas (POS)', icon: CreditCard },
         { id: 'dashboard', label: 'Gestión de Pedidos', icon: LayoutDashboard },
         { id: 'sales', label: 'Historial Ventas', icon: History },
         { id: 'customers', label: 'Clientes', icon: Users },
+        { id: 'attendance', label: 'Registrar Asistencia', icon: Clock },
         { id: 'cash_float', label: 'Fondo de Caja', icon: DollarSign },
         { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
@@ -992,6 +1026,7 @@ export default function App() {
                  activeView === 'sales_history_customers' ? <SalesHistoryCustomers userRole={currentRoleView || 'admin'} /> :
                  activeView === 'sales_history_employees' ? <SalesHistoryEmployees userRole={currentRoleView || 'admin'} /> :
                  activeView === 'transfer_sales' ? <TransferSales userRole={currentRoleView || 'admin'} userName={userName} /> :
+                 activeView === 'driver_permissions' ? <DriverPermissions /> :
                  activeView === 'backup' ? <BackupManager /> :
                  <Profile />}
                 </ErrorBoundary>
