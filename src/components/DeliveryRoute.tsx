@@ -16,7 +16,8 @@ import {
   Gift,
   PackageCheck,
   CreditCard,
-  DollarSign
+  DollarSign,
+  Lock
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Order } from '../lib/types.supabase';
@@ -84,12 +85,18 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
         setCustomersList(custData);
       }
 
+      // Restricción: Órdenes activas (sin importar fecha) + entregadas de los últimos 2 días anteriores
+      const twoDaysAgo = new Date();
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+      twoDaysAgo.setHours(0, 0, 0, 0);
+      const twoDaysAgoIso = twoDaysAgo.toISOString();
+
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .in('status', ['assigned', 'pending', 'delivered', 'pickup_assigned', 'pickup_confirmed']) 
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .or(`status.in.(assigned,pending,pickup_assigned,pickup_pending),created_at.gte.${twoDaysAgoIso}`)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       if (data) {
@@ -623,15 +630,12 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
 
   const loggedInDriver = getLoggedInDriverName();
 
-  // Filtrar primero si pertenece al chofer
+  // Filtrar estrictamente si pertenece al chofer
   const driverDeliveries = deliveries.filter(d => {
-    // Si no hay chofer logueado (sesión vacía o admin), se muestra todo para que lo puedan probar/ver
+    // Si no hay chofer logueado (sesión vacía o admin en modo prueba), se muestra todo
     if (!loggedInDriver) return true;
     
-    // Si d.assigned_to_name está vacío, puede ser una orden pendiente en general que todos pueden ver y auto-reclamar
-    if (!d.assigned_to_name) return true;
-
-    // Usamos namesMatch para comparar flexiblemente
+    // El chofer solo ve pedidos estrictamente asignados a su nombre
     return namesMatch(d.assigned_to_name, loggedInDriver);
   });
 
@@ -736,6 +740,25 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
             style={{ width: `${(completedDeliveries.length / Math.max(1, driverDeliveries.length)) * 100}%` }}
           />
         </div>
+      </div>
+
+      {/* Acceso Directo a Cierre de Ventas Diario */}
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-4 rounded-3xl shadow-lg border border-indigo-900/50 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 block truncate">
+            {completedDeliveries.length} entregas realizadas hoy
+          </span>
+          <p className="text-xs font-black uppercase italic truncate">Liquidación y Cierre de Caja</p>
+        </div>
+        <button
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('navigate-view', { detail: 'cash_float' }));
+          }}
+          className="bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-black text-[10px] uppercase tracking-widest px-4 py-2.5 rounded-2xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+        >
+          <Lock size={12} />
+          <span>Cerrar Mi Venta</span>
+        </button>
       </div>
 
       {step === 1 ? (

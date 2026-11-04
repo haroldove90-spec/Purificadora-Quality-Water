@@ -1493,22 +1493,28 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
                     <p className="text-xs font-extrabold uppercase">No tienes un viaje activo hoy</p>
                     <p className="text-[10px] text-sky-100/70 font-bold mt-0.5">Para poder vender, necesitas iniciar un viaje de garrafones.</p>
                   </div>
-                  <button
-                    onClick={async () => {
-                      const numStr = prompt('Iniciar Viaje de Ruta\n\n¿Con cuántos garrafones llenos sales de planta en este viaje?', '20');
-                      if (numStr !== null) {
-                        const qty = Number(numStr);
-                        if (isNaN(qty) || qty <= 0) {
-                          alert('Error: Por favor ingresa un número válido mayor a 0');
-                        } else {
-                          await handleInitializeTrip(qty);
+                  {userRole !== 'driver' ? (
+                    <button
+                      onClick={async () => {
+                        const numStr = prompt('Iniciar Viaje de Ruta\n\n¿Con cuántos garrafones llenos sales de planta en este viaje?', '20');
+                        if (numStr !== null) {
+                          const qty = Number(numStr);
+                          if (isNaN(qty) || qty <= 0) {
+                            alert('Error: Por favor ingresa un número válido mayor a 0');
+                          } else {
+                            await handleInitializeTrip(qty);
+                          }
                         }
-                      }
-                    }}
-                    className="px-4 py-2 bg-white text-blue-600 hover:bg-sky-50 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-md shrink-0"
-                  >
-                    + Iniciar Viaje
-                  </button>
+                      }}
+                      className="px-4 py-2 bg-white text-blue-600 hover:bg-sky-50 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-md shrink-0 cursor-pointer"
+                    >
+                      + Iniciar Viaje
+                    </button>
+                  ) : (
+                    <span className="text-[10px] bg-white/10 px-3 py-1.5 rounded-xl font-bold uppercase tracking-wider text-sky-100">
+                      Carga asignada por Planta
+                    </span>
+                  )}
                 </div>
               )}
             </div>

@@ -2418,7 +2418,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     </button>
                   </div>
                 </motion.div>
-              ) : activeDriverSession?.last_location?.cash_float !== undefined ? (
+              ) : true ? (
                 /* Driver Drawer active - can perform Cierre */
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-4">
@@ -2427,7 +2427,9 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       <p className="text-2xl font-black text-slate-800 mt-2">
                         ${Number(activeDriverSession?.last_location?.cash_float || 0).toFixed(2)}
                       </p>
-                      <span className="text-[8px] text-slate-400 block mt-1 uppercase">Entregado por el Admin</span>
+                      <span className="text-[8px] text-slate-400 block mt-1 uppercase">
+                        {activeDriverSession?.last_location?.cash_float !== undefined ? 'Entregado por el Admin' : 'Fondo Base ($0.00)'}
+                      </span>
                     </div>
 
                     <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
@@ -2483,25 +2485,33 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       </div>
                     </div>
 
-                    {/* NEW TRIP BUTTON / DISPATCH SELF */}
-                    <div className="pt-2">
-                      <button
-                        onClick={() => {
-                          const numStr = prompt('Registrar Salida de Planta (Nuevo Viaje)\n\n¿Con cuántos garrafones llenos sales de planta en este viaje?', '20');
-                          if (numStr !== null) {
-                            const qty = Number(numStr);
-                            if (isNaN(qty) || qty <= 0) {
-                              alert('Error: Por favor ingresa un número válido mayor a 0');
-                            } else {
-                              handleAddDriverTrip(effectiveEmployeeName, qty);
+                    {/* NEW TRIP BUTTON / DISPATCH (ONLY FOR ADMIN OR OPERATOR, NEVER FOR DRIVER) */}
+                    {currentUser.role !== 'driver' ? (
+                      <div className="pt-2">
+                        <button
+                          onClick={() => {
+                            const numStr = prompt('Registrar Salida de Planta (Nuevo Viaje)\n\n¿Con cuántos garrafones llenos sales de planta en este viaje?', '20');
+                            if (numStr !== null) {
+                              const qty = Number(numStr);
+                              if (isNaN(qty) || qty <= 0) {
+                                alert('Error: Por favor ingresa un número válido mayor a 0');
+                              } else {
+                                handleAddDriverTrip(effectiveEmployeeName, qty);
+                              }
                             }
-                          }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100/85 text-emerald-600 border border-emerald-200 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-sm"
-                      >
-                        <Plus size={14} /> Registrar Salida de Planta (Nuevo Viaje)
-                      </button>
-                    </div>
+                          }}
+                          className="w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100/85 text-emerald-600 border border-emerald-200 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-sm"
+                        >
+                          <Plus size={14} /> Registrar Salida de Planta (Nuevo Viaje)
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-slate-50 border border-slate-100 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          ℹ️ La carga y asignación de viajes de garrafones es gestionada exclusivamente por Planta o Administración.
+                        </p>
+                      </div>
+                    )}
 
                     {/* TRIPS LIST */}
                     <div className="space-y-3">
@@ -2682,16 +2692,32 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     <div className="space-y-3 font-bold text-sm text-slate-600">
                       <div className="flex justify-between">
                         <span>Fondo de Caja inicial:</span>
-                        <span className="text-slate-800">${Number(activeDriverSession.last_location?.cash_float || 0).toFixed(2)}</span>
+                        <span className="text-slate-800">${Number(activeDriverSession?.last_location?.cash_float || 0).toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between border-b border-sky-100 pb-3">
-                        <span>+ Ventas cobradas hoy:</span>
+                      <div className="flex justify-between">
+                        <span>+ Ventas cobradas hoy (Efectivo):</span>
                         <span className="text-slate-800">${Number(getDriverSalesObj(effectiveEmployeeName).salesTotal).toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-base font-black pt-2 text-slate-800">
-                        <span className="uppercase">EFECTIVO A ENTREGAR:</span>
-                        <span className="text-sky-600">
-                          ${(Number(activeDriverSession.last_location?.cash_float || 0) + Number(getDriverSalesObj(effectiveEmployeeName).salesTotal)).toFixed(2)}
+                      {Number(getDriverSalesObj(effectiveEmployeeName).recoveredLoansTotal || 0) > 0 && (
+                        <div className="flex justify-between text-amber-600">
+                          <span>+ Cobros Garrafones Fiados:</span>
+                          <span>${Number(getDriverSalesObj(effectiveEmployeeName).recoveredLoansTotal || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {Number(getDriverSalesObj(effectiveEmployeeName).transferTotal || 0) > 0 && (
+                        <div className="flex justify-between text-indigo-600 text-xs">
+                          <span>💳 Transferencias a Banco (No suma a efectivo):</span>
+                          <span>${Number(getDriverSalesObj(effectiveEmployeeName).transferTotal || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-base font-black pt-2 text-slate-800 border-t border-sky-100">
+                        <span className="uppercase">EFECTIVO FÍSICO A ENTREGAR:</span>
+                        <span className="text-sky-600 font-extrabold text-xl">
+                          ${(
+                            Number(activeDriverSession?.last_location?.cash_float || 0) + 
+                            Number(getDriverSalesObj(effectiveEmployeeName).salesTotal) +
+                            Number(getDriverSalesObj(effectiveEmployeeName).recoveredLoansTotal || 0)
+                          ).toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -2700,14 +2726,20 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                   {/* Cierre Action Button */}
                   <button
                     onClick={() => {
+                      const salesObj = getDriverSalesObj(effectiveEmployeeName);
                       const dummyDrv = {
                         name: effectiveEmployeeName,
-                        cash_float: Number(activeDriverSession.last_location?.cash_float || 0),
-                        sales_total: Number(getDriverSalesObj(effectiveEmployeeName).salesTotal)
+                        cash_float: Number(activeDriverSession?.last_location?.cash_float || 0),
+                        sales_total: Number(salesObj.salesTotal),
+                        orders_count: Number(salesObj.ordersCount),
+                        recovered_loans_total: Number(salesObj.recoveredLoansTotal || 0),
+                        loans_delivered_total: Number(salesObj.loansTotal || 0),
+                        transfer_total: Number(salesObj.transferTotal || 0),
+                        transfer_orders_count: Number(salesObj.transferOrdersCount || 0)
                       };
                       setSelectedDriverForClose(dummyDrv);
                     }}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-[24px] font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-950/10 active:scale-95 transition-all"
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-[24px] font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-950/10 active:scale-95 transition-all cursor-pointer"
                   >
                     <Lock size={16} /> Realizar Cierre de Caja de Hoy
                   </button>

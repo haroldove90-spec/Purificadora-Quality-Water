@@ -305,11 +305,18 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(0, 0, 0, 0);
+
     return transfers.filter(order => {
-      // Driver restriction: if driver, only see own sales from today and yesterday
+      // Driver restriction: strictly own sales and max 2 days
       if (userRole === 'driver') {
         const isOwn = namesMatch(order.assigned_to_name, userName);
         if (!isOwn) return false;
+
+        const orderDate = order.created_at ? new Date(order.created_at) : null;
+        if (orderDate && orderDate < twoDaysAgo) return false;
       }
 
       // Date filtering
@@ -505,8 +512,12 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
             >
               <option value="today">Ventas de Hoy</option>
               <option value="yesterday">Ventas de Ayer</option>
-              <option value="week">Últimos 7 Días</option>
-              <option value="all">Todas las Fechas</option>
+              {userRole !== 'driver' && (
+                <>
+                  <option value="week">Últimos 7 Días</option>
+                  <option value="all">Todas las Fechas</option>
+                </>
+              )}
             </select>
           </div>
 

@@ -164,6 +164,32 @@ export default function App() {
     }
   }, [currentRoleView]);
 
+  // Event listener for cross-component navigation (e.g. from DeliveryRoute to cash_float)
+  useEffect(() => {
+    const handleNavEvent = (e: any) => {
+      if (e.detail && typeof e.detail === 'string') {
+        const targetView = e.detail as View;
+        const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+        if (currentRoleView === 'driver' && !allowedDriverViews.includes(targetView)) {
+          setActiveView('route');
+        } else {
+          setActiveView(targetView);
+        }
+      }
+    };
+    window.addEventListener('navigate-view', handleNavEvent);
+    return () => window.removeEventListener('navigate-view', handleNavEvent);
+  }, [currentRoleView]);
+
+  // Security guard: If current role is driver and activeView is forbidden, instantly redirect to 'route'
+  useEffect(() => {
+    const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+    if (currentRoleView === 'driver' && activeView !== 'lobby' && !allowedDriverViews.includes(activeView)) {
+      console.warn(`Redirigiendo chofer desde vista no autorizada (${activeView}) a 'route'...`);
+      setActiveView('route');
+    }
+  }, [currentRoleView, activeView]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -472,26 +498,36 @@ export default function App() {
         
         setUserRole(role as any);
         
-        // Mantener la vista de rol seleccionada previamente por el usuario si está guardada en localStorage
+        // Mantener la vista de rol seleccionada previamente por el usuario solo si es admin o supervisor
         const savedRoleView = localStorage.getItem('currentRoleView');
-        const finalRoleView = (savedRoleView && ['admin', 'operator', 'driver', 'client', 'supervisor'].includes(savedRoleView))
-          ? (savedRoleView as any)
-          : (role as any);
+        const finalRoleView = (role === 'driver') 
+          ? 'driver' 
+          : ((savedRoleView && ['admin', 'operator', 'driver', 'client', 'supervisor'].includes(savedRoleView))
+            ? (savedRoleView as any)
+            : (role as any));
           
         setCurrentRoleView(finalRoleView);
         setUserName(normalizeEmployeeName(data.name));
         
         // Cambio de vista inmediato respetando la selección previa de localStorage
         const savedActiveView = localStorage.getItem('activeView');
-        if (savedActiveView && savedActiveView !== 'lobby') {
+        const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+        
+        if (finalRoleView === 'driver') {
+          if (savedActiveView && allowedDriverViews.includes(savedActiveView)) {
+            setActiveView(savedActiveView as View);
+          } else {
+            setActiveView('route');
+          }
+        } else if (savedActiveView && savedActiveView !== 'lobby') {
           setActiveView(savedActiveView as View);
         } else if (activeView === 'lobby') {
           switch(finalRoleView) {
             case 'admin': setActiveView('metrics'); break;
             case 'operator': setActiveView('pos'); break;
-            case 'driver': setActiveView('pos'); break;
+            case 'driver': setActiveView('route'); break;
             case 'supervisor': setActiveView('supervisor_attendance'); break;
-            default: setActiveView('pos');
+            default: setActiveView('route');
           }
         }
       } else {
@@ -521,31 +557,31 @@ export default function App() {
           // Retry fetching
           setTimeout(() => fetchUserRole(userId, defaultName), 1000);
         } else {
-          const savedRoleView = localStorage.getItem('currentRoleView') as any;
           setUserRole('driver');
-          setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client', 'supervisor'].includes(savedRoleView) ? savedRoleView : 'driver');
+          setCurrentRoleView('driver');
           setUserName(normalizeEmployeeName(defaultName || 'Repartidor'));
           
           const savedActiveView = localStorage.getItem('activeView');
-          if (savedActiveView && savedActiveView !== 'lobby') {
+          const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+          if (savedActiveView && allowedDriverViews.includes(savedActiveView)) {
             setActiveView(savedActiveView as View);
-          } else if (activeView === 'lobby') {
-            setActiveView('pos');
+          } else {
+            setActiveView('route');
           }
         }
       }
     } catch (err) {
       console.error('Error obteniendo rol:', err);
-      const savedRoleView = localStorage.getItem('currentRoleView') as any;
       setUserRole('driver');
-      setCurrentRoleView(savedRoleView && ['admin', 'operator', 'driver', 'client', 'supervisor'].includes(savedRoleView) ? savedRoleView : 'driver');
+      setCurrentRoleView('driver');
       setUserName(normalizeEmployeeName(defaultName || 'Usuario'));
       
       const savedActiveView = localStorage.getItem('activeView');
-      if (savedActiveView && savedActiveView !== 'lobby') {
+      const allowedDriverViews = ['route', 'borrowed_jugs', 'transfer_sales', 'cash_float', 'attendance', 'manual', 'notifications', 'profile'];
+      if (savedActiveView && allowedDriverViews.includes(savedActiveView)) {
         setActiveView(savedActiveView as View);
-      } else if (activeView === 'lobby') {
-        setActiveView('pos');
+      } else {
+        setActiveView('route');
       }
     } finally {
       setLoading(false);
@@ -615,15 +651,12 @@ export default function App() {
       ];
     } else if (currentRoleView === 'driver') {
       items = [
-        { id: 'pos', label: 'Venta POS', icon: CreditCard },
-        { id: 'transfer_sales', label: 'Mis Transferencias', icon: CreditCard },
-        { id: 'borrowed_jugs', label: 'Garrafones Fiados', icon: PackageCheck },
-        { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'route', label: 'Mi Ruta', icon: Truck },
-        { id: 'sales', label: 'Mis Ventas', icon: History },
-        { id: 'customers', label: 'Clientes', icon: Users },
-        { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'borrowed_jugs', label: 'Garrafones Fiados', icon: PackageCheck },
+        { id: 'transfer_sales', label: 'Mis Transferencias', icon: CreditCard },
         { id: 'cash_float', label: 'Cierre de Caja', icon: DollarSign },
+        { id: 'attendance', label: 'Asistencia', icon: Clock },
+        { id: 'manual', label: 'Manual Usuario', icon: BookOpen },
         { id: 'notifications', label: 'Notificaciones', icon: Bell },
         { id: 'profile', label: 'Perfil', icon: User },
       ];
@@ -659,7 +692,7 @@ export default function App() {
       ];
     }
 
-    // Agregar accesos directos de cambio de rol para el administrador real
+    // Agregar accesos directos de cambio de rol EXCLUSIVAMENTE para el administrador real
     if (userRole === 'admin') {
       if (currentRoleView === 'admin') {
         items.push(
@@ -670,16 +703,6 @@ export default function App() {
       } else {
         items.push(
           { id: 'switch_to_admin', label: 'Ver Admin', icon: ShieldCheck, isShortcut: true }
-        );
-      }
-    } else if (userRole === 'driver') {
-      if (currentRoleView === 'driver') {
-        items.push(
-          { id: 'switch_to_operator', label: 'Cambiar a Planta', icon: Store, isShortcut: true }
-        );
-      } else if (currentRoleView === 'operator') {
-        items.push(
-          { id: 'switch_to_driver', label: 'Cambiar a Repartidor', icon: Truck, isShortcut: true }
         );
       }
     }
@@ -786,29 +809,6 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-2">
-            {userRole === 'driver' && (
-              <button
-                onClick={() => {
-                  const targetView = currentRoleView === 'driver' ? 'operator' : 'driver';
-                  setCurrentRoleView(targetView);
-                  setActiveView('pos');
-                }}
-                className="flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-550 hover:bg-amber-500 hover:text-white transition-all text-[8px] font-black uppercase tracking-tight"
-                title="Cambiar de Rol"
-              >
-                {currentRoleView === 'driver' ? (
-                  <>
-                    <Store size={12} />
-                    <span>Planta</span>
-                  </>
-                ) : (
-                  <>
-                    <Truck size={12} />
-                    <span>Ruta</span>
-                  </>
-                )}
-              </button>
-            )}
             {isInstallable && (
               <button
                 onClick={installApp}
@@ -937,29 +937,6 @@ export default function App() {
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <div className="flex items-center gap-4">
-              {userRole === 'driver' && (
-                <button
-                  onClick={() => {
-                    const targetView = currentRoleView === 'driver' ? 'operator' : 'driver';
-                    setCurrentRoleView(targetView);
-                    setActiveView('pos');
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 hover:bg-amber-500 hover:text-white transition-all text-[9px] font-black uppercase tracking-wider animate-pulse"
-                  title="Cambiar de Rol de Trabajo"
-                >
-                  {currentRoleView === 'driver' ? (
-                    <>
-                      <Store size={12} />
-                      <span>Cambiar a Planta</span>
-                    </>
-                  ) : (
-                    <>
-                      <Truck size={12} />
-                      <span>Cambiar a Ruta</span>
-                    </>
-                  )}
-                </button>
-              )}
               <div className="text-right hidden sm:block">
                 <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest leading-none mb-1">
                   {currentRoleView === 'admin' ? 'Administrador' : 
