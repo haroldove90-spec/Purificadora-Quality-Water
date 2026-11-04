@@ -16,7 +16,9 @@ import {
   FileText,
   DollarSign,
   User,
-  ArrowUpDown
+  ArrowUpDown,
+  Plus,
+  MapPin
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { exportToPDF } from '../utils/pdfExport';
@@ -57,6 +59,20 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
   const [referenceModalOrder, setReferenceModalOrder] = useState<TransferOrder | null>(null);
   const [referenceText, setReferenceText] = useState('');
 
+  // Modal para registrar NUEVA transferencia
+  const [showNewTransferModal, setShowNewTransferModal] = useState<boolean>(false);
+  const [newCustomerName, setNewCustomerName] = useState<string>('');
+  const [newAddress, setNewAddress] = useState<string>('');
+  const [newJugsCount, setNewJugsCount] = useState<number>(1);
+  const [newJugType, setNewJugType] = useState<string>('Azul 20L');
+  const [newTotalPrice, setNewTotalPrice] = useState<number>(35);
+  const [newAssignedDriver, setNewAssignedDriver] = useState<string>('');
+  const [newAssignedRoute, setNewAssignedRoute] = useState<string>('1.- Santa Cruz');
+  const [newReference, setNewReference] = useState<string>('');
+  const [newNotes, setNewNotes] = useState<string>('');
+  const [isSubmittingNew, setIsSubmittingNew] = useState<boolean>(false);
+  const [employeesList, setEmployeesList] = useState<string[]>([]);
+
   const isAdminOrSupervisor = userRole === 'admin' || userRole === 'supervisor';
 
   const fetchTransfers = async () => {
@@ -84,13 +100,24 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
           );
         }).map((o: any) => {
           const itemsStr = String(o.items || '');
+          const itemsLower = itemsStr.toLowerCase();
           const isValidated = 
             o.transfer_validated === true || 
-            itemsStr.includes('[TRANSFERENCIA VALIDADA EN BANCO]');
+            itemsLower.includes('[transferencia validada en banco]') ||
+            itemsLower.includes('transferencia validada') ||
+            itemsLower.includes('transferencia avalada') ||
+            itemsLower.includes('validado en banco');
+
+          let ref = o.transfer_reference || '';
+          if (!ref) {
+            const m = itemsStr.match(/\[Ref:\s*([^\]]+)\]/i) || itemsStr.match(/Ref:\s*([^\s\]]+)/i);
+            if (m && m[1]) ref = m[1];
+          }
 
           return {
             ...o,
-            transfer_validated: isValidated
+            transfer_validated: isValidated,
+            transfer_reference: ref
           };
         });
 
@@ -105,7 +132,106 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
 
   useEffect(() => {
     fetchTransfers();
+
+    const fetchEmployees = async () => {
+      try {
+        const { data } = await supabase.from('employees').select('name').order('name');
+        if (data && data.length > 0) {
+          const names = Array.from(new Set(data.map((e: any) => e.name).filter(Boolean)));
+          setEmployeesList(names);
+        }
+      } catch (_) {}
+    };
+    fetchEmployees();
+
+    const channel = supabase
+      .channel('transfer_sales_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        fetchTransfers();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const resetNewTransferForm = () => {
+    setNewCustomerName('');
+    setNewAddress('');
+    setNewJugsCount(1);
+    setNewJugType('Azul 20L');
+    setNewTotalPrice(35);
+    setNewAssignedDriver(userName || '');
+    setNewAssignedRoute('1.- Santa Cruz');
+    setNewReference('');
+    setNewNotes('');
+  };
+
+  const handleCreateTransferOrder = async () => {
+    if (!newCustomerName.trim()) {
+      alert('Por favor ingresa el nombre del cliente');
+      return;
+    }
+    setIsSubmittingNew(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const refTag = newReference.trim() ? ` [Ref: ${newReference.trim()}]` : '';
+      const notesTag = newNotes.trim() ? ` [Nota: ${newNotes.trim()}]` : '';
+      const itemsDescription = `${newJugsCount}x Garrafón ${newJugType} [MÉTODO DE PAGO: TRANSFERENCIA] [payment_method: transfer] [Ruta: ${newAssignedRoute}]${refTag}${notesTag}`;
+
+      const payload: any = {
+        customer_name: newCustomerName.trim(),
+        address: newAddress.trim() || 'Ruta / Domicilio',
+        items: itemsDescription,
+        total_price: Number(newTotalPrice) || 0,
+        status: 'delivered',
+        source: 'local',
+        payment_method: 'transfer',
+        transfer_validated: false,
+        transfer_reference: newReference.trim() || null,
+        assigned_to_name: newAssignedDriver.trim() || userName || 'Planta',
+        assigned_route: newAssignedRoute,
+        created_at: nowIso
+      };
+
+      const res = await supabase.from('orders').insert([payload]);
+      if (res.error) {
+        // Fallback for missing optional columns
+        const safePayload = {
+          customer_name: payload.customer_name,
+          address: payload.address,
+          items: payload.items,
+          total_price: payload.total_price,
+          status: 'delivered',
+          source: 'local',
+          assigned_to_name: payload.assigned_to_name,
+          created_at: nowIso
+        };
+        const fallbackRes = await supabase.from('orders').insert([safePayload]);
+        if (fallbackRes.error) throw fallbackRes.error;
+      }
+
+      try {
+        await supabase.from('notifications_log').insert([{
+          title: '💳 Venta por Transferencia Registrada',
+          message: `Venta por transferencia de $${payload.total_price} a ${payload.customer_name} registrada por ${payload.assigned_to_name}.`,
+          type: 'finance',
+          user_role: 'admin',
+          is_read: false
+        }]);
+      } catch (_) {}
+
+      alert(`¡Venta por transferencia registrada con éxito para ${newCustomerName}!`);
+      setShowNewTransferModal(false);
+      resetNewTransferForm();
+      await fetchTransfers();
+    } catch (err: any) {
+      alert('Error al registrar transferencia: ' + err.message);
+    } finally {
+      setIsSubmittingNew(false);
+    }
+  };
 
   // Handle validating a transfer (Permitido tanto a Administrador como a Repartidor)
   const handleValidateTransfer = async (order: TransferOrder, refCode?: string) => {
@@ -280,11 +406,22 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => {
+              resetNewTransferForm();
+              setShowNewTransferModal(true);
+            }}
+            className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2 active:scale-95 cursor-pointer"
+          >
+            <Plus size={16} strokeWidth={3} />
+            <span>Registrar Transferencia</span>
+          </button>
+
           <button
             onClick={fetchTransfers}
             disabled={loading}
-            className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl hover:bg-slate-50 font-bold transition-all shadow-sm flex items-center gap-2 text-xs uppercase"
+            className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl hover:bg-slate-50 font-bold transition-all shadow-sm flex items-center gap-2 text-xs uppercase cursor-pointer"
             title="Recargar transferencias"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -293,7 +430,7 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
 
           <button
             onClick={handleExportPDF}
-            className="px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 active:scale-95"
+            className="px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 active:scale-95 cursor-pointer"
           >
             <Download size={16} />
             <span>Descargar Reporte</span>
@@ -581,6 +718,197 @@ export default function TransferSales({ userRole, userName = 'Usuario' }: Transf
                   className="flex-2 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-wider shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
                 >
                   Confirmar Validación
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal para Registrar NUEVA Transferencia Bancaria */}
+      <AnimatePresence>
+        {showNewTransferModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 rounded-[32px] p-6 max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 flex items-center justify-center font-black">
+                    <CreditCard size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white uppercase">Registrar Venta por Transferencia</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Ingreso bancario auditado - No suma a corte de efectivo</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowNewTransferModal(false)}
+                  className="p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                    Nombre del Cliente *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Restaurante Los Portales / Lic. Roberto"
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Dirección / Ubicación
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Calle o referencia"
+                      value={newAddress}
+                      onChange={(e) => setNewAddress(e.target.value)}
+                      className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Folio / Referencia Bancaria (SPEI)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. BBVA-10294 / 7482"
+                      value={newReference}
+                      onChange={(e) => setNewReference(e.target.value)}
+                      className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Cantidad de Garrafones
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newJugsCount}
+                      onChange={(e) => {
+                        const count = parseInt(e.target.value) || 1;
+                        setNewJugsCount(count);
+                        setNewTotalPrice(count * 35);
+                      }}
+                      className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Tipo de Garrafón
+                    </label>
+                    <select
+                      value={newJugType}
+                      onChange={(e) => setNewJugType(e.target.value)}
+                      className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="Azul 20L">Azul 20L</option>
+                      <option value="Rosa 20L">Rosa 20L</option>
+                      <option value="De Color 20L">De Color 20L</option>
+                      <option value="Pequeño 10L">Pequeño 10L</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Monto Total Transferido ($) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newTotalPrice}
+                      onChange={(e) => setNewTotalPrice(parseFloat(e.target.value) || 0)}
+                      className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Ruta Asignada
+                    </label>
+                    <select
+                      value={newAssignedRoute}
+                      onChange={(e) => setNewAssignedRoute(e.target.value)}
+                      className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="1.- Santa Cruz">1.- Santa Cruz</option>
+                      <option value="2.- Saban">2.- Saban</option>
+                      <option value="3.- Huaymax">3.- Huaymax</option>
+                      <option value="4.- Planta Local">4.- Planta Local</option>
+                      <option value="5.- Llamadas telefónicas">5.- Llamadas telefónicas</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                    Repartidor / Responsable de la Venta
+                  </label>
+                  <input
+                    type="text"
+                    list="transfer-employees-datalist"
+                    placeholder="Nombre del repartidor o vendedor"
+                    value={newAssignedDriver}
+                    onChange={(e) => setNewAssignedDriver(e.target.value)}
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <datalist id="transfer-employees-datalist">
+                    {employeesList.map(emp => (
+                      <option key={emp} value={emp} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                    Notas adicionales (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Envió comprobante por WhatsApp, cliente frecuente..."
+                    value={newNotes}
+                    onChange={(e) => setNewNotes(e.target.value)}
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowNewTransferModal(false)}
+                  className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-black text-xs uppercase tracking-widest rounded-2xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingNew}
+                  onClick={handleCreateTransferOrder}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-widest rounded-2xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingNew ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                  Registrar Venta
                 </button>
               </div>
             </motion.div>

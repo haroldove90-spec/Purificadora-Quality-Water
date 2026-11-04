@@ -439,10 +439,30 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     }
   };
 
+  const isUnpaidLoan = (s: any) => {
+    if (s.status === 'delivered') return false;
+    if (s.borrowed_paid === true || s.borrowed_status === 'paid' || s.borrowed_paid_at) return false;
+    const it = (s.items || '').toLowerCase();
+    if (it.includes('[pago garrafones fiados') || it.includes('[adeudo liquidado') || it.includes('cobrado') || it.includes('liquidado')) return false;
+    const pm = (s.payment_method || '').toLowerCase();
+    return (
+      s.status === 'pending_payment' ||
+      s.is_borrowed === true ||
+      pm.includes('prestado') ||
+      pm.includes('fiado') ||
+      pm.includes('borrowed') ||
+      it.includes('prestado') ||
+      it.includes('fiado') ||
+      it.includes('(se debe)') ||
+      it.includes('[saldo pendiente]') ||
+      it.includes('[is_borrowed: true]')
+    );
+  };
+
   const calculateTotalVolume = () => {
     let total = 0;
     const scopedList = getScopedSalesList();
-    scopedList.forEach(sale => {
+    scopedList.filter(s => !isUnpaidLoan(s)).forEach(sale => {
       total += getGarrafonesCount(sale.items);
     });
     return total;
@@ -453,17 +473,17 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
     const scopedList = getScopedSalesList();
     const todaySales = scopedList.filter(s => {
       const dStr = s.created_at ? getLocalDateString(s.created_at) : '';
-      return dStr === todayStr;
+      return dStr === todayStr && !isUnpaidLoan(s);
     });
     
     return todaySales.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
   };
 
   const calculateTicketPromedio = () => {
-    const scopedList = getScopedSalesList();
-    if (scopedList.length === 0) return 0;
-    const total = scopedList.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
-    return Math.round(total / scopedList.length);
+    const validSales = getScopedSalesList().filter(s => !isUnpaidLoan(s));
+    if (validSales.length === 0) return 0;
+    const total = validSales.reduce((acc, s) => acc + Number(s.total_price || s.amount || 0), 0);
+    return Math.round(total / validSales.length);
   };
 
   const calculateTotalCustomers = () => {
@@ -522,7 +542,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
 
   const getPlantAndFieldSalesToday = () => {
     const todayStr = getLocalDateString();
-    const list = getScopedSalesList();
+    const list = getScopedSalesList().filter(s => !isUnpaidLoan(s));
     const activeSales = timePeriod === 'today' 
       ? list.filter(s => {
           const dStr = s.created_at ? getLocalDateString(s.created_at) : '';
@@ -571,7 +591,7 @@ export default function Finances({ initialTab = 'metrics', userRole, userName }:
   };
 
   const getRouteMetricsForPeriod = () => {
-    const listForPeriod = getScopedSalesList();
+    const listForPeriod = getScopedSalesList().filter(s => !isUnpaidLoan(s));
 
     let santaCruzTotal = 0;
     let santaCruzCount = 0;

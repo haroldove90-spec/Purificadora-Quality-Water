@@ -142,15 +142,12 @@ export default function BorrowedJugs({ userRole = 'admin', userName }: BorrowedJ
   const isOrderPaid = (o: BorrowedOrder) => {
     if (o.borrowed_paid === true) return true;
     if ((o as any).borrowed_status === 'paid') return true;
+    if (o.borrowed_paid_at) return true;
     const items = (o.items || '').toLowerCase();
     if (items.includes('[pago garrafones fiados')) return true;
     if (items.includes('[adeudo liquidado')) return true;
-    if (items.includes('[pago parcial') && o.status === 'delivered') return true;
-    if (o.status === 'delivered') {
-      if (items.includes('pago') || items.includes('liquidado') || items.includes('cobrado')) {
-        return true;
-      }
-    }
+    if (items.includes('cobrado') || items.includes('liquidado') || items.includes('pagado')) return true;
+    if (o.status === 'delivered') return true;
     return false;
   };
 

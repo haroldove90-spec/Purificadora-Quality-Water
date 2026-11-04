@@ -14,7 +14,9 @@ import {
   Loader2,
   Download,
   Gift,
-  PackageCheck
+  PackageCheck,
+  CreditCard,
+  DollarSign
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Order } from '../lib/types.supabase';
@@ -166,6 +168,18 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
 
   const currentDelivery = deliveries.find(d => d.id === selectedDelivery);
 
+  const isCollectingExistingLoan = Boolean(
+    currentDelivery && (
+      currentDelivery.is_borrowed === true ||
+      currentDelivery.payment_method === 'Garrafones Prestados' ||
+      (currentDelivery.status === 'pending_payment' && currentDelivery.items && (
+        currentDelivery.items.toLowerCase().includes('prestado') ||
+        currentDelivery.items.toLowerCase().includes('fiado') ||
+        currentDelivery.items.toLowerCase().includes('garrafones prestados')
+      ))
+    )
+  );
+
   const [products, setProducts] = useState<any[]>([]);
   const [deliveryItems, setDeliveryItems] = useState('');
   const [deliveryTotal, setDeliveryTotal] = useState(0);
@@ -176,6 +190,8 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
   const [soldPequeno, setSoldPequeno] = useState(0);
   const [pequenosReceived, setPequenosReceived] = useState(0);
   const [isBorrowed, setIsBorrowed] = useState(false);
+  const [paymentMethodType, setPaymentMethodType] = useState<'cash' | 'transfer'>('cash');
+  const [transferReference, setTransferReference] = useState<string>('');
 
   const fetchProducts = async () => {
     try {
@@ -197,6 +213,8 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
       setIsDebt(false);
       setIsGift(false);
       setIsBorrowed(false);
+      setPaymentMethodType('cash');
+      setTransferReference('');
       setAmountPaidToday(0);
       setSoldRosa(0);
       setSoldAzul(0);
@@ -277,7 +295,11 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
     setDeliveryTotal(total);
   };
 
-  const updateDriverAttendanceFromDelivery = async (totalRegularSold: number, totalSmallSold: number) => {
+  const updateDriverAttendanceFromDelivery = async (
+    totalRegularSold: number, 
+    totalSmallSold: number,
+    isBorrowedDelivery: boolean = false
+  ) => {
     const session = getSessionInfo();
     const driverName = session?.user_name;
     if (!driverName) return;
@@ -311,15 +333,22 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
       const activeTrip = trips.find((t: any) => t.status === 'active');
 
       if (activeTrip) {
-        activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularSold;
-        activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallSold;
+        if (isBorrowedDelivery) {
+          // Garrafones fiados: NO sumar a sold_qty (venta cobrada), sino registrar en borrowed_qty
+          activeTrip.borrowed_qty = (Number(activeTrip.borrowed_qty) || 0) + totalRegularSold + totalSmallSold;
+          activeTrip.borrowed_qty_regular = (Number(activeTrip.borrowed_qty_regular) || 0) + totalRegularSold;
+          activeTrip.borrowed_qty_pequeno = (Number(activeTrip.borrowed_qty_pequeno) || 0) + totalSmallSold;
+        } else {
+          activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularSold;
+          activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallSold;
+        }
         activeTrip.collected_empty_qty = (Number(activeTrip.collected_empty_qty) || 0) + jugsReceived;
         activeTrip.collected_empty_qty_pequeno = (Number(activeTrip.collected_empty_qty_pequeno) || 0) + pequenosReceived;
       } else {
         const newTrip = {
           id: 'T-' + Math.floor(10000 + Math.random() * 90000),
           trip_number: trips.length + 1,
-          loaded_qty: totalRegularSold,
+          loaded_qty: totalRegularSold + totalSmallSold,
           loaded_qty_rosa: 0,
           loaded_qty_azul: totalRegularSold,
           loaded_qty_color: 0,
@@ -327,8 +356,11 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
           loaded_qty_lavar: 0,
           returned_unsold_qty: 0,
           returned_empty_qty: 0,
-          sold_qty: totalRegularSold,
-          sold_qty_pequeno: totalSmallSold,
+          sold_qty: isBorrowedDelivery ? 0 : totalRegularSold,
+          sold_qty_pequeno: isBorrowedDelivery ? 0 : totalSmallSold,
+          borrowed_qty: isBorrowedDelivery ? (totalRegularSold + totalSmallSold) : 0,
+          borrowed_qty_regular: isBorrowedDelivery ? totalRegularSold : 0,
+          borrowed_qty_pequeno: isBorrowedDelivery ? totalSmallSold : 0,
           collected_empty_qty: jugsReceived,
           collected_empty_qty_pequeno: pequenosReceived,
           status: 'active',
@@ -374,22 +406,58 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
         const totalJugsCount = totalRegularSold + totalSmallSold || 1;
         const result = await handleCompleteDelivery(
           selectedDelivery,
-          `${deliveryItems} [GARRAFONES PRESTADOS FIADOS: ${totalJugsCount}]`,
+          `${deliveryItems} [GARRAFONES PRESTADOS FIADOS: ${totalJugsCount}] [is_borrowed: true]`,
           deliveryTotal,
           'pending_payment',
           {
             payment_method: 'Garrafones Prestados',
             is_borrowed: true,
-            borrowed_jugs_count: totalJugsCount
+            borrowed_jugs_count: totalJugsCount,
+            borrowed_paid: false,
+            borrowed_status: 'pending'
           }
         );
         if (result.success) {
-          await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
+          await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold, true);
           await fetchDeliveries();
           setStep(1);
           setSelectedDelivery(null);
         } else {
           alert('Error al registrar garrafones prestados: ' + result.error);
+        }
+      } else if (isCollectingExistingLoan) {
+        // Cobro de garrafón prestado (fiado) previamente registrado
+        const session = getSessionInfo();
+        const driverName = session?.user_name || 'Repartidor';
+        const nowIso = new Date().toISOString();
+        const isTrf = paymentMethodType === 'transfer';
+        const refStr = transferReference.trim() ? ` [Ref: ${transferReference.trim()}]` : '';
+        const methodTag = isTrf ? `(TRANSFERENCIA)${refStr} [MÉTODO DE PAGO: TRANSFERENCIA] [payment_method: transfer]` : `(EFECTIVO)`;
+        const paymentTag = `[PAGO GARRAFONES FIADOS REGISTRADO: $${deliveryTotal} ${methodTag}] [COBRADO POR: ${driverName}] [FECHA COBRO: ${new Date().toLocaleDateString('es-MX')}]`;
+        const updatedItems = `${currentDelivery.items} ${paymentTag}`;
+        
+        const result = await handleCompleteDelivery(
+          selectedDelivery,
+          updatedItems,
+          deliveryTotal,
+          'delivered',
+          {
+            borrowed_paid: true,
+            borrowed_status: 'paid',
+            borrowed_paid_at: nowIso,
+            payment_method: isTrf ? 'transfer' : 'cash',
+            transfer_reference: isTrf ? (transferReference.trim() || null) : null,
+            transfer_validated: false
+          }
+        );
+        if (result.success) {
+          // Garrafón fiado cobrado: NO debe sumar a sold_qty del viaje diario
+          await fetchDeliveries();
+          setStep(1);
+          setSelectedDelivery(null);
+          alert(`¡Cobro de garrafón fiado por $${deliveryTotal} registrado con éxito!`);
+        } else {
+          alert('Error al registrar cobro de fiado: ' + result.error);
         }
       } else if (isDebt) {
         const debtAmount = Number(deliveryTotal) - Number(amountPaidToday);
@@ -447,6 +515,29 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
           } else {
             alert('Error al registrar pago parcial: ' + result.error);
           }
+        }
+      } else if (paymentMethodType === 'transfer') {
+        const refStr = transferReference.trim() ? ` [Ref: ${transferReference.trim()}]` : '';
+        const transferItems = `${deliveryItems} [MÉTODO DE PAGO: TRANSFERENCIA] [payment_method: transfer]${refStr}`;
+        const result = await handleCompleteDelivery(
+          selectedDelivery, 
+          transferItems, 
+          deliveryTotal, 
+          'delivered',
+          {
+            payment_method: 'transfer',
+            transfer_reference: transferReference.trim() || null,
+            transfer_validated: false
+          }
+        );
+        if (result.success) {
+          await updateDriverAttendanceFromDelivery(totalRegularSold, totalSmallSold);
+          await fetchDeliveries();
+          setStep(1);
+          setSelectedDelivery(null);
+          alert(`¡Entrega pagada por transferencia de $${deliveryTotal} registrada con éxito! (No suma a tu efectivo de entrega)`);
+        } else {
+          alert('Error al confirmar entrega por transferencia: ' + result.error);
         }
       } else {
         const result = await handleCompleteDelivery(selectedDelivery, deliveryItems, deliveryTotal, 'delivered');
@@ -888,8 +979,20 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
 
           <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
             <CheckCircle2 className={currentDelivery?.status === 'pickup_assigned' ? "text-indigo-500" : "text-emerald-500"} /> 
-            {currentDelivery?.status === 'pickup_assigned' ? 'Confirmar Recogida' : 'Finalizar Entrega'}
+            {currentDelivery?.status === 'pickup_assigned' ? 'Confirmar Recogida' : isCollectingExistingLoan ? 'Cobrar Garrafón Fiado' : 'Finalizar Entrega'}
           </h3>
+
+          {isCollectingExistingLoan && (
+            <div className="bg-amber-50 p-4 rounded-3xl border border-amber-200 text-left space-y-1 mb-4">
+              <p className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                <PackageCheck size={16} className="text-amber-600" />
+                Cobro de Garrafones Prestados (Fiado Pendiente)
+              </p>
+              <p className="text-[10px] text-amber-800 font-semibold">
+                Este pedido corresponde a garrafones prestados anteriormente por ${(currentDelivery?.total_price || 0).toFixed(2)}. Al confirmar, se registrará como cobro de fiado en tu corte sin sumar a tu venta de garrafones de hoy.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-6">
             {/* Envases Vacíos Recibidos */}
@@ -1232,6 +1335,66 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
                             <p className="text-[10px] opacity-75 uppercase">Adeudo acumulado:</p>
                             <p className="text-sm font-black text-rose-600">${(deliveryTotal - amountPaidToday).toFixed(2)}</p>
                           </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
+
+                {/* Selector de Método de Pago: Efectivo vs Transferencia */}
+                {!isGift && !isBorrowed && (
+                  <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 text-left space-y-3">
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
+                      Método de Pago del Cliente
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethodType('cash')}
+                        className={`py-3 px-3 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 border-2 transition-all cursor-pointer ${
+                          paymentMethodType === 'cash'
+                            ? 'bg-emerald-500 border-emerald-500 text-white shadow-md'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300'
+                        }`}
+                      >
+                        <DollarSign size={16} /> Efectivo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethodType('transfer');
+                          setIsDebt(false);
+                        }}
+                        className={`py-3 px-3 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 border-2 transition-all cursor-pointer ${
+                          paymentMethodType === 'transfer'
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
+                        }`}
+                      >
+                        <CreditCard size={16} /> Transferencia
+                      </button>
+                    </div>
+
+                    {paymentMethodType === 'transfer' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="space-y-2 pt-2 border-t border-slate-200"
+                      >
+                        <div className="bg-indigo-50/70 p-3 rounded-2xl border border-indigo-100 text-[10px] text-indigo-900 font-semibold leading-relaxed">
+                          💳 <strong>Pago por Transferencia Bancaria:</strong> Este monto irá directo a la cuenta de banco y <strong>no se sumará al efectivo que debes entregar hoy</strong> en tu corte.
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider block mb-1">
+                            Folio / Referencia o Teléfono (Opcional)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ej. Ref: 984512 / BBVA..."
+                            value={transferReference}
+                            onChange={(e) => setTransferReference(e.target.value)}
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
                         </div>
                       </motion.div>
                     )}

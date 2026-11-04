@@ -313,7 +313,8 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
   const updateDriverAttendanceJugs = async (
     overrideDriverName?: string, 
     overrideRegularSold?: number, 
-    overrideSmallSold?: number
+    overrideSmallSold?: number,
+    isBorrowedDelivery: boolean = false
   ) => {
     let totalRegularGarrafonesSold = overrideRegularSold ?? 0;
     let totalSmallGarrafonesSold = overrideSmallSold ?? 0;
@@ -368,8 +369,12 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       let activeTrip = trips.find((t: any) => t.status === 'active');
 
       if (activeTrip) {
-        activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularGarrafonesSold;
-        activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallGarrafonesSold;
+        if (isBorrowedDelivery) {
+          activeTrip.borrowed_qty = (Number(activeTrip.borrowed_qty) || 0) + totalRegularGarrafonesSold + totalSmallGarrafonesSold;
+        } else {
+          activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularGarrafonesSold;
+          activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallGarrafonesSold;
+        }
       } else {
         activeTrip = {
           id: 'T-' + Math.floor(10000 + Math.random() * 90000),
@@ -382,8 +387,9 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
           loaded_qty_lavar: 0,
           returned_unsold_qty: 0,
           returned_empty_qty: 0,
-          sold_qty: totalRegularGarrafonesSold,
-          sold_qty_pequeno: totalSmallGarrafonesSold,
+          sold_qty: isBorrowedDelivery ? 0 : totalRegularGarrafonesSold,
+          sold_qty_pequeno: isBorrowedDelivery ? 0 : totalSmallGarrafonesSold,
+          borrowed_qty: isBorrowedDelivery ? (totalRegularGarrafonesSold + totalSmallGarrafonesSold) : 0,
           status: 'active',
           loaded_at: new Date().toISOString()
         };
@@ -1234,7 +1240,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
         setOfflineSalesCount(pendingList.length);
         
         // Simular éxito para liberar la interfaz del chofer inmediatamente
-        updateDriverAttendanceJugs(payload.assigned_to_name || payload.assigned_to);
+        updateDriverAttendanceJugs(payload.assigned_to_name || payload.assigned_to, undefined, undefined, paymentMethod === 'borrowed');
         clearCart();
         setShowTicketModal(false);
         setIsPickupOrder(false);
@@ -1294,7 +1300,7 @@ export default function POS({ userRole, userName: propUserName }: POSProps) {
       }
 
       // Clear operational states on success
-      await updateDriverAttendanceJugs(payload.assigned_to_name || payload.assigned_to);
+      await updateDriverAttendanceJugs(payload.assigned_to_name || payload.assigned_to, undefined, undefined, paymentMethod === 'borrowed');
       clearCart();
       setShowTicketModal(false);
       setIsPickupOrder(false);

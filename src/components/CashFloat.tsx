@@ -369,41 +369,58 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const localToday = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local format
       if (ordersData) {
         ordersData.forEach(o => {
-          const rawName = o.assigned_to_name;
-          if (rawName) {
-            const name = normalizeEmployeeName(rawName);
-            // Match order date: either UTC matches or local format matches
-            const orderUtcDate = o.created_at ? o.created_at.split('T')[0] : '';
-            const orderLocalDate = o.created_at ? new Date(o.created_at).toLocaleDateString('en-CA') : '';
-            const isTodayOrder = (orderUtcDate === today) || (orderLocalDate === localToday);
-            
-            if (!isTodayOrder) {
-              return; // skip if it's from another day
-            }
+          const itemsLower = String(o.items || '').toLowerCase();
+          const pmLower = String(o.payment_method || '').toLowerCase();
 
-            if (!salesSummary[name]) {
-              salesSummary[name] = {
-                driverName: name,
-                salesTotal: 0,
-                ordersCount: 0,
-                transferTotal: 0,
-                transferOrdersCount: 0,
-                loansTotal: 0,
-                loansCount: 0,
-                recoveredLoansTotal: 0,
-                recoveredLoansCount: 0
-              };
-            }
-            
-            const itemsLower = String(o.items || '').toLowerCase();
-            const pmLower = String(o.payment_method || '').toLowerCase();
+          // 1. Is this a recovered / paid loan?
+          const isRecoveredLoan = 
+            o.borrowed_paid === true ||
+            itemsLower.includes('pago garrafones fiados') ||
+            itemsLower.includes('[adeudo liquidado') ||
+            itemsLower.includes('[adeudo parcialmente recaudado');
 
-            // 1. Is this a recovered / paid loan?
-            const isRecoveredLoan = 
-              o.borrowed_paid === true ||
-              itemsLower.includes('pago garrafones fiados') ||
-              itemsLower.includes('[adeudo liquidado') ||
-              itemsLower.includes('[adeudo parcialmente recaudado');
+          // Match order date: either created today, OR it's a loan recovered today
+          const orderUtcDate = o.created_at ? o.created_at.split('T')[0] : '';
+          const orderLocalDate = o.created_at ? new Date(o.created_at).toLocaleDateString('en-CA') : '';
+          
+          const paidAtUtc = o.borrowed_paid_at ? o.borrowed_paid_at.split('T')[0] : '';
+          const paidAtLocal = o.borrowed_paid_at ? new Date(o.borrowed_paid_at).toLocaleDateString('en-CA') : '';
+          const todayMx = new Date().toLocaleDateString('es-MX');
+          const isRecoveredToday = isRecoveredLoan && (
+            paidAtUtc === today || 
+            paidAtLocal === localToday || 
+            itemsLower.includes(todayMx)
+          );
+
+          const isTodayOrder = (orderUtcDate === today) || (orderLocalDate === localToday) || isRecoveredToday;
+          
+          if (!isTodayOrder) {
+            return; // skip if it's from another day and not recovered today
+          }
+
+          let targetName = o.assigned_to_name;
+          // If recovered today, check if a specific driver collected it
+          const cobradoMatch = String(o.items || '').match(/\[COBRADO POR:\s*([^\]]+)\]/i);
+          if (cobradoMatch && cobradoMatch[1] && isRecoveredToday) {
+            targetName = cobradoMatch[1].trim();
+          }
+
+          if (!targetName) return;
+          const name = normalizeEmployeeName(targetName);
+
+          if (!salesSummary[name]) {
+            salesSummary[name] = {
+              driverName: name,
+              salesTotal: 0,
+              ordersCount: 0,
+              transferTotal: 0,
+              transferOrdersCount: 0,
+              loansTotal: 0,
+              loansCount: 0,
+              recoveredLoansTotal: 0,
+              recoveredLoansCount: 0
+            };
+          }
 
             // 2. Is this a loan / credit that has NOT been collected yet?
             const isFalseBorrowed = itemsLower.includes('[is_borrowed: false]') && 
@@ -451,7 +468,6 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
               salesSummary[name].salesTotal += Number(o.total_price || 0);
               salesSummary[name].ordersCount += 1;
             }
-          }
         });
       }
       setTodaySales(salesSummary);
@@ -616,14 +632,27 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   };
 
   // Close shift cash drawer
-  const handleCloseCashDrawer = async (employeeName: string, floatAmount: number, salesAmount: number, ordersCount?: number) => {
+  const handleCloseCashDrawer = async (
+    employeeName: string, 
+    floatAmount: number, 
+    salesAmount: number, 
+    ordersCount?: number,
+    recoveredLoansAmount: number = 0,
+    loansDeliveredAmount: number = 0,
+    transferAmount: number = 0,
+    transferOrdersCount: number = 0
+  ) => {
     setActionLoading(true);
     const today = getLocalDateString();
     
     const cleanFloatAmount = isNaN(floatAmount) ? 0 : floatAmount;
     const cleanSalesAmount = isNaN(salesAmount) ? 0 : salesAmount;
+    const cleanRecoveredLoans = isNaN(Number(recoveredLoansAmount)) ? 0 : Number(recoveredLoansAmount);
+    const cleanLoansDelivered = isNaN(Number(loansDeliveredAmount)) ? 0 : Number(loansDeliveredAmount);
+    const cleanTransferAmount = isNaN(Number(transferAmount)) ? 0 : Number(transferAmount);
+    const cleanTransferOrdersCount = isNaN(Number(transferOrdersCount)) ? 0 : Number(transferOrdersCount);
     const cleanOrdersCount = (ordersCount !== undefined && !isNaN(ordersCount)) ? ordersCount : (Number(selectedDriverForClose?.orders_count || 0) || 0);
-    const totalToDeliver = cleanFloatAmount + cleanSalesAmount;
+    const totalToDeliver = cleanFloatAmount + cleanSalesAmount + cleanRecoveredLoans;
 
     try {
       const { data: todayAtt } = await supabase
@@ -656,6 +685,10 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         cash_closed: true,
         cash_closed_at: timestamp,
         cash_sales_total: cleanSalesAmount,
+        cash_recovered_loans: cleanRecoveredLoans,
+        cash_loans_delivered: cleanLoansDelivered,
+        cash_transfer_total: cleanTransferAmount,
+        cash_transfer_orders_count: cleanTransferOrdersCount,
         cash_orders_count: cleanOrdersCount,
         cash_total_to_deliver: totalToDeliver,
         closed_by_role: currentUser.role,
@@ -675,6 +708,10 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       updatedLocation.cash_closed = true;
       updatedLocation.cash_closed_at = timestamp;
       updatedLocation.cash_sales_total = cleanSalesAmount;
+      updatedLocation.cash_recovered_loans = cleanRecoveredLoans;
+      updatedLocation.cash_loans_delivered = cleanLoansDelivered;
+      updatedLocation.cash_transfer_total = cleanTransferAmount;
+      updatedLocation.cash_transfer_orders_count = cleanTransferOrdersCount;
       updatedLocation.cash_orders_count = cleanOrdersCount;
       updatedLocation.cash_total_to_deliver = totalToDeliver;
       updatedLocation.closed_by_role = currentUser.role;
@@ -1613,9 +1650,12 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     const data = [
       ['Empleado', `${driverData.name}`],
       ['Fondo de Caja (Inicio)', `$${Number(driverData.cash_float || 0).toFixed(2)} pesos`],
-      ['Ventas del Día (Entregas)', `$${Number(driverData.sales_total || 0).toFixed(2)} pesos`],
+      ['Ventas del Día (Efectivo)', `$${Number(driverData.sales_total || 0).toFixed(2)} pesos`],
+      ['Cobro de Garrafones Fiados', `$${Number(driverData.recovered_loans_total || 0).toFixed(2)} pesos`],
+      ['Ventas por Transferencia Bancaria', `$${Number(driverData.transfer_total || 0).toFixed(2)} pesos (${driverData.transfer_orders_count || 0} pedidos directo a Banco)`],
       ['Total de Entregas Realizadas', `${driverData.orders_count || 0} pedidos`],
-      ['Monto Total Neto a Entregar', `$${Number(driverData.total_to_deliver || 0).toFixed(2)} pesos`],
+      ['Garrafones Fiados Entregados Hoy', `$${Number(driverData.loans_delivered_total || 0).toFixed(2)} pesos (Pendientes, no suma a efectivo)`],
+      ['Monto Total Neto en Efectivo a Entregar', `$${Number(driverData.total_to_deliver || 0).toFixed(2)} pesos`],
       ['Estatus de Caja', statusLabel],
       ['Fecha de Cierre / Reporte', closeTimeStr],
       ['Firmado por', `${driverData.name} (Empleado)`],
@@ -1647,10 +1687,26 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const salesTotal = isClosed && lastLoc.cash_sales_total !== undefined 
         ? Number(lastLoc.cash_sales_total) 
         : sales.salesTotal;
+
+      const recoveredLoansTotal = isClosed && lastLoc.cash_recovered_loans !== undefined
+        ? Number(lastLoc.cash_recovered_loans)
+        : (sales.recoveredLoansTotal || 0);
+
+      const loansDeliveredTotal = isClosed && lastLoc.cash_loans_delivered !== undefined
+        ? Number(lastLoc.cash_loans_delivered)
+        : (sales.loansTotal || 0);
         
       const ordersCount = isClosed && lastLoc.cash_orders_count !== undefined
         ? Number(lastLoc.cash_orders_count)
         : sales.ordersCount;
+
+      const transferTotal = isClosed && lastLoc.cash_transfer_total !== undefined
+        ? Number(lastLoc.cash_transfer_total)
+        : (sales.transferTotal || 0);
+
+      const transferOrdersCount = isClosed && lastLoc.cash_transfer_orders_count !== undefined
+        ? Number(lastLoc.cash_transfer_orders_count)
+        : (sales.transferOrdersCount || 0);
 
       const trips = lastLoc.trips || [];
       const activeTripsCount = trips.filter((t: any) => t.status === 'active').length;
@@ -1658,6 +1714,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       
       const totalLoadedJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0);
       const totalSoldJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.sold_qty) || 0), 0);
+      const totalBorrowedJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.borrowed_qty) || 0), 0);
       const totalReturnedUnsoldJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.returned_unsold_qty) || 0), 0);
       const totalReturnedEmptyJugs = trips.reduce((acc: number, t: any) => acc + (Number(t.returned_empty_qty) || 0), 0);
 
@@ -1665,6 +1722,11 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const currentVehicleInventory = trips
         .filter((t: any) => t.status === 'active')
         .reduce((acc: number, t: any) => acc + (Number(t.loaded_qty) || 0), 0);
+
+      const calculatedTotalToDeliver = (floatVal !== null ? floatVal : 0) + salesTotal + recoveredLoansTotal;
+      const finalTotalToDeliver = isClosed && lastLoc.cash_total_to_deliver !== undefined
+        ? Number(lastLoc.cash_total_to_deliver)
+        : calculatedTotalToDeliver;
 
       return {
         id: emp.id,
@@ -1675,17 +1737,22 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         checkInTime: att?.check_in,
         cash_float: floatVal,
         sales_total: salesTotal,
+        recovered_loans_total: recoveredLoansTotal,
+        loans_delivered_total: loansDeliveredTotal,
+        transfer_total: transferTotal,
+        transfer_orders_count: transferOrdersCount,
         orders_count: ordersCount,
         is_closed: isClosed,
         closed_at: closedAt,
         closed_by_name: closedByName,
-        total_to_deliver: floatVal !== null ? floatVal + salesTotal : salesTotal,
+        total_to_deliver: finalTotalToDeliver,
         // Route Trips indicators
         trips,
         active_trips_count: activeTripsCount,
         closed_trips_count: closedTripsCount,
         total_loaded_jugs: totalLoadedJugs,
         total_sold_jugs: totalSoldJugs,
+        total_borrowed_jugs: totalBorrowedJugs,
         total_returned_unsold: totalReturnedUnsoldJugs,
         total_returned_empty: totalReturnedEmptyJugs,
         current_vehicle_inventory: currentVehicleInventory
@@ -2050,8 +2117,23 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                               )}
                             </td>
                             <td className="px-8 py-5 text-center">
-                              <span className="font-bold text-xs text-slate-500">${drv.sales_total.toFixed(2)}</span>
+                              <span className="font-black text-xs text-slate-800">${drv.sales_total.toFixed(2)}</span>
                               <span className="text-[9px] font-bold text-slate-400 block mt-0.5">{drv.orders_count} pedidos</span>
+                              {Number(drv.recovered_loans_total || 0) > 0 && (
+                                <span className="text-[8.5px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200/60 rounded px-1.5 py-0.5 block mt-1" title="Cobro de garrafones fiados recuperados">
+                                  +${Number(drv.recovered_loans_total).toFixed(2)} Cobro Fiados
+                                </span>
+                              )}
+                              {Number(drv.transfer_total || 0) > 0 && (
+                                <span className="text-[8.5px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200/60 rounded px-1.5 py-0.5 block mt-1" title="Ventas por transferencia bancaria (Directo a Banco)">
+                                  💳 ${Number(drv.transfer_total).toFixed(2)} Trf (Banco)
+                                </span>
+                              )}
+                              {Number(drv.loans_delivered_total || 0) > 0 && (
+                                <span className="text-[8px] font-bold text-amber-700 bg-amber-50 rounded px-1 block mt-0.5" title="Garrafones fiados entregados hoy (No suma a corte de efectivo)">
+                                  ${Number(drv.loans_delivered_total).toFixed(2)} Fiados s/cobrar
+                                </span>
+                              )}
                             </td>
                             <td className="px-8 py-5 text-center whitespace-nowrap">
                               {drv.role !== 'client' && drv.role !== 'customer' ? (
@@ -2067,6 +2149,11 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                                     <span className="text-emerald-600 block uppercase tracking-tighter">
                                       🟢 {drv.total_sold_jugs} g. vendidos
                                     </span>
+                                    {Number(drv.total_borrowed_jugs || 0) > 0 && (
+                                      <span className="text-amber-600 block uppercase tracking-tighter font-black" title="Garrafones entregados en fiado/préstamo en ruta">
+                                        🪣 {drv.total_borrowed_jugs} g. fiados
+                                      </span>
+                                    )}
                                     <span className="text-rose-500 block uppercase tracking-tighter">
                                       🔴 {drv.total_returned_unsold} g. sin vender
                                     </span>
@@ -2083,7 +2170,9 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                               <span className="font-black text-sm text-slate-800">
                                 ${drv.total_to_deliver.toFixed(2)}
                               </span>
-                              <span className="text-[8px] font-black text-slate-400 block leading-tight mt-0.5 uppercase tracking-widest">(Fondo + Ventas)</span>
+                              <span className="text-[8px] font-black text-slate-400 block leading-tight mt-0.5 uppercase tracking-widest">
+                                {Number(drv.recovered_loans_total || 0) > 0 ? '(Fondo + Ventas + Fiados)' : '(Fondo + Ventas)'}
+                              </span>
                             </td>
                             <td className="px-8 py-5">
                               {drv.is_closed ? (
@@ -2808,14 +2897,44 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                   </div>
 
                   <div className="flex justify-between">
-                    <span className="font-bold text-slate-400 uppercase">Ventas reportadas:</span>
-                    <span className="font-black text-slate-800">${Number(selectedDriverForClose.sales_total).toFixed(2)} pesos</span>
+                    <span className="font-bold text-slate-400 uppercase">Ventas Diarias (Efectivo Hoy):</span>
+                    <span className="font-black text-slate-800">${Number(selectedDriverForClose.sales_total || 0).toFixed(2)} pesos</span>
                   </div>
+
+                  {Number(selectedDriverForClose.recovered_loans_total || 0) > 0 && (
+                    <div className="flex justify-between bg-emerald-50 p-3 rounded-2xl border border-emerald-200/60">
+                      <div>
+                        <span className="font-black text-emerald-800 uppercase text-[10px] block">Cobro de Garrafones Fiados:</span>
+                        <span className="text-[9px] text-emerald-600 font-bold">Cartera de fiados recuperada en ruta</span>
+                      </div>
+                      <span className="font-black text-emerald-700 text-xs">+${Number(selectedDriverForClose.recovered_loans_total).toFixed(2)} pesos</span>
+                    </div>
+                  )}
+
+                  {Number(selectedDriverForClose.transfer_total || 0) > 0 && (
+                    <div className="flex justify-between bg-indigo-50 p-3 rounded-2xl border border-indigo-200/60">
+                      <div>
+                        <span className="font-black text-indigo-900 uppercase text-[10px] block">Ventas por Transferencia Bancaria:</span>
+                        <span className="text-[9px] text-indigo-600 font-bold">{selectedDriverForClose.transfer_orders_count || 1} pagos directo a Banco (NO suma a efectivo físico)</span>
+                      </div>
+                      <span className="font-black text-indigo-800 text-xs">${Number(selectedDriverForClose.transfer_total).toFixed(2)} pesos</span>
+                    </div>
+                  )}
+
+                  {Number(selectedDriverForClose.loans_delivered_total || 0) > 0 && (
+                    <div className="flex justify-between bg-amber-50 p-3 rounded-2xl border border-amber-200/60">
+                      <div>
+                        <span className="font-black text-amber-800 uppercase text-[10px] block">Fiados Entregados Hoy (Pendientes):</span>
+                        <span className="text-[9px] text-amber-600 font-bold">Pendientes de cobro (NO suma a corte de efectivo)</span>
+                      </div>
+                      <span className="font-black text-amber-700 text-xs">${Number(selectedDriverForClose.loans_delivered_total).toFixed(2)} pesos</span>
+                    </div>
+                  )}
 
                   <div className="border-t border-dashed border-slate-200 pt-3.5 flex justify-between text-slate-800 font-extrabold">
                     <span className="font-bold text-slate-500 uppercase text-[10px] tracking-widest">EFECTIVO TOTAL ENTREGADO:</span>
                     <span className="text-sm font-black text-sky-600">
-                      ${(Number(selectedDriverForClose.cash_float) + Number(selectedDriverForClose.sales_total)).toFixed(2)} pesos
+                      ${Number(selectedDriverForClose.total_to_deliver || 0).toFixed(2)} pesos
                     </span>
                   </div>
                 </div>
@@ -2832,7 +2951,16 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                   <button 
                     type="button"
                     disabled={actionLoading}
-                    onClick={() => handleCloseCashDrawer(selectedDriverForClose.name, Number(selectedDriverForClose.cash_float), Number(selectedDriverForClose.sales_total), Number(selectedDriverForClose.orders_count))}
+                    onClick={() => handleCloseCashDrawer(
+                      selectedDriverForClose.name, 
+                      Number(selectedDriverForClose.cash_float), 
+                      Number(selectedDriverForClose.sales_total), 
+                      Number(selectedDriverForClose.orders_count),
+                      Number(selectedDriverForClose.recovered_loans_total || 0),
+                      Number(selectedDriverForClose.loans_delivered_total || 0),
+                      Number(selectedDriverForClose.transfer_total || 0),
+                      Number(selectedDriverForClose.transfer_orders_count || 0)
+                    )}
                     className="flex-2 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-950/10 hover:bg-slate-800 transition-all active:scale-95 flex items-center justify-center gap-2"
                   >
                     {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
