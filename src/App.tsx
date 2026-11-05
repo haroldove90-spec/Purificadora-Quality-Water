@@ -264,9 +264,9 @@ export default function App() {
         lowerMsg.includes('network error') ||
         lowerMsg.includes('websocket')
       ) {
-        console.warn('Capturado y mitigado evento de desarrollo/red offline:', message);
         try {
           event.preventDefault();
+          event.stopImmediatePropagation?.();
           event.stopPropagation();
         } catch (_) {}
         return;

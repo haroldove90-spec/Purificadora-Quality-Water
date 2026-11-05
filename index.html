@@ -42,12 +42,29 @@
           }
         }, true);
 
+        // Interceptar console.error para suprimir logs benignos de Vite HMR en el entorno de desarrollo
+        var origConsoleError = console.error;
+        console.error = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var joined = args.map(function(a) { 
+            try {
+              return String(a && a.message ? a.message : (typeof a === 'object' ? JSON.stringify(a) : a)); 
+            } catch (_) {
+              return String(a);
+            }
+          }).join(' ');
+          if (matchPattern(joined)) {
+            return;
+          }
+          origConsoleError.apply(console, args);
+        };
+
         window.addEventListener('unhandledrejection', function(event) {
           var reason = event.reason;
           var msg = reason ? (reason.message || reason.error_description || String(reason)) : '';
           if (matchPattern(msg)) {
             event.preventDefault();
-            event.stopPropagation();
+            event.stopImmediatePropagation();
           }
         }, true);
       })();
