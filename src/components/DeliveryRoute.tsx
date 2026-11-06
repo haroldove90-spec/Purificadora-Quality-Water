@@ -59,6 +59,18 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
   const [directSaleEmptiesReceived, setDirectSaleEmptiesReceived] = useState(0);
   const [directSaleSubmitting, setDirectSaleSubmitting] = useState(false);
 
+  // Estados para Auditoría de Ruta del Administrador / Supervisor
+  const [selectedDriverFilter, setSelectedDriverFilter] = useState<string>('all');
+  const [availableDrivers, setAvailableDrivers] = useState<any[]>([]);
+
+  const isRealAdminOrSupervisor = (() => {
+    try {
+      const backup = JSON.parse(localStorage.getItem('quality_water_session_backup') || '{}');
+      if (backup?.userRole === 'admin' || backup?.userRole === 'supervisor') return true;
+    } catch (_) {}
+    return userRole === 'admin' || userRole === 'supervisor';
+  })();
+
   const handleExportPDF = () => {
     setIsExporting(true);
     try {
@@ -100,6 +112,16 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
       const { data: custData } = await supabase.from('customers').select('*');
       if (custData) {
         setCustomersList(custData);
+      }
+
+      // Si es admin o supervisor, cargar lista de repartidores registrados
+      if (isRealAdminOrSupervisor) {
+        const { data: empData } = await supabase
+          .from('employees')
+          .select('*')
+          .in('role', ['driver', 'repartidor'])
+          .order('name');
+        if (empData) setAvailableDrivers(empData);
       }
 
       // Restricción: Órdenes activas (sin importar fecha) + entregadas de los últimos 2 días anteriores
@@ -783,9 +805,13 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
 
   const loggedInDriver = getLoggedInDriverName();
 
-  // Filtrar estrictamente si pertenece al chofer
+  // Filtrar estrictamente si pertenece al chofer (o permitir al admin supervisar cualquier chofer)
   const driverDeliveries = deliveries.filter(d => {
-    // Si no hay chofer logueado (sesión vacía o admin en modo prueba), se muestra todo
+    if (isRealAdminOrSupervisor) {
+      if (selectedDriverFilter === 'all') return true;
+      return namesMatch(d.assigned_to_name, selectedDriverFilter);
+    }
+    // Si no hay chofer logueado (sesión vacía), se muestra todo
     if (!loggedInDriver) return true;
     
     // El chofer solo ve pedidos estrictamente asignados a su nombre
@@ -857,6 +883,30 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
 
   return (
     <div className="max-w-md mx-auto space-y-6 pb-24 h-full overflow-y-auto no-scrollbar">
+      {/* Selector de Ruta para Administrador / Supervisor en Modo Auditoría */}
+      {isRealAdminOrSupervisor && (
+        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 bg-amber-500 text-slate-900 rounded-md font-black text-[9px] uppercase tracking-wider">
+              Supervisión
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wider">
+              Ruta Chofer:
+            </span>
+          </div>
+          <select
+            value={selectedDriverFilter}
+            onChange={e => setSelectedDriverFilter(e.target.value)}
+            className="bg-white dark:bg-slate-900 border border-amber-400/60 dark:border-amber-700 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer"
+          >
+            <option value="all">Todos los Choferes ({deliveries.length})</option>
+            {availableDrivers.map(d => (
+              <option key={d.id} value={d.name}>{d.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Driver Context Header */}
       <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl border border-slate-800">
         <div className="flex items-center justify-between mb-4">

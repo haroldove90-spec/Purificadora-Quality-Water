@@ -482,6 +482,23 @@ export default function Attendance({ userRole, userName }: AttendanceProps) {
               </button>
             </div>
 
+            {/* Guía Amigable si el GPS está apagado */}
+            {gpsStatus === 'error' && (
+              <div className="p-4 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-3xl flex items-start gap-3.5 shadow-sm animate-scale-up">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                  <AlertCircle size={16} />
+                </div>
+                <div className="text-xs text-amber-900 dark:text-amber-200 space-y-1 flex-1">
+                  <p className="font-black uppercase tracking-wider text-[10px]">¿Cómo activar tu ubicación en el celular?</p>
+                  <p className="font-medium text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
+                    1. Desliza hacia abajo la barra superior de tu teléfono y activa <strong>"Ubicación / GPS"</strong>.<br />
+                    2. En el mensaje del navegador, pulsa <strong>"Permitir mientras se usa la app"</strong>.<br />
+                    3. Pulsa el botón <strong>"Calibrar"</strong> arriba para conectar la señal.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Tarjeta Principal del Checador */}
             <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-xl relative overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-100 dark:border-slate-800">

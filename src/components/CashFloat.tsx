@@ -230,6 +230,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
   const [assignedSuccessModal, setAssignedSuccessModal] = useState<{ employeeName: string; amount: number } | null>(null);
   const [customFloatAmount, setCustomFloatAmount] = useState('600');
   const [selectedDriverForClose, setSelectedDriverForClose] = useState<any | null>(null);
+  const [routeExpenses, setRouteExpenses] = useState<number>(0);
+  const [routeExpensesNotes, setRouteExpensesNotes] = useState<string>('');
 
   // Get current date
   const todayDate = getLocalDateString();
@@ -640,7 +642,9 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     recoveredLoansAmount: number = 0,
     loansDeliveredAmount: number = 0,
     transferAmount: number = 0,
-    transferOrdersCount: number = 0
+    transferOrdersCount: number = 0,
+    expensesAmount: number = 0,
+    expensesNotes: string = ''
   ) => {
     setActionLoading(true);
     const today = getLocalDateString();
@@ -652,7 +656,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
     const cleanTransferAmount = isNaN(Number(transferAmount)) ? 0 : Number(transferAmount);
     const cleanTransferOrdersCount = isNaN(Number(transferOrdersCount)) ? 0 : Number(transferOrdersCount);
     const cleanOrdersCount = (ordersCount !== undefined && !isNaN(ordersCount)) ? ordersCount : (Number(selectedDriverForClose?.orders_count || 0) || 0);
-    const totalToDeliver = cleanFloatAmount + cleanSalesAmount + cleanRecoveredLoans;
+    const cleanExpensesAmount = isNaN(Number(expensesAmount)) ? 0 : Number(expensesAmount);
+    const totalToDeliver = Math.max(0, cleanFloatAmount + cleanSalesAmount + cleanRecoveredLoans - cleanExpensesAmount);
 
     try {
       const { data: todayAtt } = await supabase
@@ -690,6 +695,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
         cash_transfer_total: cleanTransferAmount,
         cash_transfer_orders_count: cleanTransferOrdersCount,
         cash_orders_count: cleanOrdersCount,
+        cash_expenses: cleanExpensesAmount,
+        cash_expenses_notes: expensesNotes,
         cash_total_to_deliver: totalToDeliver,
         closed_by_role: currentUser.role,
         closed_by_name: currentUser.name,
@@ -713,6 +720,8 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       updatedLocation.cash_transfer_total = cleanTransferAmount;
       updatedLocation.cash_transfer_orders_count = cleanTransferOrdersCount;
       updatedLocation.cash_orders_count = cleanOrdersCount;
+      updatedLocation.cash_expenses = cleanExpensesAmount;
+      updatedLocation.cash_expenses_notes = expensesNotes;
       updatedLocation.cash_total_to_deliver = totalToDeliver;
       updatedLocation.closed_by_role = currentUser.role;
       updatedLocation.closed_by_name = currentUser.name;
@@ -2983,10 +2992,45 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                     </div>
                   )}
 
+                  {/* Gastos de Ruta / Viáticos */}
+                  <div className="bg-rose-50/70 p-3 rounded-2xl border border-rose-200/60 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="font-black text-rose-800 uppercase text-[10px] block">Gastos de Ruta / Gasolina (Opcional):</span>
+                        <span className="text-[9px] text-rose-600 font-bold">Resta del efectivo entregado</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-black text-rose-600">-$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={routeExpenses === 0 ? '' : routeExpenses}
+                          onChange={e => setRouteExpenses(Math.max(0, Number(e.target.value) || 0))}
+                          placeholder="0.00"
+                          className="w-24 bg-white border border-rose-300 rounded-xl px-2.5 py-1 text-right text-xs font-black text-rose-700 outline-none"
+                        />
+                      </div>
+                    </div>
+                    {routeExpenses > 0 && (
+                      <input
+                        type="text"
+                        value={routeExpensesNotes}
+                        onChange={e => setRouteExpensesNotes(e.target.value)}
+                        placeholder="Concepto del gasto (Ejem: Gasolina camioneta $150)"
+                        className="w-full bg-white border border-rose-200 rounded-lg p-2 text-[10px] font-bold text-slate-700 outline-none"
+                      />
+                    )}
+                  </div>
+
                   <div className="border-t border-dashed border-slate-200 pt-3.5 flex justify-between text-slate-800 font-extrabold">
                     <span className="font-bold text-slate-500 uppercase text-[10px] tracking-widest">EFECTIVO TOTAL ENTREGADO:</span>
                     <span className="text-sm font-black text-sky-600">
-                      ${Number(selectedDriverForClose.total_to_deliver || 0).toFixed(2)} pesos
+                      ${Math.max(0, (
+                        Number(selectedDriverForClose.cash_float) + 
+                        Number(selectedDriverForClose.sales_total || 0) + 
+                        Number(selectedDriverForClose.recovered_loans_total || 0) - 
+                        Number(routeExpenses || 0)
+                      )).toFixed(2)} pesos
                     </span>
                   </div>
                 </div>
@@ -2995,7 +3039,11 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                   <button 
                     type="button"
                     disabled={actionLoading}
-                    onClick={() => setSelectedDriverForClose(null)}
+                    onClick={() => {
+                      setSelectedDriverForClose(null);
+                      setRouteExpenses(0);
+                      setRouteExpensesNotes('');
+                    }}
                     className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all text-center"
                   >
                     Volver
@@ -3011,7 +3059,9 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
                       Number(selectedDriverForClose.recovered_loans_total || 0),
                       Number(selectedDriverForClose.loans_delivered_total || 0),
                       Number(selectedDriverForClose.transfer_total || 0),
-                      Number(selectedDriverForClose.transfer_orders_count || 0)
+                      Number(selectedDriverForClose.transfer_orders_count || 0),
+                      Number(routeExpenses || 0),
+                      routeExpensesNotes
                     )}
                     className="flex-2 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-950/10 hover:bg-slate-800 transition-all active:scale-95 flex items-center justify-center gap-2"
                   >
