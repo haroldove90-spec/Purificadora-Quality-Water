@@ -1293,11 +1293,31 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
       const existingLocation = parseJsonFields(existing?.last_location);
       
       const trips = existingLocation.trips || [];
-      const hasActiveTrip = trips.some((t: any) => t.status === 'active');
-      if (hasActiveTrip) {
-        alert(`⚠️ El repartidor ${employeeName} ya tiene un viaje activo en curso. Por favor, liquida el viaje actual antes de asignarle uno nuevo.`);
-        setActionLoading(false);
-        return;
+      let updatedTrips = [...trips];
+      const activeTripIndex = updatedTrips.findIndex((t: any) => t.status === 'active');
+      
+      if (activeTripIndex !== -1) {
+        const activeTrip = updatedTrips[activeTripIndex];
+        const confirmOption = window.confirm(
+          `🚚 El repartidor ${employeeName} ya tiene el Viaje #${activeTrip.trip_number} activo.\n\n` +
+          `¿Deseas cerrar el Viaje #${activeTrip.trip_number} para despachar el nuevo Viaje #${trips.length + 1}?\n\n` +
+          `• Presiona [Aceptar] para CERRAR el viaje anterior y despachar el Viaje #${trips.length + 1}.\n` +
+          `• Presiona [Cancelar] para AGREGAR este nuevo viaje como recarga acumulativa sin cerrar el anterior.`
+        );
+
+        if (confirmOption) {
+          // Liquidar/Cerrar el viaje previo automáticamente
+          const prevSold = Number(activeTrip.sold_qty) || 0;
+          const prevLoaded = Number(activeTrip.loaded_qty) || 0;
+          const prevUnsold = Math.max(0, prevLoaded - prevSold);
+          updatedTrips[activeTripIndex] = {
+            ...activeTrip,
+            status: 'closed',
+            closed_at: new Date().toISOString(),
+            returned_unsold_qty: activeTrip.returned_unsold_qty !== undefined ? activeTrip.returned_unsold_qty : prevUnsold,
+            returned_empty_qty: activeTrip.returned_empty_qty !== undefined ? activeTrip.returned_empty_qty : prevSold
+          };
+        }
       }
 
       const newTrip = {
@@ -1318,7 +1338,7 @@ export default function CashFloat({ userRole, userName }: CashFloatProps) {
 
       const updatedLocation = {
         ...existingLocation,
-        trips: [...trips, newTrip]
+        trips: [...updatedTrips, newTrip]
       };
 
       const targetEmp = employees.find(e => namesMatch(e.name, employeeName));

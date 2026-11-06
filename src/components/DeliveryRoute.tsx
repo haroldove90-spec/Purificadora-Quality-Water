@@ -17,7 +17,14 @@ import {
   PackageCheck,
   CreditCard,
   DollarSign,
-  Lock
+  Lock,
+  ShoppingBag,
+  X,
+  Store,
+  Sparkles,
+  User,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Order } from '../lib/types.supabase';
@@ -41,6 +48,16 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
   const [isGift, setIsGift] = useState(false);
   const [isAssignmentConfirmed, setIsAssignmentConfirmed] = useState(false);
   const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
+
+  // Estados para Registro de Venta Directa en Calle (sin pedido previo)
+  const [showDirectSaleModal, setShowDirectSaleModal] = useState(false);
+  const [directSaleCustomerName, setDirectSaleCustomerName] = useState('');
+  const [directSaleAddress, setDirectSaleAddress] = useState('');
+  const [directSaleItems, setDirectSaleItems] = useState<{ [productId: string]: number }>({});
+  const [directSalePaymentMethod, setDirectSalePaymentMethod] = useState<'cash' | 'transfer' | 'borrowed'>('cash');
+  const [directSaleTransferRef, setDirectSaleTransferRef] = useState('');
+  const [directSaleEmptiesReceived, setDirectSaleEmptiesReceived] = useState(0);
+  const [directSaleSubmitting, setDirectSaleSubmitting] = useState(false);
 
   const handleExportPDF = () => {
     setIsExporting(true);
@@ -305,7 +322,9 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
   const updateDriverAttendanceFromDelivery = async (
     totalRegularSold: number, 
     totalSmallSold: number,
-    isBorrowedDelivery: boolean = false
+    isBorrowedDelivery: boolean = false,
+    overrideEmptyJugs?: number,
+    overrideEmptySmall?: number
   ) => {
     const session = getSessionInfo();
     const driverName = session?.user_name;
@@ -338,6 +357,8 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
       const lastLoc = parseJsonFields(existing.last_location);
       const trips = lastLoc.trips || [];
       const activeTrip = trips.find((t: any) => t.status === 'active');
+      const emptyToCollect = overrideEmptyJugs !== undefined ? overrideEmptyJugs : jugsReceived;
+      const emptySmallToCollect = overrideEmptySmall !== undefined ? overrideEmptySmall : pequenosReceived;
 
       if (activeTrip) {
         if (isBorrowedDelivery) {
@@ -349,8 +370,8 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
           activeTrip.sold_qty = (Number(activeTrip.sold_qty) || 0) + totalRegularSold;
           activeTrip.sold_qty_pequeno = (Number(activeTrip.sold_qty_pequeno) || 0) + totalSmallSold;
         }
-        activeTrip.collected_empty_qty = (Number(activeTrip.collected_empty_qty) || 0) + jugsReceived;
-        activeTrip.collected_empty_qty_pequeno = (Number(activeTrip.collected_empty_qty_pequeno) || 0) + pequenosReceived;
+        activeTrip.collected_empty_qty = (Number(activeTrip.collected_empty_qty) || 0) + emptyToCollect;
+        activeTrip.collected_empty_qty_pequeno = (Number(activeTrip.collected_empty_qty_pequeno) || 0) + emptySmallToCollect;
       } else {
         const newTrip = {
           id: 'T-' + Math.floor(10000 + Math.random() * 90000),
@@ -368,8 +389,8 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
           borrowed_qty: isBorrowedDelivery ? (totalRegularSold + totalSmallSold) : 0,
           borrowed_qty_regular: isBorrowedDelivery ? totalRegularSold : 0,
           borrowed_qty_pequeno: isBorrowedDelivery ? totalSmallSold : 0,
-          collected_empty_qty: jugsReceived,
-          collected_empty_qty_pequeno: pequenosReceived,
+          collected_empty_qty: emptyToCollect,
+          collected_empty_qty_pequeno: emptySmallToCollect,
           status: 'active',
           loaded_at: new Date().toISOString()
         };
@@ -388,6 +409,138 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
 
     } catch (err) {
       console.warn('Error updating driver attendance from delivery:', err);
+    }
+  };
+
+  const catalogProducts = products.length > 0 ? products : [
+    { id: 'p1', name: 'Garrafón 20L', price: 55 },
+    { id: 'p2', name: 'Garrafón 10L', price: 35 },
+    { id: 'p3', name: 'Botella 1.5L (Paquete 6)', price: 72 }
+  ];
+
+  const handleCreateDirectSale = async () => {
+    const selectedEntries = Object.entries(directSaleItems).filter(([_, qty]) => Number(qty) > 0);
+    if (selectedEntries.length === 0) {
+      alert('Por favor agrega al menos 1 garrafón o producto para registrar la venta.');
+      return;
+    }
+
+    setDirectSaleSubmitting(true);
+    try {
+      const session = getSessionInfo();
+      let driverName = session?.user_name;
+      if (!driverName) {
+        try {
+          const backup = JSON.parse(localStorage.getItem('quality_water_session_backup') || '{}');
+          if (backup?.userName) driverName = backup.userName;
+        } catch (_) {}
+      }
+      if (!driverName) driverName = 'Repartidor';
+
+      let calculatedTotal = 0;
+      let totalRegularSold = 0;
+      let totalSmallSold = 0;
+      const itemsTextParts: string[] = [];
+
+      selectedEntries.forEach(([prodId, qty]) => {
+        const prod = catalogProducts.find(p => p.id === prodId) || { name: 'Garrafón 20L', price: 55 };
+        const price = Number(prod.price) || 0;
+        calculatedTotal += price * Number(qty);
+        itemsTextParts.push(`${qty}x ${prod.name}`);
+
+        const lowerName = prod.name.toLowerCase();
+        if (lowerName.includes('10l') || lowerName.includes('peque') || lowerName.includes('10 l')) {
+          totalSmallSold += Number(qty);
+        } else if (lowerName.includes('20l') || lowerName.includes('garraf') || lowerName.includes('20 l')) {
+          totalRegularSold += Number(qty);
+        }
+      });
+
+      const isBorrowed = directSalePaymentMethod === 'borrowed';
+      const isTrf = directSalePaymentMethod === 'transfer';
+      const totalJugsCount = totalRegularSold + totalSmallSold;
+      const baseItems = itemsTextParts.join(', ');
+      
+      let finalItems = `${baseItems} [VENTA DIRECTA EN RUTA]`;
+      if (isBorrowed) {
+        finalItems = `${baseItems} [GARRAFONES PRESTADOS FIADOS: ${totalJugsCount}] [is_borrowed: true]`;
+      } else if (isTrf) {
+        const refStr = directSaleTransferRef.trim() ? ` [Ref: ${directSaleTransferRef.trim()}]` : '';
+        finalItems = `${baseItems} [MÉTODO DE PAGO: TRANSFERENCIA]${refStr} [VENTA DIRECTA EN RUTA]`;
+      }
+
+      const orderPayload: any = {
+        customer_name: directSaleCustomerName.trim() || 'Cliente en Ruta (Venta Directa)',
+        address: directSaleAddress.trim() || 'Reparto / Venta en Calle',
+        items: finalItems,
+        total_price: calculatedTotal,
+        status: isBorrowed ? 'pending_payment' : 'delivered',
+        source: 'route',
+        payment_method: isBorrowed ? 'Garrafones Prestados' : (isTrf ? 'transfer' : 'cash'),
+        transfer_reference: isTrf ? (directSaleTransferRef.trim() || null) : null,
+        is_borrowed: isBorrowed,
+        borrowed_jugs_count: isBorrowed ? totalJugsCount : 0,
+        borrowed_paid: false,
+        borrowed_status: isBorrowed ? 'pending' : null,
+        assigned_to_name: driverName,
+        assigned_route: getDriverRouteName(),
+        created_at: new Date().toISOString()
+      };
+
+      const { error: insErr } = await supabase.from('orders').insert([orderPayload]);
+      if (insErr) {
+        console.warn('Error guardando venta directa en Supabase:', insErr);
+        // Respaldo offline
+        try {
+          const offlineList = JSON.parse(localStorage.getItem('pending_offline_sales') || '[]');
+          offlineList.push(orderPayload);
+          localStorage.setItem('pending_offline_sales', JSON.stringify(offlineList));
+        } catch (_) {}
+      }
+
+      // Actualizar viaje del chofer
+      await updateDriverAttendanceFromDelivery(
+        totalRegularSold,
+        totalSmallSold,
+        isBorrowed,
+        directSaleEmptiesReceived,
+        0
+      );
+
+      // Notificaciones
+      if (isTrf) {
+        await supabase.from('notifications_log').insert([{
+          title: '💳 Venta por Transferencia en Ruta',
+          message: `${driverName} cobró $${calculatedTotal} por transferencia de ${orderPayload.customer_name}${directSaleTransferRef ? ` (Ref: ${directSaleTransferRef})` : ''}.`,
+          type: 'transfer',
+          user_role: 'admin',
+          is_read: false
+        }]);
+      } else if (isBorrowed) {
+        await supabase.from('notifications_log').insert([{
+          title: '📦 Garrafón Fiado en Ruta',
+          message: `${driverName} prestó ${totalJugsCount} garrafón(es) fiado(s) a ${orderPayload.customer_name}. Total: $${calculatedTotal}.`,
+          type: 'borrowed',
+          user_role: 'admin',
+          is_read: false
+        }]);
+      }
+
+      // Resetear estado
+      setDirectSaleItems({});
+      setDirectSaleCustomerName('');
+      setDirectSaleAddress('');
+      setDirectSalePaymentMethod('cash');
+      setDirectSaleTransferRef('');
+      setDirectSaleEmptiesReceived(0);
+      setShowDirectSaleModal(false);
+
+      await fetchDeliveries();
+      alert(`✅ ¡Venta en calle registrada con éxito por $${calculatedTotal.toFixed(2)}!\n\nLos garrafones se descontaron de tu viaje activo y se sumaron a tu corte.`);
+    } catch (e: any) {
+      alert('Error al registrar venta directa: ' + e.message);
+    } finally {
+      setDirectSaleSubmitting(false);
     }
   };
 
@@ -741,6 +894,279 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
           />
         </div>
       </div>
+
+      {/* Botón de Venta Directa en Ruta / Calle */}
+      <div className="bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600 text-white p-4 rounded-3xl shadow-xl shadow-sky-500/25 flex items-center justify-between gap-3 border border-sky-400/40">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-sky-100">
+            <Sparkles size={12} className="animate-pulse" />
+            <span className="text-[9px] font-black uppercase tracking-widest block truncate">
+              Venta Directa en Ruta
+            </span>
+          </div>
+          <p className="text-sm font-black uppercase italic truncate text-white">¿Cliente al paso en la calle?</p>
+        </div>
+        <button
+          onClick={() => setShowDirectSaleModal(true)}
+          className="bg-white hover:bg-sky-50 active:scale-95 text-sky-700 font-black text-xs uppercase tracking-wider px-4 py-3 rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
+        >
+          <Plus size={16} className="text-sky-600 stroke-[3]" />
+          <span>+ Registrar Venta</span>
+        </button>
+      </div>
+
+      {/* MODAL DE VENTA DIRECTA EN RUTA */}
+      {showDirectSaleModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 max-h-[90vh] overflow-y-auto space-y-5 animate-scale-up">
+            
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-sky-500 text-white flex items-center justify-center shadow-md">
+                  <ShoppingBag size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                    Venta Directa en Calle
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Cobro inmediato y descuento de garrafones en ruta
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDirectSaleModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl bg-slate-100 dark:bg-slate-800 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Selector de Productos */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                1. Selecciona los Productos a Entregar
+              </label>
+              <div className="space-y-2">
+                {catalogProducts.map(prod => {
+                  const currentQty = directSaleItems[prod.id] || 0;
+                  return (
+                    <div 
+                      key={prod.id}
+                      className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between ${
+                        currentQty > 0 
+                          ? 'bg-sky-50/60 dark:bg-sky-950/30 border-sky-300 dark:border-sky-800' 
+                          : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/60'
+                      }`}
+                    >
+                      <div>
+                        <p className="text-xs font-black text-slate-800 dark:text-white uppercase">{prod.name}</p>
+                        <p className="text-[11px] font-bold text-sky-600 dark:text-sky-400">${Number(prod.price).toFixed(2)} c/u</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDirectSaleItems(prev => ({
+                              ...prev,
+                              [prod.id]: Math.max(0, (prev[prod.id] || 0) - 1)
+                            }));
+                          }}
+                          disabled={currentQty <= 0}
+                          className="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center font-black text-slate-600 dark:text-slate-300 disabled:opacity-40"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <span className="w-8 text-center font-black text-base text-slate-900 dark:text-white">
+                          {currentQty}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDirectSaleItems(prev => {
+                              const newQty = (prev[prod.id] || 0) + 1;
+                              setDirectSaleEmptiesReceived(prevEmp => prevEmp + 1);
+                              return {
+                                ...prev,
+                                [prod.id]: newQty
+                              };
+                            });
+                          }}
+                          className="w-8 h-8 rounded-xl bg-sky-500 hover:bg-sky-600 active:scale-95 text-white flex items-center justify-center font-black shadow-sm"
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Total a Cobrar */}
+            {(() => {
+              const total = Object.entries(directSaleItems).reduce((acc, [pId, q]) => {
+                const prod = catalogProducts.find(p => p.id === pId);
+                return acc + (Number(prod?.price || 0) * q);
+              }, 0);
+              return (
+                <div className="bg-emerald-50 dark:bg-emerald-950/40 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400 tracking-wider block">
+                      Total de la Venta
+                    </span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                      {directSalePaymentMethod === 'borrowed' ? 'Se registra como Fiado' : 'Monto a Cobrar'}
+                    </span>
+                  </div>
+                  <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                    ${total.toFixed(2)}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* Datos del Cliente */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                2. Datos del Cliente / Lugar (Opcional)
+              </label>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={directSaleCustomerName}
+                  onChange={e => setDirectSaleCustomerName(e.target.value)}
+                  placeholder="Nombre o Alias (Ejem: Doña Martha, Taller Mecánico, etc.)"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-sky-500"
+                />
+                <input
+                  type="text"
+                  value={directSaleAddress}
+                  onChange={e => setDirectSaleAddress(e.target.value)}
+                  placeholder="Calle o Referencia (Ejem: Calle Hidalgo esq. Morelos)"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-sky-500"
+                />
+              </div>
+            </div>
+
+            {/* Método de Pago */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                3. Forma de Pago
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDirectSalePaymentMethod('cash')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    directSalePaymentMethod === 'cash'
+                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <DollarSign size={18} className="mx-auto mb-1" />
+                  <span className="text-[10px] font-black uppercase block">Efectivo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDirectSalePaymentMethod('transfer')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    directSalePaymentMethod === 'transfer'
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <CreditCard size={18} className="mx-auto mb-1" />
+                  <span className="text-[10px] font-black uppercase block">Transferencia</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDirectSalePaymentMethod('borrowed')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    directSalePaymentMethod === 'borrowed'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <PackageCheck size={18} className="mx-auto mb-1" />
+                  <span className="text-[10px] font-black uppercase block">Fiado</span>
+                </button>
+              </div>
+
+              {directSalePaymentMethod === 'transfer' && (
+                <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800/50 space-y-1.5 animate-fade-in">
+                  <label className="text-[9px] font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-widest block">
+                    Folio o Referencia de Transferencia (SPEI)
+                  </label>
+                  <input
+                    type="text"
+                    value={directSaleTransferRef}
+                    onChange={e => setDirectSaleTransferRef(e.target.value)}
+                    placeholder="Ejem: 123456 o Últimos 4 dígitos"
+                    className="w-full bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 p-2 rounded-lg text-xs font-bold text-slate-800 dark:text-white outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Envases Vacíos Recogidos */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                4. Envases Vacíos Recibidos
+              </label>
+              <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 flex-1">
+                  ¿Cuántos cascos vacíos te entregó el cliente?
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDirectSaleEmptiesReceived(prev => Math.max(0, prev - 1))}
+                    className="w-7 h-7 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center font-black"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <span className="w-6 text-center font-black text-sm text-slate-800 dark:text-white">
+                    {directSaleEmptiesReceived}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDirectSaleEmptiesReceived(prev => prev + 1)}
+                    className="w-7 h-7 rounded-lg bg-sky-500 text-white flex items-center justify-center font-black"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Botón de Confirmación */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleCreateDirectSale}
+                disabled={directSaleSubmitting}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-black text-sm uppercase py-4 rounded-2xl shadow-xl shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {directSaleSubmitting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Guardando Venta en Ruta...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={18} />
+                    <span>Confirmar y Cobrar Venta</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Acceso Directo a Cierre de Ventas Diario */}
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-4 rounded-3xl shadow-lg border border-indigo-900/50 flex items-center justify-between gap-3">
