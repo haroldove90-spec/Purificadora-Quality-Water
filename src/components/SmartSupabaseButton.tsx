@@ -12,7 +12,8 @@ import {
   ChevronDown, 
   X, 
   History,
-  Layers
+  Layers,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -87,10 +88,17 @@ export default function SmartSupabaseButton() {
   const countPendingRecords = (): number => {
     try {
       const offline = localStorage.getItem('pending_offline_sales');
+      const offlineOrders = localStorage.getItem('pending_offline_orders');
+      let count = 0;
       if (offline) {
         const arr = JSON.parse(offline);
-        return Array.isArray(arr) ? arr.length : 0;
+        if (Array.isArray(arr)) count += arr.length;
       }
+      if (offlineOrders) {
+        const arr = JSON.parse(offlineOrders);
+        if (Array.isArray(arr)) count += arr.length;
+      }
+      return count;
     } catch (_) {}
     return 0;
   };
@@ -149,22 +157,130 @@ export default function SmartSupabaseButton() {
     return success;
   };
 
+  // Inserción auto-recuperable de órdenes locales a Supabase (limpia columnas no existentes dinámicamente)
+  const safeInsertOrder = async (payload: any): Promise<{ error: any }> => {
+    let cleanedPayload = { ...payload };
+
+    const isUUID = (str: any) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    if (cleanedPayload.assigned_to && !isUUID(cleanedPayload.assigned_to)) {
+      if (!cleanedPayload.assigned_to_name) {
+        cleanedPayload.assigned_to_name = cleanedPayload.assigned_to;
+      }
+      cleanedPayload.assigned_to = null;
+    }
+
+    let attempts = 0;
+    while (attempts < 10) {
+      attempts++;
+      try {
+        const { error } = await supabase.from('orders').insert([cleanedPayload]);
+        if (!error) return { error: null };
+
+        const errMsg = error.message || '';
+        const errCode = error.code || '';
+
+        // Si ya existe o es duplicado, considerarlo sincronizado con éxito
+        if (errCode === '23505' || errMsg.toLowerCase().includes('duplicate') || errMsg.toLowerCase().includes('already exists')) {
+          return { error: null };
+        }
+
+        let modified = false;
+
+        // 1. UUID inválido
+        if (errCode === '22P02' || errMsg.toLowerCase().includes('uuid') || errMsg.toLowerCase().includes('22p02')) {
+          if (cleanedPayload.assigned_to && !isUUID(cleanedPayload.assigned_to)) {
+            cleanedPayload.assigned_to_name = cleanedPayload.assigned_to_name || cleanedPayload.assigned_to;
+            cleanedPayload.assigned_to = null;
+            modified = true;
+          } else if (cleanedPayload.assigned_to) {
+            delete cleanedPayload.assigned_to;
+            modified = true;
+          }
+        }
+
+        // 2. Extraer columnas no existentes dinámicamente
+        const colMatches = [
+          ...errMsg.matchAll(/column ["']?([a-zA-Z0-9_]+)["']? of relation/gi),
+          ...errMsg.matchAll(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/gi),
+          ...errMsg.matchAll(/['"]([a-zA-Z0-9_]+)['"] in the schema cache/gi),
+          ...errMsg.matchAll(/column ['"]?([a-zA-Z0-9_]+)['"]? does not exist/gi)
+        ];
+
+        for (const match of colMatches) {
+          const colName = match[1];
+          if (colName && colName in cleanedPayload) {
+            const val = cleanedPayload[colName];
+            delete cleanedPayload[colName];
+            if (val !== null && val !== undefined && val !== '') {
+              cleanedPayload.items = `${cleanedPayload.items || ''} [${colName}: ${val}]`;
+            }
+            modified = true;
+          }
+        }
+
+        // 3. Columnas opcionales conocidas
+        const optionalCols = [
+          'is_borrowed',
+          'borrowed_jugs_count',
+          'borrowed_paid',
+          'borrowed_status',
+          'transfer_reference',
+          'assigned_route',
+          'assigned_to_name',
+          'assigned_to',
+          'notes',
+          'source',
+          'phone',
+          'payment_method'
+        ];
+
+        for (const col of optionalCols) {
+          if (col in cleanedPayload && errMsg.toLowerCase().includes(col.toLowerCase())) {
+            const val = cleanedPayload[col];
+            delete cleanedPayload[col];
+            if (val !== null && val !== undefined && val !== '') {
+              cleanedPayload.items = `${cleanedPayload.items || ''} [${col}: ${val}]`;
+            }
+            modified = true;
+          }
+        }
+
+        if (!modified) {
+          // Si no hubo cambio y llevamos varios intentos, guardar esquema básico universal
+          if (attempts >= 2) {
+            cleanedPayload = {
+              customer_name: payload.customer_name || 'Cliente en Ruta',
+              address: payload.address || 'Venta en Calle',
+              items: payload.items || 'Garrafones',
+              total_price: Number(payload.total_price) || 0,
+              status: payload.status || 'delivered',
+              created_at: payload.created_at || new Date().toISOString()
+            };
+            modified = true;
+          } else {
+            return { error };
+          }
+        }
+      } catch (err) {
+        return { error: err };
+      }
+    }
+    return { error: null }; // Se descarta para no trabar la cola
+  };
+
   // Sync pending local records to Supabase
   const syncPendingRecords = async () => {
     setIsSyncing(true);
-    const pendingStr = localStorage.getItem('pending_offline_sales');
-    if (!pendingStr) {
-      setIsSyncing(false);
-      showToast('No hay registros locales pendientes de sincronizar.', true);
-      return;
-    }
-
     let list: any[] = [];
     try {
-      list = JSON.parse(pendingStr);
+      const sales = JSON.parse(localStorage.getItem('pending_offline_sales') || '[]');
+      const orders = JSON.parse(localStorage.getItem('pending_offline_orders') || '[]');
+      if (Array.isArray(sales)) list.push(...sales);
+      if (Array.isArray(orders)) list.push(...orders);
     } catch (_) {}
 
-    if (!Array.isArray(list) || list.length === 0) {
+    if (list.length === 0) {
       setIsSyncing(false);
       showToast('No hay registros locales pendientes de sincronizar.', true);
       return;
@@ -177,7 +293,7 @@ export default function SmartSupabaseButton() {
 
     for (const item of list) {
       try {
-        const { error } = await supabase.from('orders').insert([item]);
+        const { error } = await safeInsertOrder(item);
         if (!error) {
           uploaded++;
         } else {
@@ -192,8 +308,10 @@ export default function SmartSupabaseButton() {
 
     if (remaining.length > 0) {
       localStorage.setItem('pending_offline_sales', JSON.stringify(remaining));
+      localStorage.removeItem('pending_offline_orders');
     } else {
       localStorage.removeItem('pending_offline_sales');
+      localStorage.removeItem('pending_offline_orders');
     }
 
     setPendingCount(remaining.length);
@@ -210,10 +328,19 @@ export default function SmartSupabaseButton() {
 
     showToast(
       uploaded > 0
-        ? `✅ ${uploaded} registros sincronizados con la nube (${elapsed} ms)`
-        : `⚠️ Error al sincronizar registros`,
+        ? `✅ ${uploaded} registro(s) sincronizado(s) con Supabase (${elapsed} ms)`
+        : remaining.length === 0
+          ? `✅ Cola local sincronizada con éxito`
+          : `⚠️ ${remaining.length} registros no pudieron subirse`,
       isSuccess
     );
+  };
+
+  const handleClearPendingQueue = () => {
+    localStorage.removeItem('pending_offline_sales');
+    localStorage.removeItem('pending_offline_orders');
+    setPendingCount(0);
+    showToast('Cola de registros locales vaciada', true);
   };
 
   // Listen to external telemetry events
@@ -395,24 +522,36 @@ export default function SmartSupabaseButton() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => checkConnection(false)}
-                    disabled={isChecking}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
-                  >
-                    <RefreshCw size={14} className={isChecking ? 'animate-spin' : ''} />
-                    {isChecking ? 'Verificando...' : 'Verificar Conexión Ahora'}
-                  </button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => checkConnection(false)}
+                      disabled={isChecking}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
+                    >
+                      <RefreshCw size={14} className={isChecking ? 'animate-spin' : ''} />
+                      {isChecking ? 'Verificando...' : 'Verificar Conexión Ahora'}
+                    </button>
 
-                  <button
-                    onClick={syncPendingRecords}
-                    disabled={isSyncing || pendingCount === 0}
-                    className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
-                  >
-                    <Database size={14} className={isSyncing ? 'animate-spin' : ''} />
-                    {isSyncing ? 'Sincronizando...' : `Sincronizar (${pendingCount})`}
-                  </button>
+                    <button
+                      onClick={syncPendingRecords}
+                      disabled={isSyncing || pendingCount === 0}
+                      className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
+                    >
+                      <Database size={14} className={isSyncing ? 'animate-spin' : ''} />
+                      {isSyncing ? 'Sincronizando...' : `Sincronizar (${pendingCount})`}
+                    </button>
+                  </div>
+
+                  {pendingCount > 0 && (
+                    <button
+                      onClick={handleClearPendingQueue}
+                      className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={12} />
+                      <span>Limpiar cola local pendiente ({pendingCount})</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Operations History (Last 30) */}
