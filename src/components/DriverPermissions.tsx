@@ -305,6 +305,24 @@ export default function DriverPermissions() {
             </p>
           </button>
         </div>
+
+        {/* Aviso de Operación de Ventas */}
+        {!enabledModules.includes('route') && (
+          <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 rounded-2xl border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                <strong>Atención:</strong> El módulo "Mi Ruta" está desactivado. Tus repartidores <strong>NO</strong> podrán ver pedidos pendientes ni registrar ventas directas hasta que actives "Mi Ruta".
+              </span>
+            </div>
+            <button
+              onClick={() => handleToggle('route')}
+              className="bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black text-[10px] uppercase tracking-wider px-3.5 py-2 rounded-xl shrink-0 cursor-pointer shadow-sm"
+            >
+              + Activar Mi Ruta
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Vista Previa Móvil: Lo que verá el Chofer */}

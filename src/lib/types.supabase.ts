@@ -36,6 +36,8 @@ export interface Order {
   transfer_reference?: string;
   delivery_lat?: number;
   delivery_lng?: number;
+  notes?: string;
+  phone?: string;
 }
 
 export interface Attendance {

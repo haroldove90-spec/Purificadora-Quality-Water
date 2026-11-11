@@ -24,7 +24,8 @@ import {
   Sparkles,
   User,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  CalendarPlus
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Order } from '../lib/types.supabase';
@@ -58,6 +59,17 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
   const [directSaleTransferRef, setDirectSaleTransferRef] = useState('');
   const [directSaleEmptiesReceived, setDirectSaleEmptiesReceived] = useState(0);
   const [directSaleSubmitting, setDirectSaleSubmitting] = useState(false);
+
+  // Estados para Tomar / Agendar Nuevo Pedido en Ruta (para entrega hoy o programada)
+  const [showTakeOrderModal, setShowTakeOrderModal] = useState(false);
+  const [takeOrderCustomerName, setTakeOrderCustomerName] = useState('');
+  const [takeOrderPhone, setTakeOrderPhone] = useState('');
+  const [takeOrderAddress, setTakeOrderAddress] = useState('');
+  const [takeOrderItems, setTakeOrderItems] = useState<{ [productId: string]: number }>({});
+  const [takeOrderDeliveryTime, setTakeOrderDeliveryTime] = useState('Hoy en la tarde');
+  const [takeOrderNotes, setTakeOrderNotes] = useState('');
+  const [takeOrderPaymentMethod, setTakeOrderPaymentMethod] = useState<'cash' | 'transfer' | 'borrowed'>('cash');
+  const [takeOrderSubmitting, setTakeOrderSubmitting] = useState(false);
 
   // Estados para Auditoría de Ruta del Administrador / Supervisor
   const [selectedDriverFilter, setSelectedDriverFilter] = useState<string>('all');
@@ -440,6 +452,108 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
     { id: 'p3', name: 'Botella 1.5L (Paquete 6)', price: 72 }
   ];
 
+  // Inserción ultra segura con auto-recuperación ante columnas faltantes o errores de tipo UUID en Supabase
+  const safeInsertOrder = async (payload: any): Promise<{ data: any; error: any }> => {
+    let cleanedPayload = { ...payload };
+
+    const isUUID = (str: any) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    // Si assigned_to no es UUID, mover a assigned_to_name
+    if (cleanedPayload.assigned_to && !isUUID(cleanedPayload.assigned_to)) {
+      if (!cleanedPayload.assigned_to_name) {
+        cleanedPayload.assigned_to_name = cleanedPayload.assigned_to;
+      }
+      cleanedPayload.assigned_to = null;
+    }
+
+    let attempts = 0;
+    while (attempts < 10) {
+      attempts++;
+      try {
+        const { data, error } = await supabase.from('orders').insert([cleanedPayload]).select();
+        if (!error) {
+          return { data, error: null };
+        }
+
+        const errMsg = error.message || '';
+        const errCode = error.code || '';
+
+        // Ignorar duplicados
+        if (errCode === '23505' || errMsg.toLowerCase().includes('duplicate') || errMsg.toLowerCase().includes('already exists')) {
+          return { data: null, error: null };
+        }
+
+        let modified = false;
+
+        // Auto-heal 1: Formato UUID inválido
+        if (errCode === '22P02' || errMsg.toLowerCase().includes('uuid') || errMsg.toLowerCase().includes('22p02')) {
+          if (cleanedPayload.assigned_to && !isUUID(cleanedPayload.assigned_to)) {
+            cleanedPayload.assigned_to_name = cleanedPayload.assigned_to_name || cleanedPayload.assigned_to;
+            cleanedPayload.assigned_to = null;
+            modified = true;
+          } else if (cleanedPayload.assigned_to) {
+            delete cleanedPayload.assigned_to;
+            modified = true;
+          }
+        }
+
+        // Auto-heal 2: Regex dinámico de columnas no encontradas en Postgres/PostgREST
+        const colMatches = [
+          ...errMsg.matchAll(/column ["']?([a-zA-Z0-9_]+)["']? of relation/gi),
+          ...errMsg.matchAll(/Could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/gi),
+          ...errMsg.matchAll(/['"]([a-zA-Z0-9_]+)['"] in the schema cache/gi),
+          ...errMsg.matchAll(/column ['"]?([a-zA-Z0-9_]+)['"]? does not exist/gi)
+        ];
+
+        for (const match of colMatches) {
+          const colName = match[1];
+          if (colName && colName in cleanedPayload) {
+            const val = cleanedPayload[colName];
+            delete cleanedPayload[colName];
+            if (val !== null && val !== undefined && val !== '') {
+              cleanedPayload.items = `${cleanedPayload.items || ''} [${colName}: ${val}]`;
+            }
+            modified = true;
+          }
+        }
+
+        // Auto-heal 3: Columnas opcionales conocidas
+        const optionalCols = [
+          'is_borrowed',
+          'borrowed_jugs_count',
+          'borrowed_paid',
+          'borrowed_status',
+          'transfer_reference',
+          'assigned_route',
+          'assigned_to_name',
+          'assigned_to',
+          'notes',
+          'source',
+          'phone',
+          'payment_method'
+        ];
+
+        for (const col of optionalCols) {
+          if (col in cleanedPayload && errMsg.toLowerCase().includes(col.toLowerCase())) {
+            const val = cleanedPayload[col];
+            delete cleanedPayload[col];
+            if (val !== null && val !== undefined && val !== '') {
+              cleanedPayload.items = `${cleanedPayload.items || ''} [${col}: ${val}]`;
+            }
+            modified = true;
+          }
+        }
+
+        if (!modified) {
+          return { data: null, error };
+        }
+      } catch (err) {
+        return { data: null, error: err };
+      }
+    }
+    return { data: null, error: new Error('Límite de reintentos alcanzado en inserción') };
+  };
+
   const handleCreateDirectSale = async () => {
     const selectedEntries = Object.entries(directSaleItems).filter(([_, qty]) => Number(qty) > 0);
     if (selectedEntries.length === 0) {
@@ -509,7 +623,7 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
         created_at: new Date().toISOString()
       };
 
-      const { error: insErr } = await supabase.from('orders').insert([orderPayload]);
+      const { error: insErr } = await safeInsertOrder(orderPayload);
       if (insErr) {
         console.warn('Error guardando venta directa en Supabase:', insErr);
         // Respaldo offline
@@ -530,23 +644,25 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
       );
 
       // Notificaciones
-      if (isTrf) {
-        await supabase.from('notifications_log').insert([{
-          title: '💳 Venta por Transferencia en Ruta',
-          message: `${driverName} cobró $${calculatedTotal} por transferencia de ${orderPayload.customer_name}${directSaleTransferRef ? ` (Ref: ${directSaleTransferRef})` : ''}.`,
-          type: 'transfer',
-          user_role: 'admin',
-          is_read: false
-        }]);
-      } else if (isBorrowed) {
-        await supabase.from('notifications_log').insert([{
-          title: '📦 Garrafón Fiado en Ruta',
-          message: `${driverName} prestó ${totalJugsCount} garrafón(es) fiado(s) a ${orderPayload.customer_name}. Total: $${calculatedTotal}.`,
-          type: 'borrowed',
-          user_role: 'admin',
-          is_read: false
-        }]);
-      }
+      try {
+        if (isTrf) {
+          await supabase.from('notifications_log').insert([{
+            title: '💳 Venta por Transferencia en Ruta',
+            message: `${driverName} cobró $${calculatedTotal} por transferencia de ${orderPayload.customer_name}${directSaleTransferRef ? ` (Ref: ${directSaleTransferRef})` : ''}.`,
+            type: 'transfer',
+            user_role: 'admin',
+            is_read: false
+          }]);
+        } else if (isBorrowed) {
+          await supabase.from('notifications_log').insert([{
+            title: '📦 Garrafón Fiado en Ruta',
+            message: `${driverName} prestó ${totalJugsCount} garrafón(es) fiado(s) a ${orderPayload.customer_name}. Total: $${calculatedTotal}.`,
+            type: 'borrowed',
+            user_role: 'admin',
+            is_read: false
+          }]);
+        }
+      } catch (_) {}
 
       // Resetear estado
       setDirectSaleItems({});
@@ -563,6 +679,113 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
       alert('Error al registrar venta directa: ' + e.message);
     } finally {
       setDirectSaleSubmitting(false);
+    }
+  };
+
+  const handleCreateTakeOrder = async () => {
+    const selectedEntries = Object.entries(takeOrderItems).filter(([_, qty]) => Number(qty) > 0);
+    if (selectedEntries.length === 0) {
+      alert('Por favor agrega al menos 1 producto o garrafón para el pedido.');
+      return;
+    }
+    if (!takeOrderCustomerName.trim()) {
+      alert('Por favor escribe el nombre del cliente.');
+      return;
+    }
+    if (!takeOrderAddress.trim()) {
+      alert('Por favor indica la dirección o referencia de entrega.');
+      return;
+    }
+
+    setTakeOrderSubmitting(true);
+    try {
+      const session = getSessionInfo();
+      let driverName = session?.user_name;
+      if (!driverName) {
+        try {
+          const backup = JSON.parse(localStorage.getItem('quality_water_session_backup') || '{}');
+          if (backup?.userName) driverName = backup.userName;
+        } catch (_) {}
+      }
+      if (!driverName) driverName = 'Repartidor';
+
+      let calculatedTotal = 0;
+      const itemsTextParts: string[] = [];
+
+      selectedEntries.forEach(([prodId, qty]) => {
+        const prod = catalogProducts.find(p => p.id === prodId) || { name: 'Garrafón 20L', price: 55 };
+        const price = Number(prod.price) || 0;
+        calculatedTotal += price * Number(qty);
+        itemsTextParts.push(`${qty}x ${prod.name}`);
+      });
+
+      const baseItems = itemsTextParts.join(', ');
+      const isTrf = takeOrderPaymentMethod === 'transfer';
+      const isBorrowed = takeOrderPaymentMethod === 'borrowed';
+
+      const orderPayload: any = {
+        customer_name: takeOrderCustomerName.trim(),
+        phone: takeOrderPhone.trim() || null,
+        address: takeOrderAddress.trim(),
+        items: `${baseItems} [Horario: ${takeOrderDeliveryTime}]`,
+        total_price: calculatedTotal,
+        status: 'assigned', // Asignado de inmediato para que aparezca en la ruta del chofer
+        source: 'route_driver',
+        payment_method: isBorrowed ? 'Garrafones Prestados' : (isTrf ? 'transfer' : 'cash'),
+        is_borrowed: isBorrowed,
+        borrowed_status: isBorrowed ? 'pending' : null,
+        assigned_to_name: driverName,
+        assigned_route: getDriverRouteName(),
+        notes: takeOrderNotes.trim() ? `[Tomado por ${driverName}] ${takeOrderNotes.trim()}` : `[Tomado por ${driverName} en ruta]`,
+        created_at: new Date().toISOString()
+      };
+
+      const { error: insErr } = await safeInsertOrder(orderPayload);
+      if (insErr) {
+        console.warn('Error guardando pedido tomado en Supabase:', insErr);
+        try {
+          const offlineList = JSON.parse(localStorage.getItem('pending_offline_orders') || '[]');
+          offlineList.push(orderPayload);
+          localStorage.setItem('pending_offline_orders', JSON.stringify(offlineList));
+        } catch (_) {}
+      }
+
+      // Notificaciones a Admin y Planta
+      try {
+        await supabase.from('notifications_log').insert([
+          {
+            title: '📋 Nuevo Pedido Tomado en Ruta',
+            message: `${driverName} tomó un pedido para ${orderPayload.customer_name} (${orderPayload.address}). Total: $${calculatedTotal.toFixed(2)}. Horario: ${takeOrderDeliveryTime}`,
+            type: 'order',
+            user_role: 'admin',
+            is_read: false
+          },
+          {
+            title: '📋 Nuevo Pedido Tomado en Ruta',
+            message: `${driverName} tomó un pedido para ${orderPayload.customer_name} (${orderPayload.address}). Total: $${calculatedTotal.toFixed(2)}. Horario: ${takeOrderDeliveryTime}`,
+            type: 'order',
+            user_role: 'operator',
+            is_read: false
+          }
+        ]);
+      } catch (_) {}
+
+      // Resetear formulario
+      setTakeOrderItems({});
+      setTakeOrderCustomerName('');
+      setTakeOrderPhone('');
+      setTakeOrderAddress('');
+      setTakeOrderDeliveryTime('Hoy en la tarde');
+      setTakeOrderNotes('');
+      setTakeOrderPaymentMethod('cash');
+      setShowTakeOrderModal(false);
+
+      await fetchDeliveries();
+      alert(`✅ ¡Pedido agendado con éxito!\n\nSe ha agregado a tu lista de entregas pendientes en ruta.`);
+    } catch (e: any) {
+      alert('Error al agendar pedido: ' + e.message);
+    } finally {
+      setTakeOrderSubmitting(false);
     }
   };
 
@@ -811,11 +1034,13 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
       if (selectedDriverFilter === 'all') return true;
       return namesMatch(d.assigned_to_name, selectedDriverFilter);
     }
-    // Si no hay chofer logueado (sesión vacía), se muestra todo
+    // Si no hay chofer logueado (sesión vacía o demo), se muestra todo
     if (!loggedInDriver) return true;
-    
-    // El chofer solo ve pedidos estrictamente asignados a su nombre
-    return namesMatch(d.assigned_to_name, loggedInDriver);
+
+    // El chofer ve pedidos estrictamente asignados a su nombre, o pedidos tomados por él
+    return namesMatch(d.assigned_to_name, loggedInDriver) || 
+           namesMatch(d.assigned_to, loggedInDriver) ||
+           (Boolean(d.notes) && typeof d.notes === 'string' && d.notes.toLowerCase().includes(loggedInDriver.toLowerCase()));
   });
 
   // Dividir en Active (incluyendo pickup_assigned, assigned, pending, pickup_pending) vs Completed (Últimos 2 días)
@@ -945,24 +1170,55 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
         </div>
       </div>
 
-      {/* Botón de Venta Directa en Ruta / Calle */}
-      <div className="bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600 text-white p-4 rounded-3xl shadow-xl shadow-sky-500/25 flex items-center justify-between gap-3 border border-sky-400/40">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-sky-100">
-            <Sparkles size={12} className="animate-pulse" />
-            <span className="text-[9px] font-black uppercase tracking-widest block truncate">
-              Venta Directa en Ruta
+      {/* Botones de Acción para Repartidores: Venta Directa y Agendar Pedido */}
+      <div className="bg-gradient-to-r from-sky-600 via-indigo-600 to-blue-700 text-white p-4 sm:p-5 rounded-3xl shadow-xl shadow-sky-500/20 border border-sky-400/30 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-sky-200">
+            <Sparkles size={13} className="animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-widest block truncate">
+              Ventas y Pedidos en Ruta
             </span>
           </div>
-          <p className="text-sm font-black uppercase italic truncate text-white">¿Cliente al paso en la calle?</p>
+          <span className="text-[9px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full text-white">
+            Repartidor
+          </span>
         </div>
-        <button
-          onClick={() => setShowDirectSaleModal(true)}
-          className="bg-white hover:bg-sky-50 active:scale-95 text-sky-700 font-black text-xs uppercase tracking-wider px-4 py-3 rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
-        >
-          <Plus size={16} className="text-sky-600 stroke-[3]" />
-          <span>+ Registrar Venta</span>
-        </button>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* Botón 1: Venta Directa en Calle */}
+          <button
+            onClick={() => setShowDirectSaleModal(true)}
+            className="bg-white hover:bg-sky-50 active:scale-95 text-sky-800 font-black text-xs uppercase tracking-wider p-3.5 rounded-2xl shadow-md transition-all flex items-center justify-between gap-2 cursor-pointer border border-sky-100"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                <ShoppingBag size={16} />
+              </div>
+              <div className="text-left">
+                <span className="block leading-tight font-black">+ Venta en Calle</span>
+                <span className="text-[9px] font-bold text-slate-500 normal-case block">Cobro al paso</span>
+              </div>
+            </div>
+            <Plus size={16} className="text-sky-600 stroke-[3]" />
+          </button>
+
+          {/* Botón 2: Tomar / Agendar Pedido a Domicilio */}
+          <button
+            onClick={() => setShowTakeOrderModal(true)}
+            className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 text-white font-black text-xs uppercase tracking-wider p-3.5 rounded-2xl shadow-md transition-all flex items-center justify-between gap-2 cursor-pointer border border-emerald-400/40"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-white/20 text-white flex items-center justify-center shrink-0">
+                <CalendarPlus size={16} />
+              </div>
+              <div className="text-left">
+                <span className="block leading-tight font-black">+ Tomar Pedido</span>
+                <span className="text-[9px] font-bold text-emerald-100 normal-case block">Agendar entrega</span>
+              </div>
+            </div>
+            <Plus size={16} className="text-white stroke-[3]" />
+          </button>
+        </div>
       </div>
 
       {/* MODAL DE VENTA DIRECTA EN RUTA */}
@@ -1210,6 +1466,252 @@ export default function DeliveryRoute({ userRole }: { userRole?: string } = {}) 
                   <>
                     <CheckCircle2 size={18} />
                     <span>Confirmar y Cobrar Venta</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE TOMAR / AGENDAR PEDIDO EN RUTA */}
+      {showTakeOrderModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 max-h-[90vh] overflow-y-auto space-y-5 animate-scale-up">
+            
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-md">
+                  <CalendarPlus size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                    Tomar Pedido para Entrega
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Agenda pedidos de clientes para tu ruta o para hoy
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTakeOrderModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl bg-slate-100 dark:bg-slate-800 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Selector de Productos */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                1. Garrafones o Productos a Encargar
+              </label>
+              <div className="space-y-2">
+                {catalogProducts.map(prod => {
+                  const qty = takeOrderItems[prod.id] || 0;
+                  return (
+                    <div 
+                      key={prod.id}
+                      className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50"
+                    >
+                      <div>
+                        <p className="text-xs font-black text-slate-800 dark:text-white uppercase">{prod.name}</p>
+                        <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">${Number(prod.price).toFixed(2)} c/u</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTakeOrderItems(prev => ({
+                              ...prev,
+                              [prod.id]: Math.max(0, (prev[prod.id] || 0) - 1)
+                            }));
+                          }}
+                          className="w-8 h-8 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center font-black text-slate-700 dark:text-slate-200 hover:bg-slate-100"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <span className="w-8 text-center font-black text-sm text-slate-900 dark:text-white">
+                          {qty}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTakeOrderItems(prev => ({
+                              ...prev,
+                              [prod.id]: (prev[prod.id] || 0) + 1
+                            }));
+                          }}
+                          className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black hover:bg-emerald-600"
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Total acumulado */}
+              <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200 dark:border-emerald-800/40">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  Total Estimado a Cobrar
+                </span>
+                <span className="text-base font-black text-emerald-600 dark:text-emerald-400">
+                  $
+                  {Object.entries(takeOrderItems)
+                    .reduce((acc, [pId, q]) => {
+                      const p = catalogProducts.find(item => item.id === pId);
+                      return acc + (Number(p?.price) || 0) * Number(q);
+                    }, 0)
+                    .toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Datos del Cliente y Entrega */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                2. Datos del Cliente y Ubicación
+              </label>
+
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                  Nombre del Cliente *
+                </label>
+                <input
+                  type="text"
+                  value={takeOrderCustomerName}
+                  onChange={e => setTakeOrderCustomerName(e.target.value)}
+                  placeholder="Ej: Sra. Carmen López"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                    Teléfono / WhatsApp (Opcional)
+                  </label>
+                  <input
+                    type="tel"
+                    value={takeOrderPhone}
+                    onChange={e => setTakeOrderPhone(e.target.value)}
+                    placeholder="Ej: 5512345678"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                    Horario de Entrega
+                  </label>
+                  <select
+                    value={takeOrderDeliveryTime}
+                    onChange={e => setTakeOrderDeliveryTime(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                  >
+                    <option value="Hoy en la tarde">Hoy en la tarde</option>
+                    <option value="Hoy lo antes posible">Hoy lo antes posible</option>
+                    <option value="Mañana por la mañana">Mañana por la mañana</option>
+                    <option value="Mañana por la tarde">Mañana por la tarde</option>
+                    <option value="Próximo recorrido">Próximo recorrido</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                  Dirección o Referencia de Entrega *
+                </label>
+                <input
+                  type="text"
+                  value={takeOrderAddress}
+                  onChange={e => setTakeOrderAddress(e.target.value)}
+                  placeholder="Ej: Calle Morelos #142 (Portón café)"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                  Notas / Instrucciones adicionales (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={takeOrderNotes}
+                  onChange={e => setTakeOrderNotes(e.target.value)}
+                  placeholder="Ej: Tocar timbre 2 veces o llamar al llegar"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Método de Pago Esperado */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                3. Forma de Pago Esperada
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTakeOrderPaymentMethod('cash')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    takeOrderPaymentMethod === 'cash'
+                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <DollarSign size={18} className="mx-auto mb-1" />
+                  <span className="text-[10px] font-black uppercase block">Efectivo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTakeOrderPaymentMethod('transfer')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    takeOrderPaymentMethod === 'transfer'
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <CreditCard size={18} className="mx-auto mb-1" />
+                  <span className="text-[10px] font-black uppercase block">Transferencia</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTakeOrderPaymentMethod('borrowed')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    takeOrderPaymentMethod === 'borrowed'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-md'
+                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <PackageCheck size={18} className="mx-auto mb-1" />
+                  <span className="text-[10px] font-black uppercase block">Fiado</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Botón de Confirmación */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleCreateTakeOrder}
+                disabled={takeOrderSubmitting}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-black text-sm uppercase py-4 rounded-2xl shadow-xl shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {takeOrderSubmitting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Agendando Pedido...</span>
+                  </>
+                ) : (
+                  <>
+                    <CalendarPlus size={18} />
+                    <span>Guardar y Agregar a Mi Ruta</span>
                   </>
                 )}
               </button>
